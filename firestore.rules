@@ -1,0 +1,68 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isMember(householdId) {
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/households/$(householdId)/members/$(request.auth.uid));
+    }
+
+    match /users/{uid} {
+      allow read, write: if isSignedIn() && request.auth.uid == uid;
+    }
+
+    match /households/{householdId} {
+      allow read: if isMember(householdId);
+      allow create: if isSignedIn();
+      allow update, delete: if isMember(householdId);
+
+      match /members/{uid} {
+        allow read: if isMember(householdId);
+        allow create: if request.auth.uid == uid;
+        allow update: if request.auth.uid == uid;
+        allow delete: if false;
+      }
+
+      match /transactions/{txId} {
+        allow read: if isMember(householdId);
+        allow create: if isMember(householdId);
+        allow update, delete: if isMember(householdId);
+      }
+
+      match /categories/{categoryId} {
+        allow read: if isMember(householdId);
+        allow create, update, delete: if isMember(householdId);
+      }
+
+      match /budgets/{monthKey} {
+        allow read: if isMember(householdId);
+        allow create, update, delete: if isMember(householdId);
+      }
+
+      match /memos/{monthKey} {
+        allow read: if isMember(householdId);
+        allow create, update, delete: if isMember(householdId);
+      }
+
+      match /invites/{inviteId} {
+        allow read: if isMember(householdId)
+          || (isSignedIn()
+              && resource.data.usedBy == null
+              && resource.data.expiresAt > request.time);
+        allow create: if isMember(householdId);
+        allow update: if isMember(householdId)
+          || (isSignedIn()
+              && resource.data.usedBy == null
+              && request.resource.data.usedBy == request.auth.uid
+              && request.resource.data.code == resource.data.code
+              && request.resource.data.createdBy == resource.data.createdBy
+              && request.resource.data.createdAt == resource.data.createdAt
+              && request.resource.data.expiresAt == resource.data.expiresAt);
+        allow delete: if isMember(householdId);
+      }
+    }
+  }
+}
