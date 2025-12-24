@@ -99,7 +99,13 @@ export async function joinHousehold(
   });
 }
 
-export async function findInviteByCode(code: string) {
+export async function findInviteByCode(
+  code: string
+): Promise<{
+  inviteId: string;
+  householdId: string;
+  createdBy: string;
+} | null> {
   const invitesQuery = query(
     collectionGroup(db, "invites"),
     where("code", "==", code.toUpperCase()),
@@ -116,11 +122,15 @@ export async function findInviteByCode(code: string) {
   if (!householdRef) {
     return null;
   }
+  const data = inviteDoc.data() as { createdBy?: string };
+  if (!data.createdBy) {
+    return null;
+  }
 
   return {
     inviteId: inviteDoc.id,
     householdId: householdRef.id,
-    ...inviteDoc.data(),
+    createdBy: data.createdBy,
   };
 }
 
