@@ -15,8 +15,6 @@ const PAYMENT_METHODS = [
   { value: "transfer", label: "계좌이체" },
 ] as const;
 
-const RECORDERS = ["빵디", "궁디"] as const;
-
 const SUBJECTS = ["우리", "남편", "아내", "처가댁", "시댁"] as const;
 
 export default function NewTransactionPage() {
@@ -26,15 +24,15 @@ export default function NewTransactionPage() {
   const { categories } = useCategories(householdId);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [type, setType] = useState<TransactionType>("expense");
   const today = toDateKey(new Date());
   const hasCategories = categories.length > 0;
 
-  const grouped = useMemo(() => {
-    return {
-      expense: categories.filter((cat) => cat.type === "expense"),
-      income: categories.filter((cat) => cat.type === "income"),
-    };
-  }, [categories]);
+  const filteredCategories = useMemo(() => {
+    const byType = categories.filter((cat) => cat.type === type);
+    const leaf = byType.filter((cat) => cat.parentId);
+    return leaf.length ? leaf : byType;
+  }, [categories, type]);
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -48,11 +46,10 @@ export default function NewTransactionPage() {
     const amount = Number(formData.get("amount") ?? 0);
     const categoryId = String(formData.get("categoryId") ?? "");
     const paymentMethod = String(formData.get("paymentMethod") ?? "cash");
-    const recorder = String(formData.get("recorder") ?? "");
     const subject = String(formData.get("subject") ?? "");
     const date = String(formData.get("date") ?? "");
     const note = String(formData.get("note") ?? "");
-    if (!amount || !categoryId || !date || !recorder || !subject) {
+    if (!amount || !categoryId || !date || !subject) {
       setError("필수 항목을 모두 입력해주세요.");
       setLoading(false);
       return;
@@ -64,7 +61,6 @@ export default function NewTransactionPage() {
         amount,
         categoryId,
         paymentMethod: paymentMethod as "cash" | "card" | "transfer",
-        recorder: recorder as "빵디" | "궁디",
         subject: subject as "우리" | "남편" | "아내" | "처가댁" | "시댁",
         date: new Date(date),
         note: note.length ? note : undefined,
@@ -92,13 +88,27 @@ export default function NewTransactionPage() {
       >
         <div className="grid gap-4 md:grid-cols-2">
           <label className="text-sm font-medium">
+            날짜
+            <input
+              type="date"
+              name="date"
+              className="mt-2 w-full rounded-xl border border-[var(--border)] bg-white px-4 py-3"
+              defaultValue={today}
+            />
+          </label>
+          <label className="text-sm font-medium">
             유형
             <select
               name="type"
               className="mt-2 w-full rounded-xl border border-[var(--border)] bg-white px-4 py-3"
+              value={type}
+              onChange={(event) =>
+                setType(event.target.value as TransactionType)
+              }
             >
               <option value="expense">지출</option>
               <option value="income">수입</option>
+              <option value="transfer">이체</option>
             </select>
           </label>
           <label className="text-sm font-medium">
@@ -109,62 +119,6 @@ export default function NewTransactionPage() {
               className="mt-2 w-full rounded-xl border border-[var(--border)] bg-white px-4 py-3"
               placeholder="0"
             />
-          </label>
-          <label className="text-sm font-medium">
-            결제수단
-            <select
-              name="paymentMethod"
-              className="mt-2 w-full rounded-xl border border-[var(--border)] bg-white px-4 py-3"
-              defaultValue={PAYMENT_METHODS[0].value}
-            >
-              {PAYMENT_METHODS.map((method) => (
-                <option key={method.value} value={method.value}>
-                  {method.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="text-sm font-medium">
-            카테고리
-            <select
-              name="categoryId"
-              className="mt-2 w-full rounded-xl border border-[var(--border)] bg-white px-4 py-3"
-              disabled={!hasCategories}
-            >
-              <optgroup label="지출">
-                {grouped.expense.map((category) => (
-                  <option key={category.id} value={category.id}>
-                    {category.name}
-                  </option>
-                ))}
-              </optgroup>
-              <optgroup label="수입">
-                {grouped.income.map((category) => (
-                  <option key={category.id} value={category.id}>
-                    {category.name}
-                  </option>
-                ))}
-              </optgroup>
-            </select>
-            {!hasCategories ? (
-              <span className="mt-2 block text-xs text-[color:rgba(45,38,34,0.6)]">
-                카테고리를 먼저 추가해주세요.
-              </span>
-            ) : null}
-          </label>
-          <label className="text-sm font-medium">
-            입력자
-            <select
-              name="recorder"
-              className="mt-2 w-full rounded-xl border border-[var(--border)] bg-white px-4 py-3"
-              defaultValue={RECORDERS[0]}
-            >
-              {RECORDERS.map((name) => (
-                <option key={name} value={name}>
-                  {name}
-                </option>
-              ))}
-            </select>
           </label>
           <label className="text-sm font-medium">
             주체
@@ -181,13 +135,37 @@ export default function NewTransactionPage() {
             </select>
           </label>
           <label className="text-sm font-medium">
-            날짜
-            <input
-              type="date"
-              name="date"
+            카테고리
+            <select
+              name="categoryId"
               className="mt-2 w-full rounded-xl border border-[var(--border)] bg-white px-4 py-3"
-              defaultValue={today}
-            />
+              disabled={!hasCategories}
+            >
+              {filteredCategories.map((category) => (
+                <option key={category.id} value={category.id}>
+                  {category.name}
+                </option>
+              ))}
+            </select>
+            {!hasCategories ? (
+              <span className="mt-2 block text-xs text-[color:rgba(45,38,34,0.6)]">
+                카테고리를 먼저 추가해주세요.
+              </span>
+            ) : null}
+          </label>
+          <label className="text-sm font-medium">
+            결제수단
+            <select
+              name="paymentMethod"
+              className="mt-2 w-full rounded-xl border border-[var(--border)] bg-white px-4 py-3"
+              defaultValue={PAYMENT_METHODS[0].value}
+            >
+              {PAYMENT_METHODS.map((method) => (
+                <option key={method.value} value={method.value}>
+                  {method.label}
+                </option>
+              ))}
+            </select>
           </label>
         </div>
         <label className="mt-4 block text-sm font-medium">

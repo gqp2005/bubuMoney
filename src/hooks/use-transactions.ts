@@ -47,10 +47,11 @@ export function useMonthlyTransactions(
     transactions.forEach((tx) => {
       if (tx.type === "income") {
         income += tx.amount;
-      } else {
+        byCategory[tx.categoryId] = (byCategory[tx.categoryId] ?? 0) + tx.amount;
+      } else if (tx.type === "expense") {
         expense += tx.amount;
+        byCategory[tx.categoryId] = (byCategory[tx.categoryId] ?? 0) + tx.amount;
       }
-      byCategory[tx.categoryId] = (byCategory[tx.categoryId] ?? 0) + tx.amount;
     });
     return { income, expense, balance: income - expense, byCategory };
   }, [transactions]);

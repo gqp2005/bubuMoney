@@ -45,14 +45,26 @@ export async function createHousehold(name: string, uid: string) {
 
   const batch = writeBatch(db);
   const defaultCategories = [
-    { name: "식비", type: "expense", order: 1 },
-    { name: "교통", type: "expense", order: 2 },
-    { name: "주거", type: "expense", order: 3 },
-    { name: "생활", type: "expense", order: 4 },
-    { name: "의료", type: "expense", order: 5 },
-    { name: "여가", type: "expense", order: 6 },
-    { name: "급여", type: "income", order: 1 },
-    { name: "기타수입", type: "income", order: 2 },
+    { name: "식비", type: "expense", order: 1, parentId: null },
+    { name: "카페/간식", type: "expense", order: 2, parentId: null },
+    { name: "술/유흥", type: "expense", order: 3, parentId: null },
+    { name: "생활", type: "expense", order: 4, parentId: null },
+    { name: "온라인쇼핑", type: "expense", order: 5, parentId: null },
+    { name: "패션/쇼핑", type: "expense", order: 6, parentId: null },
+    { name: "뷰티/미용", type: "expense", order: 7, parentId: null },
+    { name: "교통", type: "expense", order: 8, parentId: null },
+    { name: "자동차", type: "expense", order: 9, parentId: null },
+    { name: "주거/통신", type: "expense", order: 10, parentId: null },
+    { name: "의료/건강", type: "expense", order: 11, parentId: null },
+    { name: "금융", type: "expense", order: 12, parentId: null },
+    { name: "문화/여가", type: "expense", order: 13, parentId: null },
+    { name: "여행/숙박", type: "expense", order: 14, parentId: null },
+    { name: "교육/학습", type: "expense", order: 15, parentId: null },
+    { name: "자녀/육아", type: "expense", order: 16, parentId: null },
+    { name: "반려동물", type: "expense", order: 17, parentId: null },
+    { name: "경조/선물", type: "expense", order: 18, parentId: null },
+    { name: "급여", type: "income", order: 1, parentId: null },
+    { name: "기타수입", type: "income", order: 2, parentId: null },
   ];
   defaultCategories.forEach((category) => {
     const categoryRef = doc(categoriesCol(householdRef.id));

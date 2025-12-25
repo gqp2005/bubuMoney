@@ -1,7 +1,7 @@
 import type { Timestamp } from "firebase/firestore";
 
 export type MemberRole = "owner" | "member";
-export type TransactionType = "income" | "expense";
+export type TransactionType = "income" | "expense" | "transfer";
 
 export interface Household {
   name: string;
@@ -27,6 +27,7 @@ export interface Category {
   name: string;
   type: TransactionType;
   order: number;
+  parentId?: string | null;
 }
 
 export interface Transaction {
@@ -34,7 +35,6 @@ export interface Transaction {
   amount: number;
   categoryId: string;
   paymentMethod: "cash" | "card" | "transfer";
-  recorder: "빵디" | "궁디";
   subject: "우리" | "남편" | "아내" | "처가댁" | "시댁";
   date: Timestamp;
   monthKey: string;
