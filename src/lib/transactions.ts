@@ -17,7 +17,6 @@ export async function addTransaction(params: {
   amount: number;
   categoryId: string;
   paymentMethod: "cash" | "card" | "transfer";
-  recorder: "빵디" | "궁디";
   subject: "우리" | "남편" | "아내" | "처가댁" | "시댁";
   date: Date;
   note?: string;
@@ -41,7 +40,6 @@ export async function updateTransaction(params: {
   amount: number;
   categoryId: string;
   paymentMethod: "cash" | "card" | "transfer";
-  recorder: "빵디" | "궁디";
   subject: "우리" | "남편" | "아내" | "처가댁" | "시댁";
   date: Date;
   note?: string;
@@ -52,9 +50,17 @@ export async function updateTransaction(params: {
     date: Timestamp.fromDate(date),
     monthKey: toMonthKey(date),
   };
-  return updateDoc(doc(db, "households", householdId, "transactions", transactionId), payload);
+  return updateDoc(
+    doc(db, "households", householdId, "transactions", transactionId),
+    payload
+  );
 }
 
-export async function deleteTransaction(householdId: string, transactionId: string) {
-  return deleteDoc(doc(db, "households", householdId, "transactions", transactionId));
+export async function deleteTransaction(
+  householdId: string,
+  transactionId: string
+) {
+  return deleteDoc(
+    doc(db, "households", householdId, "transactions", transactionId)
+  );
 }
