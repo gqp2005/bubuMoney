@@ -27,10 +27,13 @@ export default function CategoriesPage() {
   const nameInputRef = useRef<HTMLInputElement | null>(null);
 
   const grouped = useMemo(() => {
-    const byType = {
-      expense: { parents: [], children: [] as typeof categories },
-      income: { parents: [], children: [] as typeof categories },
-      transfer: { parents: [], children: [] as typeof categories },
+    const byType: Record<
+      CategoryType,
+      { parents: typeof categories; children: typeof categories }
+    > = {
+      expense: { parents: [], children: [] },
+      income: { parents: [], children: [] },
+      transfer: { parents: [], children: [] },
     };
     categories.forEach((category) => {
       if (category.parentId) {
