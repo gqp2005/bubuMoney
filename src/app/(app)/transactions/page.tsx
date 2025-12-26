@@ -27,9 +27,14 @@ export default function TransactionsPage() {
   const [showPicker, setShowPicker] = useState(false);
   const [yearValue, setYearValue] = useState(() => new Date().getFullYear());
   const [monthValue, setMonthValue] = useState(() => new Date().getMonth());
-  const categoryMap = useMemo(() => {
-    return new Map(categories.map((category) => [category.id, category.name]));
-  }, [categories]);
+  const [touchStartX, setTouchStartX] = useState<number | null>(null);
+  const [touchEndX, setTouchEndX] = useState<number | null>(null);
+
+  const categoryMap = useMemo(
+    () => new Map(categories.map((category) => [category.id, category.name])),
+    [categories]
+  );
+
   const paymentLabel = useMemo(
     () =>
       new Map([
@@ -57,12 +62,11 @@ export default function TransactionsPage() {
     >();
     transactions.forEach((tx) => {
       const key = toDateKey(tx.date.toDate());
-      const entry =
-        map.get(key) ?? { income: 0, expense: 0, items: [] };
+      const entry = map.get(key) ?? { income: 0, expense: 0, items: [] };
       entry.items.push(tx);
       if (tx.type === "income") {
         entry.income += tx.amount;
-      } else {
+      } else if (tx.type === "expense") {
         entry.expense += tx.amount;
       }
       map.set(key, entry);
@@ -73,8 +77,6 @@ export default function TransactionsPage() {
   const selectedKey = toDateKey(selectedDate);
   const selectedDaily = dailyMap.get(selectedKey);
   const selectedItems = selectedDaily?.items ?? [];
-  const [touchStartX, setTouchStartX] = useState<number | null>(null);
-  const [touchEndX, setTouchEndX] = useState<number | null>(null);
 
   function handleTouchStart(event: React.TouchEvent<HTMLDivElement>) {
     setTouchEndX(null);
@@ -128,9 +130,6 @@ export default function TransactionsPage() {
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold">거래 내역</h1>
-          <p className="text-sm text-[color:rgba(45,38,34,0.7)]">
-            월별 수입/지출을 관리하세요.
-          </p>
         </div>
         <Link
           className="rounded-full bg-[var(--accent)] px-5 py-2 text-white"
@@ -149,19 +148,20 @@ export default function TransactionsPage() {
           <div className="flex items-center gap-2">
             <button
               className="rounded-full border border-[var(--border)] px-3 py-1 text-sm"
-              onClick={() => setSelectedDate(addDays(startOfMonth(selectedDate), -1))}
+              onClick={() =>
+                setSelectedDate(addDays(startOfMonth(selectedDate), -1))
+              }
             >
               {"<"}
             </button>
-            <button
-              className="text-lg font-semibold"
-              onClick={openMonthPicker}
-            >
+            <button className="text-lg font-semibold" onClick={openMonthPicker}>
               {format(selectedDate, "yyyy년 M월")}
             </button>
             <button
               className="rounded-full border border-[var(--border)] px-3 py-1 text-sm"
-              onClick={() => setSelectedDate(addDays(endOfMonth(selectedDate), 1))}
+              onClick={() =>
+                setSelectedDate(addDays(endOfMonth(selectedDate), 1))
+              }
             >
               {">"}
             </button>
