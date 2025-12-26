@@ -1,20 +1,19 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
-import { useAuth } from "@/components/auth-provider";
 import { useHousehold } from "@/components/household-provider";
 import { formatKrw } from "@/lib/format";
 import { formatDate, toMonthKey } from "@/lib/time";
 import { useMonthlyTransactions } from "@/hooks/use-transactions";
-import { getMonthlyMemo, setMonthlyMemo } from "@/lib/memos";
+import { deleteMonthlyMemo, getMonthlyMemo } from "@/lib/memos";
 
 export default function DashboardPage() {
-  const { user } = useAuth();
   const { householdId } = useHousehold();
   const { transactions, summary, loading } = useMonthlyTransactions(householdId);
   const [memo, setMemo] = useState("");
   const [memoLoading, setMemoLoading] = useState(false);
-  const [memoStatus, setMemoStatus] = useState<string | null>(null);
+  const [memoError, setMemoError] = useState<string | null>(null);
   const monthKey = toMonthKey(new Date());
 
   useEffect(() => {
@@ -22,22 +21,25 @@ export default function DashboardPage() {
       setMemo("");
       return;
     }
-    getMonthlyMemo(householdId, monthKey).then((text) => {
-      setMemo(text ?? "");
-    });
+    setMemoLoading(true);
+    setMemoError(null);
+    getMonthlyMemo(householdId, monthKey)
+      .then((text) => setMemo(text ?? ""))
+      .catch(() => setMemoError("메모를 불러오지 못했습니다."))
+      .finally(() => setMemoLoading(false));
   }, [householdId, monthKey]);
 
-  async function handleMemoSave() {
-    if (!householdId || !user) {
+  async function handleDeleteMemo() {
+    if (!householdId) {
       return;
     }
     setMemoLoading(true);
-    setMemoStatus(null);
+    setMemoError(null);
     try {
-      await setMonthlyMemo(householdId, monthKey, memo, user.uid);
-      setMemoStatus("저장 완료");
+      await deleteMonthlyMemo(householdId, monthKey);
+      setMemo("");
     } catch (err) {
-      setMemoStatus("저장 실패");
+      setMemoError("메모 삭제에 실패했습니다.");
     } finally {
       setMemoLoading(false);
     }
@@ -46,31 +48,41 @@ export default function DashboardPage() {
   return (
     <div className="flex flex-col gap-6">
       <section className="rounded-3xl border border-[var(--border)] bg-white p-6">
-        <h2 className="text-lg font-semibold">메모</h2>
-        <p className="mt-2 text-sm text-[color:rgba(45,38,34,0.7)]">
-          오늘의 지출/계획을 간단히 기록해두세요.
-        </p>
-        <textarea
-          className="mt-4 min-h-[140px] w-full rounded-2xl border border-[var(--border)] px-4 py-3 text-sm"
-          placeholder="예) 이번 달 식비는 40만원 이하로 유지하기"
-          value={memo}
-          onChange={(event) => setMemo(event.target.value)}
-        />
-        <div className="mt-3 flex items-center justify-end">
-          {memoStatus ? (
-            <span className="mr-3 text-xs text-[color:rgba(45,38,34,0.7)]">
-              {memoStatus}
-            </span>
-          ) : null}
-          <button
-            className="rounded-full bg-[var(--accent)] px-4 py-2 text-sm text-white disabled:opacity-70"
-            onClick={handleMemoSave}
-            disabled={memoLoading || !householdId || !user}
+        <div className="relative min-h-[96px]">
+          <h2 className="text-lg font-semibold">메모</h2>
+          <Link
+            className="absolute right-0 top-0 rounded-full bg-[var(--accent)] px-4 py-2 text-sm text-white"
+            href="/memos/new?mode=create"
           >
-            {memoLoading ? "저장 중..." : "메모 저장"}
-          </button>
+            글쓰기
+          </Link>
         </div>
+        {memoLoading ? (
+          <p className="mt-4 text-sm text-[color:rgba(45,38,34,0.7)]">
+            불러오는 중...
+          </p>
+        ) : memo ? (
+          <div className="mt-4 flex items-center justify-between gap-3 rounded-2xl border border-[var(--border)] px-4 py-3 text-sm">
+            <Link className="flex-1 whitespace-pre-line" href="/memos/new">
+              {memo}
+            </Link>
+            <button
+              className="text-xs text-red-600"
+              onClick={handleDeleteMemo}
+            >
+              삭제
+            </button>
+          </div>
+        ) : (
+          <p className="mt-4 text-sm text-[color:rgba(45,38,34,0.7)]">
+            아직 저장된 메모가 없습니다.
+          </p>
+        )}
+        {memoError ? (
+          <p className="mt-2 text-sm text-red-600">{memoError}</p>
+        ) : null}
       </section>
+
       <section className="rounded-3xl border border-[var(--border)] bg-white p-6 shadow-sm">
         <h1 className="text-2xl font-semibold">이번 달 요약</h1>
         <p className="mt-2 text-sm text-[color:rgba(45,38,34,0.7)]">
@@ -96,6 +108,7 @@ export default function DashboardPage() {
           ))}
         </div>
       </section>
+
       <section className="rounded-3xl border border-[var(--border)] bg-white p-6">
         <h2 className="text-lg font-semibold">최근 내역</h2>
         {loading ? (
@@ -117,12 +130,22 @@ export default function DashboardPage() {
                   <p className="text-sm font-medium text-[var(--foreground)]">
                     {tx.note ?? "메모 없음"}
                   </p>
-                  <p className="text-xs">
-                    {formatDate(tx.date.toDate())}
-                  </p>
+                  <p className="text-xs">{formatDate(tx.date.toDate())}</p>
                 </div>
-                <span className={tx.type === "expense" ? "text-red-600" : "text-emerald-600"}>
-                  {tx.type === "expense" ? "-" : "+"}
+                <span
+                  className={
+                    tx.type === "expense"
+                      ? "text-red-600"
+                      : tx.type === "income"
+                      ? "text-emerald-600"
+                      : "text-[color:rgba(45,38,34,0.7)]"
+                  }
+                >
+                  {tx.type === "expense"
+                    ? "-"
+                    : tx.type === "income"
+                    ? "+"
+                    : ""}
                   {formatKrw(tx.amount)}
                 </span>
               </div>

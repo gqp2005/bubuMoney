@@ -23,7 +23,7 @@ export default function AppGuard({
       return;
     }
     if (!householdId) {
-      router.replace("/invite");
+      router.replace("/onboarding");
     }
   }, [authLoading, householdId, householdLoading, router, user]);
 

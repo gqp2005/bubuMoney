@@ -145,7 +145,7 @@ export default function TransactionsPage() {
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
       >
-        <div className="flex items-center justify-between px-0">
+        <div className="flex items-center justify-between px-3">
           <div className="flex items-center gap-2">
             <button
               className="rounded-full border border-[var(--border)] px-3 py-1 text-sm"

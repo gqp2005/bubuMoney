@@ -28,3 +28,11 @@ export async function setMonthlyMemo(
     { merge: true }
   );
 }
+
+export async function deleteMonthlyMemo(
+  householdId: string,
+  monthKey: string
+) {
+  const ref = doc(db, "households", householdId, "memos", monthKey);
+  await setDoc(ref, { text: "" }, { merge: true });
+}

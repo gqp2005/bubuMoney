@@ -13,11 +13,11 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen bg-[var(--background)]">
       <header className="border-b border-[var(--border)] bg-white/90 backdrop-blur">
-        <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-6 py-4">
+        <div className="flex w-full items-center justify-between gap-4 px-0 py-4">
           <Link className="hidden text-lg font-semibold md:block" href="/dashboard">
             Couple Ledger
           </Link>
-          <nav className="flex flex-1 items-center gap-2 overflow-x-auto text-sm md:flex-none md:gap-4">
+          <nav className="flex flex-1 flex-wrap items-center gap-2 text-xs sm:text-sm md:flex-none md:gap-4">
             {navItems.map((item) => (
               <Link
                 key={item.href}
@@ -36,7 +36,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           </Link>
         </div>
       </header>
-      <main className="mx-auto flex max-w-6xl flex-col gap-6 px-6 py-8">
+      <main className="flex w-full flex-col gap-6 px-0 py-8">
         <AppGuard>{children}</AppGuard>
       </main>
     </div>

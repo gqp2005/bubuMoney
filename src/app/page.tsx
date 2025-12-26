@@ -3,7 +3,7 @@ import Link from "next/link";
 export default function Home() {
   return (
     <div className="min-h-screen bg-[radial-gradient(circle_at_top,_#fdf7f1,_#f4e7db)]">
-      <main className="mx-auto flex min-h-screen max-w-5xl flex-col items-start justify-center gap-10 px-6 py-16">
+      <main className="flex min-h-screen w-full flex-col items-start justify-center gap-10 px-0 py-16">
         <div className="inline-flex items-center gap-2 rounded-full border border-[var(--border)] bg-white/80 px-4 py-1 text-sm">
           <span className="h-2 w-2 rounded-full bg-[var(--accent)]" />
           <span>부부 공동 가계부 PWA</span>
