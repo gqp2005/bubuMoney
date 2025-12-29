@@ -28,6 +28,7 @@ export interface Category {
   type: TransactionType;
   order: number;
   parentId?: string | null;
+  imported?: boolean;
 }
 
 export interface Transaction {
@@ -46,11 +47,13 @@ export interface Transaction {
 export interface Subject {
   name: string;
   order: number;
+  imported?: boolean;
 }
 
 export interface PaymentMethod {
   name: string;
   order: number;
+  imported?: boolean;
 }
 
 export interface Budget {

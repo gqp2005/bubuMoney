@@ -155,14 +155,21 @@ export default function CategoriesPage() {
     }
     const trimmed = editingName.trim();
     if (activeTab === "subject") {
-      await updateSubject(householdId, editingId, { name: trimmed });
+      await updateSubject(householdId, editingId, {
+        name: trimmed,
+        imported: false,
+      });
     } else if (activeTab === "payment") {
-      await updatePaymentMethod(householdId, editingId, { name: trimmed });
+      await updatePaymentMethod(householdId, editingId, {
+        name: trimmed,
+        imported: false,
+      });
     } else {
       await updateCategory(householdId, editingId, {
         name: trimmed,
         type: editingType,
         parentId: editingParentId === "none" ? null : editingParentId,
+        imported: false,
       });
     }
     setEditingId(null);
@@ -179,6 +186,8 @@ export default function CategoriesPage() {
     : activeTab === "subject"
     ? subjectsLoading
     : paymentLoading;
+
+  const highlightClass = "border-amber-300 bg-amber-50";
 
   return (
     <div className="relative flex flex-col gap-4 pb-20">
@@ -265,7 +274,11 @@ export default function CategoriesPage() {
               return (
                 <div
                   key={parent.id}
-                  className="rounded-2xl border border-[var(--border)] px-4 py-3 text-sm"
+                  className={`rounded-2xl border px-4 py-3 text-sm ${
+                    parent.imported
+                      ? highlightClass
+                      : "border-[var(--border)] bg-white"
+                  }`}
                 >
                   {editingId === parent.id ? (
                     <div className="space-y-2">
@@ -362,7 +375,11 @@ export default function CategoriesPage() {
               (item) => (
                 <div
                   key={item.id}
-                  className="flex items-center justify-between rounded-2xl border border-[var(--border)] px-4 py-3 text-sm"
+                  className={`flex items-center justify-between rounded-2xl border px-4 py-3 text-sm ${
+                    item.imported
+                      ? highlightClass
+                      : "border-[var(--border)] bg-white"
+                  }`}
                 >
                   {editingId === item.id ? (
                     <div className="flex w-full flex-wrap items-center gap-2">

@@ -5,12 +5,14 @@ import { getDoc, updateDoc } from "firebase/firestore";
 import { useAuth } from "@/components/auth-provider";
 import { useHousehold } from "@/components/household-provider";
 import { useCategories } from "@/hooks/use-categories";
+import { usePaymentMethods } from "@/hooks/use-payment-methods";
 import { useSubjects } from "@/hooks/use-subjects";
 import { addCategory } from "@/lib/categories";
-import { createInvite } from "@/lib/household";
 import { signOutUser } from "@/lib/firebase/auth";
 import { householdDoc } from "@/lib/firebase/firestore";
 import { updateUserDisplayName } from "@/lib/firebase/user";
+import { createInvite } from "@/lib/household";
+import { addPaymentMethod } from "@/lib/payment-methods";
 import { addTransaction } from "@/lib/transactions";
 import { addSubject, updateSubject } from "@/lib/subjects";
 
@@ -19,6 +21,7 @@ export default function SettingsPage() {
   const { householdId, displayName } = useHousehold();
   const { categories } = useCategories(householdId);
   const { subjects } = useSubjects(householdId);
+  const { paymentMethods } = usePaymentMethods(householdId);
   const [nickname, setNickname] = useState(displayName ?? "");
   const [partnerNickname, setPartnerNickname] = useState("");
   const [inviteCode, setInviteCode] = useState<string | null>(null);
@@ -40,6 +43,24 @@ export default function SettingsPage() {
   const nextCategoryOrder = useMemo(
     () => categories.length + 1,
     [categories.length]
+  );
+
+  const subjectMap = useMemo(() => {
+    return new Map(subjects.map((subject) => [subject.name.trim(), subject.id]));
+  }, [subjects]);
+  const nextSubjectOrder = useMemo(
+    () => subjects.length + 1,
+    [subjects.length]
+  );
+
+  const paymentMap = useMemo(() => {
+    return new Map(
+      paymentMethods.map((method) => [method.name.trim(), method.id])
+    );
+  }, [paymentMethods]);
+  const nextPaymentOrder = useMemo(
+    () => paymentMethods.length + 1,
+    [paymentMethods.length]
   );
 
   useEffect(() => {
@@ -66,7 +87,7 @@ export default function SettingsPage() {
       const invite = await createInvite(householdId, user.uid);
       setInviteCode(invite.code);
     } catch (err) {
-      setError("초대코드 생성에 실패했습니다.");
+      setError("초대 코드 생성에 실패했습니다.");
     } finally {
       setLoading(false);
     }
@@ -116,7 +137,7 @@ export default function SettingsPage() {
   function buildSubjectDefaults(myName: string, partnerName: string) {
     const cleanedMy = myName.trim();
     const cleanedPartner = partnerName.trim();
-    const partnerFallback = cleanedMy === "아내" ? "남편" : "아내";
+    const partnerFallback = cleanedMy === "남편" ? "아내" : "남편";
     return [
       cleanedMy || "남편",
       cleanedPartner || (cleanedMy ? partnerFallback : "아내"),
@@ -228,6 +249,9 @@ export default function SettingsPage() {
     let success = 0;
     let failed = 0;
     let processed = 0;
+    let categoryAdded = 0;
+    let subjectAdded = 0;
+    let paymentAdded = 0;
     for (const row of dataRows) {
       const cols = row.split(",").map((col) => col.trim());
       if (cols.length < 8) {
@@ -246,28 +270,52 @@ export default function SettingsPage() {
         noteRaw,
         amountRaw,
       ] = cols;
-      const categoryText = normalizeText(categoryRaw);
+      const categoryText = normalizeText(categoryRaw) || "기타";
       const type = mapType(typeRaw);
       let categoryId = categoryMap.get(categoryText);
       if (!categoryId) {
         const newCategory = await addCategory(householdId, {
           name: categoryText,
           type,
-          order: nextCategoryOrder + success + failed,
+          order: nextCategoryOrder + categoryAdded,
           parentId: null,
+          imported: true,
         });
         categoryId = newCategory.id;
         categoryMap.set(categoryText, categoryId);
+        categoryAdded += 1;
       }
+
+      const subjectName = normalizeText(subjectRaw) || "우리";
+      if (!subjectMap.has(subjectName)) {
+        await addSubject(householdId, {
+          name: subjectName,
+          order: nextSubjectOrder + subjectAdded,
+          imported: true,
+        });
+        subjectMap.set(subjectName, subjectName);
+        subjectAdded += 1;
+      }
+
+      const paymentMethod = mapPayment(paymentRaw);
+      if (!paymentMap.has(paymentMethod)) {
+        await addPaymentMethod(householdId, {
+          name: paymentMethod,
+          order: nextPaymentOrder + paymentAdded,
+          imported: true,
+        });
+        paymentMap.set(paymentMethod, paymentMethod);
+        paymentAdded += 1;
+      }
+
       const amount = Number(amountRaw.replace(/,/g, ""));
       const date = parseDate(dateRaw);
       const memoParts = [normalizeText(noteRaw)];
-      if (normalizeText(nicknameRaw)) {
-        memoParts.unshift(`입력자:${normalizeText(nicknameRaw)}`);
+      const nicknameText = normalizeText(nicknameRaw);
+      if (nicknameText) {
+        memoParts.unshift(`입력자:${nicknameText}`);
       }
       const memo = memoParts.filter(Boolean).join(" ");
-      const subject = normalizeText(subjectRaw) || "우리";
-      const paymentMethod = mapPayment(paymentRaw);
       try {
         await addTransaction({
           householdId,
@@ -275,7 +323,7 @@ export default function SettingsPage() {
           amount,
           categoryId,
           paymentMethod,
-          subject,
+          subject: subjectName,
           date,
           note: memo || undefined,
           createdBy: user.uid,
@@ -299,21 +347,21 @@ export default function SettingsPage() {
       <section className="rounded-3xl border border-[var(--border)] bg-white p-6">
         <div className="mb-4 rounded-2xl border border-[var(--border)] px-4 py-3">
           <label className="text-xs text-[color:rgba(45,38,34,0.7)]">
-            닉네임
+            내 닉네임
           </label>
           <div className="mt-2 flex flex-wrap items-center gap-2">
             <input
               className="flex-1 rounded-xl border border-[var(--border)] px-3 py-2 text-sm"
               value={nickname}
               onChange={(event) => setNickname(event.target.value)}
-              placeholder="닉네임"
+              placeholder="닉네임 입력"
             />
             <button
               className="rounded-full bg-[var(--accent)] px-4 py-2 text-sm text-white disabled:opacity-70"
               onClick={handleNicknameSave}
               disabled={savingName || !nickname.trim()}
             >
-              {savingName ? "저장 중..." : "저장"}
+              {savingName ? "저장 중.." : "저장"}
             </button>
           </div>
           {nameStatus ? (
@@ -331,14 +379,14 @@ export default function SettingsPage() {
               className="flex-1 rounded-xl border border-[var(--border)] px-3 py-2 text-sm"
               value={partnerNickname}
               onChange={(event) => setPartnerNickname(event.target.value)}
-              placeholder="상대방 닉네임"
+              placeholder="상대방 닉네임 입력"
             />
             <button
               className="rounded-full bg-[var(--accent)] px-4 py-2 text-sm text-white disabled:opacity-70"
               onClick={handlePartnerSave}
               disabled={savingPartner}
             >
-              {savingPartner ? "저장 중..." : "저장"}
+              {savingPartner ? "저장 중.." : "저장"}
             </button>
           </div>
           {partnerStatus ? (
@@ -363,7 +411,7 @@ export default function SettingsPage() {
               onClick={handleInvite}
               disabled={!user || !householdId || loading}
             >
-              {loading ? "생성 중..." : "코드 생성"}
+              {loading ? "생성 중.." : "코드 생성"}
             </button>
             {error ? (
               <p className="mt-2 text-sm text-red-600">{error}</p>
@@ -386,8 +434,8 @@ export default function SettingsPage() {
       <section className="rounded-3xl border border-[var(--border)] bg-white p-6">
         <h2 className="text-sm font-semibold">CSV 가져오기</h2>
         <p className="mt-2 text-xs text-[color:rgba(45,38,34,0.7)]">
-          날짜, 입금/지출, 입력자, 주체, 카테고리, 지불 방식, 메모, 금액 순서로
-          저장된 CSV 파일을 업로드하세요.
+          날짜, 입금/지출, 입력자, 주체, 카테고리, 지불 방식, 메모, 금액
+          순서로 된 CSV 파일을 업로드하세요.
         </p>
         <input
           className="mt-4 w-full text-sm"

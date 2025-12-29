@@ -3,7 +3,7 @@ import { paymentMethodsCol } from "@/lib/firebase/firestore";
 
 export async function addPaymentMethod(
   householdId: string,
-  data: { name: string; order: number }
+  data: { name: string; order: number; imported?: boolean }
 ) {
   return addDoc(paymentMethodsCol(householdId), data);
 }
@@ -11,7 +11,7 @@ export async function addPaymentMethod(
 export async function updatePaymentMethod(
   householdId: string,
   paymentMethodId: string,
-  data: { name: string }
+  data: { name: string; imported?: boolean }
 ) {
   return updateDoc(doc(paymentMethodsCol(householdId), paymentMethodId), data);
 }

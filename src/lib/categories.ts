@@ -13,6 +13,7 @@ export async function addCategory(
     type: "income" | "expense" | "transfer";
     order: number;
     parentId?: string | null;
+    imported?: boolean;
   }
 ) {
   return addDoc(categoriesCol(householdId), data);
@@ -25,6 +26,7 @@ export async function updateCategory(
     name: string;
     type: "income" | "expense" | "transfer";
     parentId?: string | null;
+    imported?: boolean;
   }
 ) {
   return updateDoc(doc(categoriesCol(householdId), categoryId), data);
