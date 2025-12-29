@@ -29,15 +29,13 @@ export default function SignupPage() {
     const email = String(formData.get("email") ?? "");
     const password = String(formData.get("password") ?? "");
     const nickname = String(formData.get("nickname") ?? "");
-    const householdName = String(formData.get("householdName") ?? "우리집");
-    const partnerNickname = String(formData.get("partnerNickname") ?? "");
+    const householdName = "우리집";
     try {
       const credential = await signUpWithEmail(email, password);
       const householdId = await createHousehold(
         householdName,
         credential.user.uid,
-        nickname,
-        partnerNickname
+        nickname
       );
       await createUserProfile(credential.user.uid, householdId, nickname);
       router.replace("/dashboard");
@@ -73,24 +71,6 @@ export default function SignupPage() {
             type="text"
             name="nickname"
             placeholder="예) 빵디"
-            className="mt-2 w-full rounded-xl border border-[var(--border)] bg-white px-4 py-3"
-          />
-        </label>
-        <label className="text-sm font-medium">
-          상대방 닉네임
-          <input
-            type="text"
-            name="partnerNickname"
-            placeholder="예) 궁디"
-            className="mt-2 w-full rounded-xl border border-[var(--border)] bg-white px-4 py-3"
-          />
-        </label>
-        <label className="text-sm font-medium">
-          가계부 이름
-          <input
-            type="text"
-            name="householdName"
-            placeholder="우리집"
             className="mt-2 w-full rounded-xl border border-[var(--border)] bg-white px-4 py-3"
           />
         </label>
