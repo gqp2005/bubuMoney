@@ -30,7 +30,7 @@ export default function AppGuard({
   if (authLoading || householdLoading) {
     return (
       <div className="rounded-2xl border border-[var(--border)] bg-white p-6 text-sm">
-        로딩 중...
+        불러오는 중...
       </div>
     );
   }

@@ -34,6 +34,13 @@ function formatPaymentMethod(value: string) {
   return value || "결제수단";
 }
 
+function stripRecorderPrefix(note?: string) {
+  if (!note) {
+    return "메모 없음";
+  }
+  return note.replace(/^입력자:[^\s]+\s*/u, "").trim() || "메모 없음";
+}
+
 export default function TransactionsPage() {
   const { householdId } = useHousehold();
   const { categories } = useCategories(householdId);
@@ -295,14 +302,12 @@ export default function TransactionsPage() {
               >
                 <div className="min-w-0">
                   <p className="truncate text-sm font-semibold">
-                    {tx.note ?? "메모 없음"}
+                    {stripRecorderPrefix(tx.note)}
                   </p>
                   <p className="text-xs text-[color:rgba(45,38,34,0.65)]">
-                    {categoryMap.get(tx.categoryId) ?? "미분류"}
-                  </p>
-                  <p className="text-xs text-[color:rgba(45,38,34,0.65)]">
-                    {formatPaymentMethod(tx.paymentMethod)} ·{" "}
-                    {tx.subject || "주체"}
+                    {categoryMap.get(tx.categoryId) ?? "미분류"} ·{" "}
+                    {tx.subject || "주체"} ·{" "}
+                    {formatPaymentMethod(tx.paymentMethod)}
                   </p>
                 </div>
                 <div className="flex items-center gap-4 self-center">

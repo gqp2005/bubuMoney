@@ -29,6 +29,8 @@ export default function SettingsPage() {
   const [savingPartner, setSavingPartner] = useState(false);
   const [partnerStatus, setPartnerStatus] = useState<string | null>(null);
   const [importStatus, setImportStatus] = useState<string | null>(null);
+  const [importTotal, setImportTotal] = useState(0);
+  const [importProcessed, setImportProcessed] = useState(0);
 
   const categoryMap = useMemo(() => {
     return new Map(
@@ -210,6 +212,8 @@ export default function SettingsPage() {
       return;
     }
     setImportStatus(null);
+    setImportTotal(0);
+    setImportProcessed(0);
     const text = await file.text();
     const rows = text
       .split(/\r?\n/)
@@ -220,12 +224,16 @@ export default function SettingsPage() {
       return;
     }
     const dataRows = rows.slice(1);
+    setImportTotal(dataRows.length);
     let success = 0;
     let failed = 0;
+    let processed = 0;
     for (const row of dataRows) {
       const cols = row.split(",").map((col) => col.trim());
       if (cols.length < 8) {
         failed += 1;
+        processed += 1;
+        setImportProcessed(processed);
         continue;
       }
       const [
@@ -275,10 +283,16 @@ export default function SettingsPage() {
         success += 1;
       } catch (err) {
         failed += 1;
+      } finally {
+        processed += 1;
+        setImportProcessed(processed);
       }
     }
     setImportStatus(`가져오기 완료: 성공 ${success}, 실패 ${failed}`);
   }
+
+  const importPercent =
+    importTotal > 0 ? Math.round((importProcessed / importTotal) * 100) : 0;
 
   return (
     <div className="flex flex-col gap-6">
@@ -337,7 +351,7 @@ export default function SettingsPage() {
           <div className="rounded-2xl border border-[var(--border)] p-4">
             <h2 className="text-sm font-semibold">초대 코드</h2>
             <p className="mt-2 text-sm text-[color:rgba(45,38,34,0.7)]">
-              배우와 공유할 초대 코드를 생성하세요.
+              배우자에게 공유할 초대 코드를 생성하세요.
             </p>
             {inviteCode ? (
               <div className="mt-4 rounded-xl border border-dashed border-[var(--border)] px-4 py-3 text-center text-lg tracking-widest">
@@ -382,6 +396,11 @@ export default function SettingsPage() {
           onChange={(event) => handleCsvImport(event.target.files?.[0] ?? null)}
           disabled={!householdId || !user}
         />
+        {importTotal > 0 ? (
+          <p className="mt-2 text-xs text-[color:rgba(45,38,34,0.7)]">
+            진행률 {importPercent}% ({importProcessed}/{importTotal})
+          </p>
+        ) : null}
         {importStatus ? (
           <p className="mt-2 text-xs text-[color:rgba(45,38,34,0.7)]">
             {importStatus}
