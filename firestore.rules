@@ -37,6 +37,16 @@ service cloud.firestore {
         allow create, update, delete: if isMember(householdId);
       }
 
+      match /subjects/{subjectId} {
+        allow read: if isMember(householdId);
+        allow create, update, delete: if isMember(householdId);
+      }
+
+      match /paymentMethods/{paymentMethodId} {
+        allow read: if isMember(householdId);
+        allow create, update, delete: if isMember(householdId);
+      }
+
       match /budgets/{monthKey} {
         allow read: if isMember(householdId);
         allow create, update, delete: if isMember(householdId);

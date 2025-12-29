@@ -16,8 +16,8 @@ export async function addTransaction(params: {
   type: TransactionType;
   amount: number;
   categoryId: string;
-  paymentMethod: "cash" | "card" | "transfer";
-  subject: "우리" | "남편" | "아내" | "처가댁" | "시댁";
+  paymentMethod: string;
+  subject: string;
   date: Date;
   note?: string;
   createdBy: string;
@@ -39,8 +39,8 @@ export async function updateTransaction(params: {
   type: TransactionType;
   amount: number;
   categoryId: string;
-  paymentMethod: "cash" | "card" | "transfer";
-  subject: "우리" | "남편" | "아내" | "처가댁" | "시댁";
+  paymentMethod: string;
+  subject: string;
   date: Date;
   note?: string;
 }) {

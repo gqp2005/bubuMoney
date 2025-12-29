@@ -34,13 +34,23 @@ export interface Transaction {
   type: TransactionType;
   amount: number;
   categoryId: string;
-  paymentMethod: "cash" | "card" | "transfer";
-  subject: "우리" | "남편" | "아내" | "처가댁" | "시댁";
+  paymentMethod: string;
+  subject: string;
   date: Timestamp;
   monthKey: string;
   note?: string;
   createdBy: string;
   createdAt: Timestamp;
+}
+
+export interface Subject {
+  name: string;
+  order: number;
+}
+
+export interface PaymentMethod {
+  name: string;
+  order: number;
 }
 
 export interface Budget {

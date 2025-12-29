@@ -12,8 +12,9 @@ import { setUserHousehold } from "@/lib/firebase/user";
 export default function OnboardingPage() {
   const router = useRouter();
   const { user } = useAuth();
-  const { householdId, loading } = useHousehold();
+  const { householdId, loading, displayName } = useHousehold();
   const [name, setName] = useState("우리집");
+  const [partnerNickname, setPartnerNickname] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -34,12 +35,17 @@ export default function OnboardingPage() {
     setError(null);
     setSubmitting(true);
     try {
-      const household = await createHousehold(name, user.uid);
+      const household = await createHousehold(
+        name,
+        user.uid,
+        displayName ?? undefined,
+        partnerNickname
+      );
       await setUserHousehold(user.uid, household);
       router.replace("/dashboard");
     } catch (err) {
       if (err instanceof FirebaseError) {
-        setError(`생성 실패: ${err.code}`);
+        setError(`생성 오류: ${err.code}`);
       } else {
         setError("가계부 생성에 실패했습니다.");
       }
@@ -53,7 +59,7 @@ export default function OnboardingPage() {
       <div className="flex flex-col gap-2 text-center">
         <h1 className="text-2xl font-semibold">가계부 시작</h1>
         <p className="text-sm text-[color:rgba(45,38,34,0.7)]">
-          기존 가계부에 참여하거나 새 가계부를 만들 수 있어요.
+          새 가계부를 만들거나 초대 코드로 참여하세요.
         </p>
       </div>
 
@@ -67,6 +73,15 @@ export default function OnboardingPage() {
             onChange={(event) => setName(event.target.value)}
           />
         </label>
+        <label className="mt-3 block text-sm font-medium">
+          상대방 닉네임
+          <input
+            className="mt-2 w-full rounded-xl border border-[var(--border)] bg-white px-4 py-3"
+            value={partnerNickname}
+            onChange={(event) => setPartnerNickname(event.target.value)}
+            placeholder="예) 궁디"
+          />
+        </label>
         <button
           className="mt-4 w-full rounded-xl bg-[var(--accent)] px-4 py-3 text-white disabled:opacity-70"
           onClick={handleCreate}
@@ -77,15 +92,15 @@ export default function OnboardingPage() {
       </div>
 
       <div className="rounded-2xl border border-[var(--border)] p-4">
-        <h2 className="text-sm font-semibold">초대코드로 참여</h2>
+        <h2 className="text-sm font-semibold">초대 코드로 참여</h2>
         <p className="mt-2 text-sm text-[color:rgba(45,38,34,0.7)]">
-          이미 사용 중인 가계부가 있다면 초대코드를 입력하세요.
+          배우자가 보낸 초대 코드를 입력해 기존 가계부에 참여할 수 있어요.
         </p>
         <Link
           className="mt-4 block w-full rounded-xl border border-[var(--border)] px-4 py-3 text-center text-sm"
           href="/invite"
         >
-          초대코드 입력하기
+          초대 코드 입력하기
         </Link>
       </div>
 

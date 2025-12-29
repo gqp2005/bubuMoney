@@ -20,6 +20,8 @@ import {
   householdDoc,
   invitesCol,
   membersCol,
+  paymentMethodsCol,
+  subjectsCol,
 } from "@/lib/firebase/firestore";
 
 export function generateInviteCode(length = 6) {
@@ -31,11 +33,18 @@ export function generateInviteCode(length = 6) {
   return code;
 }
 
-export async function createHousehold(name: string, uid: string) {
+export async function createHousehold(
+  name: string,
+  uid: string,
+  creatorDisplayName?: string,
+  partnerDisplayName?: string
+) {
   const householdRef = await addDoc(collection(db, "households"), {
     name,
     createdAt: serverTimestamp(),
     membersCount: 1,
+    creatorDisplayName: creatorDisplayName ?? null,
+    partnerDisplayName: partnerDisplayName ?? null,
   });
 
   await setDoc(doc(membersCol(householdRef.id), uid), {
@@ -70,6 +79,36 @@ export async function createHousehold(name: string, uid: string) {
     const categoryRef = doc(categoriesCol(householdRef.id));
     batch.set(categoryRef, category);
   });
+
+  const cleanedName = creatorDisplayName?.trim();
+  const cleanedPartner = partnerDisplayName?.trim();
+  const partnerFallback = cleanedName === "아내" ? "남편" : "아내";
+  const subjectDefaults = [
+    { name: cleanedName || "남편", order: 1 },
+    { name: cleanedPartner || (cleanedName ? partnerFallback : "아내"), order: 2 },
+    { name: "우리", order: 3 },
+    { name: "시댁", order: 4 },
+    { name: "처가댁", order: 5 },
+    { name: "아기", order: 6 },
+  ];
+  subjectDefaults.forEach((subject) => {
+    const subjectRef = doc(subjectsCol(householdRef.id));
+    batch.set(subjectRef, subject);
+  });
+
+  const defaultPaymentMethods = [
+    { name: "현금", order: 1 },
+    { name: "은행", order: 2 },
+    { name: "체크카드", order: 3 },
+    { name: "신용카드", order: 4 },
+    { name: "대출", order: 5 },
+    { name: "기타", order: 6 },
+  ];
+  defaultPaymentMethods.forEach((method) => {
+    const methodRef = doc(paymentMethodsCol(householdRef.id));
+    batch.set(methodRef, method);
+  });
+
   await batch.commit();
 
   return householdRef.id;

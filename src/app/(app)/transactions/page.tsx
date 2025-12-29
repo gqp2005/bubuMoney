@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import {
   addDays,
@@ -14,10 +15,24 @@ import {
 } from "date-fns";
 import { useHousehold } from "@/components/household-provider";
 import { formatKrw } from "@/lib/format";
-import { formatDate, toDateKey } from "@/lib/time";
+import { toDateKey } from "@/lib/time";
 import { useCategories } from "@/hooks/use-categories";
 import { useMonthlyTransactions } from "@/hooks/use-transactions";
-import { deleteTransaction } from "@/lib/transactions";
+
+const DAY_LABELS = ["일", "월", "화", "수", "목", "금", "토"];
+
+function formatPaymentMethod(value: string) {
+  if (value === "cash") {
+    return "현금";
+  }
+  if (value === "card") {
+    return "카드";
+  }
+  if (value === "transfer") {
+    return "계좌이체";
+  }
+  return value || "결제수단";
+}
 
 export default function TransactionsPage() {
   const { householdId } = useHousehold();
@@ -29,20 +44,11 @@ export default function TransactionsPage() {
   const [monthValue, setMonthValue] = useState(() => new Date().getMonth());
   const [touchStartX, setTouchStartX] = useState<number | null>(null);
   const [touchEndX, setTouchEndX] = useState<number | null>(null);
+  const router = useRouter();
 
   const categoryMap = useMemo(
     () => new Map(categories.map((category) => [category.id, category.name])),
     [categories]
-  );
-
-  const paymentLabel = useMemo(
-    () =>
-      new Map([
-        ["cash", "현금"],
-        ["card", "카드"],
-        ["transfer", "계좌이체"],
-      ]),
-    []
   );
 
   const { days, dailyMap } = useMemo(() => {
@@ -118,18 +124,11 @@ export default function TransactionsPage() {
     setShowPicker(false);
   }
 
-  async function handleDelete(transactionId: string) {
-    if (!householdId) {
-      return;
-    }
-    await deleteTransaction(householdId, transactionId);
-  }
-
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold">거래 내역</h1>
+          <h1 className="text-2xl font-semibold">내역</h1>
         </div>
         <Link
           className="rounded-full bg-[var(--accent)] px-5 py-2 text-white"
@@ -174,7 +173,7 @@ export default function TransactionsPage() {
           </button>
         </div>
         <div className="mt-4 grid grid-cols-7 gap-2 text-center text-xs text-[color:rgba(45,38,34,0.6)]">
-          {["일", "월", "화", "수", "목", "금", "토"].map((day) => (
+          {DAY_LABELS.map((day) => (
             <div key={day}>{day}</div>
           ))}
         </div>
@@ -186,7 +185,7 @@ export default function TransactionsPage() {
             return (
               <button
                 key={key}
-                className={`rounded-md border px-2 py-2 text-left text-xs ${
+                className={`border px-2 py-2 text-left text-xs ${
                   isActive
                     ? "border-[var(--accent)] bg-[rgba(59,47,47,0.08)]"
                     : "border-[var(--border)]"
@@ -194,7 +193,7 @@ export default function TransactionsPage() {
                 onClick={() => setSelectedDate(day)}
               >
                 <div className="text-sm font-semibold">{format(day, "d")}</div>
-                <div className="mt-1 space-y-0.5 text-[10px] leading-tight text-[color:rgba(45,38,34,0.6)]">
+                <div className="mt-1 space-y-0.5 text-[9px] leading-tight text-[color:rgba(45,38,34,0.6)]">
                   <div className="text-blue-600">
                     <span className="block break-all">
                       {formatKrw(data?.income ?? 0)}
@@ -263,9 +262,13 @@ export default function TransactionsPage() {
         </div>
       ) : null}
       <section className="rounded-3xl border border-[var(--border)] bg-white p-6">
-        <div className="flex items-center justify-end text-sm text-[color:rgba(45,38,34,0.7)]">
-          수입 {formatKrw(selectedDaily?.income ?? 0)} · 지출{" "}
-          {formatKrw(selectedDaily?.expense ?? 0)}
+        <div className="flex items-center justify-end gap-3 text-sm">
+          <span className="text-blue-600">
+            {formatKrw(selectedDaily?.income ?? 0)}
+          </span>
+          <span className="text-red-600">
+            {formatKrw(selectedDaily?.expense ?? 0)}
+          </span>
         </div>
         {loading ? (
           <div className="mt-4 text-sm text-[color:rgba(45,38,34,0.7)]">
@@ -280,21 +283,29 @@ export default function TransactionsPage() {
             {selectedItems.map((tx) => (
               <div
                 key={tx.id}
-                className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-[var(--border)] px-4 py-3"
+                className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-4 rounded-2xl border border-[var(--border)] px-4 py-3"
+                role="button"
+                tabIndex={0}
+                onClick={() => router.push(`/transactions/${tx.id}`)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    router.push(`/transactions/${tx.id}`);
+                  }
+                }}
               >
-                <div>
-                  <p className="text-sm font-semibold">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-semibold">
+                    {tx.note ?? "메모 없음"}
+                  </p>
+                  <p className="text-xs text-[color:rgba(45,38,34,0.65)]">
                     {categoryMap.get(tx.categoryId) ?? "미분류"}
                   </p>
                   <p className="text-xs text-[color:rgba(45,38,34,0.65)]">
-                    {formatDate(tx.date.toDate())} · {tx.note ?? "메모 없음"}
-                  </p>
-                  <p className="text-xs text-[color:rgba(45,38,34,0.65)]">
-                    {paymentLabel.get(tx.paymentMethod) ?? "결제수단"} ·{" "}
-                    {tx.subject ?? "주체"}
+                    {formatPaymentMethod(tx.paymentMethod)} ·{" "}
+                    {tx.subject || "주체"}
                   </p>
                 </div>
-                <div className="flex items-center gap-4">
+                <div className="flex items-center gap-4 self-center">
                   <span
                     className={
                       tx.type === "expense"
@@ -311,12 +322,6 @@ export default function TransactionsPage() {
                       : ""}
                     {formatKrw(tx.amount)}
                   </span>
-                  <button
-                    className="text-xs text-[color:rgba(45,38,34,0.6)] hover:text-red-600"
-                    onClick={() => handleDelete(tx.id)}
-                  >
-                    삭제
-                  </button>
                 </div>
               </div>
             ))}

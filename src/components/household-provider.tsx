@@ -7,17 +7,20 @@ import { useAuth } from "@/components/auth-provider";
 
 type HouseholdContextValue = {
   householdId: string | null;
+  displayName: string | null;
   loading: boolean;
 };
 
 const HouseholdContext = createContext<HouseholdContextValue>({
   householdId: null,
+  displayName: null,
   loading: true,
 });
 
 export function HouseholdProvider({ children }: { children: React.ReactNode }) {
   const { user, loading: authLoading } = useAuth();
   const [householdId, setHouseholdId] = useState<string | null>(null);
+  const [displayName, setDisplayName] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -26,6 +29,7 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
     }
     if (!user) {
       setHouseholdId(null);
+      setDisplayName(null);
       setLoading(false);
       return;
     }
@@ -34,18 +38,23 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
     getDoc(userDoc(user.uid))
       .then((snapshot) => {
         if (snapshot.exists()) {
-          const data = snapshot.data() as { householdId?: string };
+          const data = snapshot.data() as {
+            householdId?: string;
+            displayName?: string | null;
+          };
           setHouseholdId(data.householdId ?? null);
+          setDisplayName(data.displayName ?? null);
         } else {
           setHouseholdId(null);
+          setDisplayName(null);
         }
       })
       .finally(() => setLoading(false));
   }, [authLoading, user]);
 
   const value = useMemo(
-    () => ({ householdId, loading: authLoading || loading }),
-    [authLoading, householdId, loading]
+    () => ({ householdId, displayName, loading: authLoading || loading }),
+    [authLoading, displayName, householdId, loading]
   );
 
   return (

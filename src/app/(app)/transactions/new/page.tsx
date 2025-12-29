@@ -1,30 +1,28 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/components/auth-provider";
 import { useHousehold } from "@/components/household-provider";
 import { useCategories } from "@/hooks/use-categories";
+import { usePaymentMethods } from "@/hooks/use-payment-methods";
+import { useSubjects } from "@/hooks/use-subjects";
 import { addTransaction } from "@/lib/transactions";
 import { toDateKey } from "@/lib/time";
 import type { TransactionType } from "@/types/ledger";
-
-const PAYMENT_METHODS = [
-  { value: "cash", label: "현금" },
-  { value: "card", label: "카드" },
-  { value: "transfer", label: "계좌이체" },
-] as const;
-
-const SUBJECTS = ["우리", "남편", "아내", "처가댁", "시댁"] as const;
 
 export default function NewTransactionPage() {
   const router = useRouter();
   const { user } = useAuth();
   const { householdId } = useHousehold();
   const { categories } = useCategories(householdId);
+  const { subjects } = useSubjects(householdId);
+  const { paymentMethods } = usePaymentMethods(householdId);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [type, setType] = useState<TransactionType>("expense");
+  const [subject, setSubject] = useState("");
+  const [paymentMethod, setPaymentMethod] = useState("");
   const today = toDateKey(new Date());
   const hasCategories = categories.length > 0;
 
@@ -34,6 +32,18 @@ export default function NewTransactionPage() {
     return leaf.length ? leaf : byType;
   }, [categories, type]);
 
+  useEffect(() => {
+    if (!subject && subjects.length > 0) {
+      setSubject(subjects[0].name);
+    }
+  }, [subjects, subject]);
+
+  useEffect(() => {
+    if (!paymentMethod && paymentMethods.length > 0) {
+      setPaymentMethod(paymentMethods[0].name);
+    }
+  }, [paymentMethods, paymentMethod]);
+
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!user || !householdId) {
@@ -42,14 +52,16 @@ export default function NewTransactionPage() {
     setLoading(true);
     setError(null);
     const formData = new FormData(event.currentTarget);
-    const type = String(formData.get("type") ?? "expense") as TransactionType;
+    const formType = String(formData.get("type") ?? "expense") as TransactionType;
     const amount = Number(formData.get("amount") ?? 0);
     const categoryId = String(formData.get("categoryId") ?? "");
-    const paymentMethod = String(formData.get("paymentMethod") ?? "cash");
-    const subject = String(formData.get("subject") ?? "");
+    const formPayment = String(formData.get("paymentMethod") ?? "");
+    const formSubject = String(formData.get("subject") ?? "");
     const date = String(formData.get("date") ?? "");
     const note = String(formData.get("note") ?? "");
-    if (!amount || !categoryId || !date || !subject) {
+    const subjectValue = formSubject || subjects[0]?.name || "우리";
+    const paymentValue = formPayment || paymentMethods[0]?.name || "카드";
+    if (!amount || !categoryId || !date) {
       setError("필수 항목을 모두 입력해주세요.");
       setLoading(false);
       return;
@@ -57,11 +69,11 @@ export default function NewTransactionPage() {
     try {
       await addTransaction({
         householdId,
-        type,
+        type: formType,
         amount,
         categoryId,
-        paymentMethod: paymentMethod as "cash" | "card" | "transfer",
-        subject: subject as "우리" | "남편" | "아내" | "처가댁" | "시댁",
+        paymentMethod: paymentValue,
+        subject: subjectValue,
         date: new Date(date),
         note: note.length ? note : undefined,
         createdBy: user.uid,
@@ -76,12 +88,6 @@ export default function NewTransactionPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div>
-        <h1 className="text-2xl font-semibold">새 내역 입력</h1>
-        <p className="text-sm text-[color:rgba(45,38,34,0.7)]">
-          수입 또는 지출을 등록하세요.
-        </p>
-      </div>
       <form
         className="rounded-3xl border border-[var(--border)] bg-white p-6"
         onSubmit={handleSubmit}
@@ -112,7 +118,7 @@ export default function NewTransactionPage() {
             </select>
           </label>
           <label className="text-sm font-medium">
-            금액 (₩)
+            금액
             <input
               type="number"
               name="amount"
@@ -125,11 +131,13 @@ export default function NewTransactionPage() {
             <select
               name="subject"
               className="mt-2 w-full rounded-xl border border-[var(--border)] bg-white px-4 py-3"
-              defaultValue={SUBJECTS[0]}
+              value={subject}
+              onChange={(event) => setSubject(event.target.value)}
+              disabled={subjects.length === 0}
             >
-              {SUBJECTS.map((name) => (
-                <option key={name} value={name}>
-                  {name}
+              {subjects.map((item) => (
+                <option key={item.id} value={item.name}>
+                  {item.name}
                 </option>
               ))}
             </select>
@@ -158,11 +166,13 @@ export default function NewTransactionPage() {
             <select
               name="paymentMethod"
               className="mt-2 w-full rounded-xl border border-[var(--border)] bg-white px-4 py-3"
-              defaultValue={PAYMENT_METHODS[0].value}
+              value={paymentMethod}
+              onChange={(event) => setPaymentMethod(event.target.value)}
+              disabled={paymentMethods.length === 0}
             >
-              {PAYMENT_METHODS.map((method) => (
-                <option key={method.value} value={method.value}>
-                  {method.label}
+              {paymentMethods.map((method) => (
+                <option key={method.id} value={method.name}>
+                  {method.name}
                 </option>
               ))}
             </select>
@@ -174,7 +184,7 @@ export default function NewTransactionPage() {
             type="text"
             name="note"
             className="mt-2 w-full rounded-xl border border-[var(--border)] bg-white px-4 py-3"
-            placeholder="선택 사항"
+            placeholder="선택 입력"
           />
         </label>
         <button

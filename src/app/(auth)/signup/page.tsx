@@ -28,11 +28,18 @@ export default function SignupPage() {
     const formData = new FormData(event.currentTarget);
     const email = String(formData.get("email") ?? "");
     const password = String(formData.get("password") ?? "");
+    const nickname = String(formData.get("nickname") ?? "");
     const householdName = String(formData.get("householdName") ?? "우리집");
+    const partnerNickname = String(formData.get("partnerNickname") ?? "");
     try {
       const credential = await signUpWithEmail(email, password);
-      const householdId = await createHousehold(householdName, credential.user.uid);
-      await createUserProfile(credential.user.uid, householdId);
+      const householdId = await createHousehold(
+        householdName,
+        credential.user.uid,
+        nickname,
+        partnerNickname
+      );
+      await createUserProfile(credential.user.uid, householdId, nickname);
       router.replace("/dashboard");
     } catch (err) {
       if (err instanceof FirebaseError) {
@@ -41,10 +48,10 @@ export default function SignupPage() {
         } else if (err.code === "auth/weak-password") {
           setError("비밀번호는 6자 이상이어야 합니다.");
         } else {
-          setError(`회원가입 실패: ${err.code}`);
+          setError(`회원가입 오류: ${err.code}`);
         }
       } else {
-        setError("회원가입에 실패했습니다. 다시 시도해주세요.");
+        setError("회원가입에 실패했습니다. 잠시 후 다시 시도해주세요.");
       }
     } finally {
       setLoading(false);
@@ -56,10 +63,28 @@ export default function SignupPage() {
       <div className="flex flex-col gap-2 text-center">
         <h1 className="text-2xl font-semibold">회원가입</h1>
         <p className="text-sm text-[color:rgba(45,38,34,0.7)]">
-          새 가계부를 만들어 시작하세요.
+          새 가계부를 만들고 시작하세요.
         </p>
       </div>
       <form className="flex flex-col gap-4" onSubmit={handleSubmit}>
+        <label className="text-sm font-medium">
+          닉네임
+          <input
+            type="text"
+            name="nickname"
+            placeholder="예) 빵디"
+            className="mt-2 w-full rounded-xl border border-[var(--border)] bg-white px-4 py-3"
+          />
+        </label>
+        <label className="text-sm font-medium">
+          상대방 닉네임
+          <input
+            type="text"
+            name="partnerNickname"
+            placeholder="예) 궁디"
+            className="mt-2 w-full rounded-xl border border-[var(--border)] bg-white px-4 py-3"
+          />
+        </label>
         <label className="text-sm font-medium">
           가계부 이름
           <input
@@ -83,7 +108,7 @@ export default function SignupPage() {
           <input
             type="password"
             name="password"
-            placeholder="••••••••"
+            placeholder="••••••"
             className="mt-2 w-full rounded-xl border border-[var(--border)] bg-white px-4 py-3"
           />
         </label>
@@ -92,7 +117,7 @@ export default function SignupPage() {
           className="rounded-xl bg-[var(--accent)] px-4 py-3 text-white disabled:opacity-70"
           disabled={loading}
         >
-          {loading ? "생성 중..." : "계정 만들기"}
+          {loading ? "가입 중..." : "계정 만들기"}
         </button>
       </form>
       {error ? (

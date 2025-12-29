@@ -23,12 +23,6 @@ export default function StatsPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div>
-        <h1 className="text-2xl font-semibold">통계</h1>
-        <p className="text-sm text-[color:rgba(45,38,34,0.7)]">
-          카테고리별 지출 흐름을 확인하세요.
-        </p>
-      </div>
       <section className="rounded-3xl border border-[var(--border)] bg-white p-6">
         {loading ? (
           <p className="text-sm text-[color:rgba(45,38,34,0.7)]">

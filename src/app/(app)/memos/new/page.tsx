@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useAuth } from "@/components/auth-provider";
 import { useHousehold } from "@/components/household-provider";
@@ -10,6 +10,7 @@ import { toMonthKey } from "@/lib/time";
 
 export default function NewMemoPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { user } = useAuth();
   const { householdId } = useHousehold();
   const [memo, setMemo] = useState("");
@@ -17,16 +18,21 @@ export default function NewMemoPage() {
   const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const monthKey = toMonthKey(new Date());
+  const isCreateMode = searchParams.get("mode") === "create";
 
   useEffect(() => {
     if (!householdId) {
+      return;
+    }
+    if (isCreateMode) {
+      setMemo("");
       return;
     }
     setLoading(true);
     getMonthlyMemo(householdId, monthKey)
       .then((text) => setMemo(text ?? ""))
       .finally(() => setLoading(false));
-  }, [householdId, monthKey]);
+  }, [householdId, isCreateMode, monthKey]);
 
   useEffect(() => {
     if (!householdId || !user) {

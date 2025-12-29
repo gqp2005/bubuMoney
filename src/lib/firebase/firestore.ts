@@ -13,6 +13,12 @@ export const invitesCol = (householdId: string) =>
 export const categoriesCol = (householdId: string) =>
   collection(db, "households", householdId, "categories");
 
+export const subjectsCol = (householdId: string) =>
+  collection(db, "households", householdId, "subjects");
+
+export const paymentMethodsCol = (householdId: string) =>
+  collection(db, "households", householdId, "paymentMethods");
+
 export const transactionsCol = (householdId: string) =>
   collection(db, "households", householdId, "transactions");
 
