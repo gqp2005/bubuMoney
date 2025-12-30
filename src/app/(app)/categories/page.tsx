@@ -38,6 +38,7 @@ export default function CategoriesPage() {
   const [editingName, setEditingName] = useState("");
   const [editingType, setEditingType] = useState<CategoryType>("expense");
   const [editingParentId, setEditingParentId] = useState<string>("none");
+  const [expandedParentId, setExpandedParentId] = useState<string | null>(null);
   const nameInputRef = useRef<HTMLInputElement | null>(null);
 
   const grouped = useMemo(() => {
@@ -78,6 +79,7 @@ export default function CategoriesPage() {
     setName("");
     setParentId("none");
     setEditingId(null);
+    setExpandedParentId(null);
   }, [activeTab]);
 
   useEffect(() => {
@@ -268,9 +270,10 @@ export default function CategoriesPage() {
         ) : isCategoryTab ? (
           <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-3">
             {parents.map((parent) => {
-              const childCount = children.filter(
+              const childItems = children.filter(
                 (child) => child.parentId === parent.id
-              ).length;
+              );
+              const isExpanded = expandedParentId === parent.id;
               return (
                 <div
                   key={parent.id}
@@ -279,9 +282,14 @@ export default function CategoriesPage() {
                       ? highlightClass
                       : "border-[var(--border)] bg-white"
                   }`}
+                  onClick={() =>
+                    setExpandedParentId((prev) =>
+                      prev === parent.id ? null : parent.id
+                    )
+                  }
                 >
                   {editingId === parent.id ? (
-                    <div className="space-y-2">
+                    <div className="space-y-2" onClick={(e) => e.stopPropagation()}>
                       <input
                         className="w-full rounded-xl border border-[var(--border)] px-3 py-2 text-sm"
                         value={editingName}
@@ -333,10 +341,13 @@ export default function CategoriesPage() {
                         <div>
                           <p className="font-medium">{parent.name}</p>
                           <p className="text-xs text-[color:rgba(45,38,34,0.7)]">
-                            소분류 {childCount}개
+                            소분류 {childItems.length}개
                           </p>
                         </div>
-                        <div className="flex items-center gap-2">
+                        <div
+                          className="flex items-center gap-2"
+                          onClick={(event) => event.stopPropagation()}
+                        >
                           <button
                             className="text-xs text-[color:rgba(45,38,34,0.6)]"
                             onClick={() =>
@@ -358,6 +369,81 @@ export default function CategoriesPage() {
                           </button>
                         </div>
                       </div>
+                      {isExpanded ? (
+                        <div className="mt-3 space-y-2 rounded-xl border border-[var(--border)] bg-white p-3">
+                          <p className="text-xs font-medium text-[color:rgba(45,38,34,0.7)]">
+                            소분류
+                          </p>
+                          {childItems.length === 0 ? (
+                            <p className="text-xs text-[color:rgba(45,38,34,0.5)]">
+                              등록된 소분류가 없습니다.
+                            </p>
+                          ) : (
+                            childItems.map((child) => (
+                              <div
+                                key={child.id}
+                                className={`flex items-center justify-between rounded-xl border px-3 py-2 text-xs ${
+                                  child.imported
+                                    ? highlightClass
+                                    : "border-[var(--border)] bg-white"
+                                }`}
+                                onClick={(event) => event.stopPropagation()}
+                              >
+                                {editingId === child.id ? (
+                                  <div className="flex w-full flex-wrap items-center gap-2">
+                                    <input
+                                      className="flex-1 rounded-lg border border-[var(--border)] px-2 py-1 text-xs"
+                                      value={editingName}
+                                      onChange={(event) =>
+                                        setEditingName(event.target.value)
+                                      }
+                                    />
+                                    <button
+                                      className="rounded-full bg-[var(--accent)] px-2 py-1 text-[10px] text-white"
+                                      onClick={handleUpdate}
+                                    >
+                                      저장
+                                    </button>
+                                    <button
+                                      className="rounded-full border border-[var(--border)] px-2 py-1 text-[10px]"
+                                      onClick={() => setEditingId(null)}
+                                    >
+                                      취소
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <>
+                                    <span className="font-medium">
+                                      {child.name}
+                                    </span>
+                                    <div className="flex items-center gap-2">
+                                      <button
+                                        className="text-[10px] text-[color:rgba(45,38,34,0.6)]"
+                                        onClick={() =>
+                                          startEdit(
+                                            child.id,
+                                            child.name,
+                                            child.type,
+                                            child.parentId
+                                          )
+                                        }
+                                      >
+                                        편집
+                                      </button>
+                                      <button
+                                        className="text-[10px] text-red-600"
+                                        onClick={() => handleDelete(child.id)}
+                                      >
+                                        삭제
+                                      </button>
+                                    </div>
+                                  </>
+                                )}
+                              </div>
+                            ))
+                          )}
+                        </div>
+                      ) : null}
                     </div>
                   )}
                 </div>
