@@ -3,8 +3,12 @@ import {
   addDoc,
   deleteDoc,
   doc,
+  getDocs,
+  query,
   serverTimestamp,
   updateDoc,
+  where,
+  writeBatch,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import { transactionsCol } from "@/lib/firebase/firestore";
@@ -62,5 +66,54 @@ export async function deleteTransaction(
 ) {
   return deleteDoc(
     doc(db, "households", householdId, "transactions", transactionId)
+  );
+}
+
+async function updateTransactionsFieldValue(
+  householdId: string,
+  field: "subject" | "paymentMethod",
+  oldValue: string,
+  newValue: string
+) {
+  if (!oldValue || oldValue === newValue) {
+    return;
+  }
+  const snapshot = await getDocs(
+    query(transactionsCol(householdId), where(field, "==", oldValue))
+  );
+  if (snapshot.empty) {
+    return;
+  }
+  const docs = snapshot.docs;
+  let index = 0;
+  while (index < docs.length) {
+    const batch = writeBatch(db);
+    const slice = docs.slice(index, index + 500);
+    slice.forEach((docSnap) => {
+      batch.update(docSnap.ref, { [field]: newValue });
+    });
+    await batch.commit();
+    index += slice.length;
+  }
+}
+
+export async function updateTransactionsSubjectName(
+  householdId: string,
+  oldName: string,
+  newName: string
+) {
+  return updateTransactionsFieldValue(householdId, "subject", oldName, newName);
+}
+
+export async function updateTransactionsPaymentMethodName(
+  householdId: string,
+  oldName: string,
+  newName: string
+) {
+  return updateTransactionsFieldValue(
+    householdId,
+    "paymentMethod",
+    oldName,
+    newName
   );
 }

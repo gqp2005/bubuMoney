@@ -14,6 +14,10 @@ import {
   updatePaymentMethod,
 } from "@/lib/payment-methods";
 import { addSubject, deleteSubject, updateSubject } from "@/lib/subjects";
+import {
+  updateTransactionsPaymentMethodName,
+  updateTransactionsSubjectName,
+} from "@/lib/transactions";
 
 type CategoryType = "income" | "expense" | "transfer";
 type TabKey = CategoryType | "subject" | "payment";
@@ -41,6 +45,7 @@ export default function CategoriesPage() {
   const [showAddForm, setShowAddForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState("");
+  const [editingOriginalName, setEditingOriginalName] = useState("");
   const [editingType, setEditingType] = useState<CategoryType>("expense");
   const [editingParentId, setEditingParentId] = useState<string>("none");
   const [editingOwner, setEditingOwner] = useState<PaymentOwner>("our");
@@ -126,6 +131,7 @@ export default function CategoriesPage() {
     setName("");
     setParentId("none");
     setEditingId(null);
+    setEditingOriginalName("");
     setEditingOwner("our");
     setExpandedParentId(null);
     setExpandedPaymentParentId(null);
@@ -212,6 +218,7 @@ export default function CategoriesPage() {
   ) {
     setEditingId(itemId);
     setEditingName(currentName);
+    setEditingOriginalName(currentName);
     if (currentType) {
       setEditingType(currentType);
     }
@@ -231,6 +238,11 @@ export default function CategoriesPage() {
         name: trimmed,
         imported: false,
       });
+      await updateTransactionsSubjectName(
+        householdId,
+        editingOriginalName,
+        trimmed
+      );
     } else if (activeTab === "payment") {
       await updatePaymentMethod(householdId, editingId, {
         name: trimmed,
@@ -238,6 +250,11 @@ export default function CategoriesPage() {
         parentId: editingParentId === "none" ? null : editingParentId,
         imported: false,
       });
+      await updateTransactionsPaymentMethodName(
+        householdId,
+        editingOriginalName,
+        trimmed
+      );
     } else {
       await updateCategory(householdId, editingId, {
         name: trimmed,
@@ -248,6 +265,7 @@ export default function CategoriesPage() {
     }
     setEditingId(null);
     setEditingName("");
+    setEditingOriginalName("");
   }
 
   const parents = isCategoryTab ? grouped[activeTab as CategoryType].parents : [];
