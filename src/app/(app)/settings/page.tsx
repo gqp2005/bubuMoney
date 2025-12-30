@@ -200,6 +200,13 @@ export default function SettingsPage() {
 
   function parseDate(raw: string) {
     const normalized = raw.trim().replace(/\./g, "-").replace(/\//g, "-");
+    const koMatch = normalized.match(
+      /^(\d{4})\s*년\s*(\d{1,2})\s*월\s*(\d{1,2})\s*일$/
+    );
+    if (koMatch) {
+      const [, yearText, monthText, dayText] = koMatch;
+      return new Date(Number(yearText), Number(monthText) - 1, Number(dayText));
+    }
     const parts = normalized.split("-");
     if (parts.length >= 3) {
       const year = Number(parts[0]);
@@ -307,16 +314,14 @@ export default function SettingsPage() {
         setImportProcessed(processed);
         continue;
       }
-      const [
-        dateRaw,
-        typeRaw,
-        nicknameRaw,
-        subjectRaw,
-        categoryRaw,
-        paymentRaw,
-        noteRaw,
-        amountRaw,
-      ] = cols;
+      const dateRaw = cols[0];
+      const typeRaw = cols[1];
+      const nicknameRaw = cols[2];
+      const subjectRaw = cols[3];
+      const categoryRaw = cols[4];
+      const paymentRaw = cols[5];
+      const amountRaw = cols[cols.length - 1];
+      const noteRaw = cols.slice(6, -1).join(",").trim();
       const categoryText = normalizeText(categoryRaw) || "기타";
       const type = mapType(typeRaw);
       let categoryId = categoryMap.get(categoryText);
