@@ -255,6 +255,26 @@ export default function SettingsPage() {
     return value.trim().replace(/\s+/g, " ");
   }
 
+  function resolveSubjectName(rawValue: string, recorderValue: string) {
+    const cleaned = normalizeText(rawValue);
+    const recorder = normalizeText(recorderValue);
+    if (!cleaned) {
+      return "우리";
+    }
+    const cleanedMy = normalizeText(nickname);
+    const cleanedPartner = normalizeText(partnerNickname);
+    if (cleanedPartner && recorder === cleanedPartner) {
+      return cleanedPartner;
+    }
+    if (spouseRole === "husband" && cleaned === "남편") {
+      return cleanedMy || "남편";
+    }
+    if (spouseRole === "wife" && cleaned === "아내") {
+      return cleanedMy || "아내";
+    }
+    return cleaned;
+  }
+
   async function handleCsvImport(file: File | null) {
     if (!file || !householdId || !user) {
       return;
@@ -313,7 +333,7 @@ export default function SettingsPage() {
         categoryAdded += 1;
       }
 
-      const subjectName = normalizeText(subjectRaw) || "우리";
+      const subjectName = resolveSubjectName(subjectRaw, nicknameRaw);
       if (!subjectMap.has(subjectName)) {
         await addSubject(householdId, {
           name: subjectName,
@@ -325,7 +345,7 @@ export default function SettingsPage() {
       }
 
       const paymentMethod = mapPayment(paymentRaw);
-      const paymentOwner = resolvePaymentOwner(nicknameRaw);
+      const paymentOwner = "our";
       const paymentKey = `${paymentOwner}:${paymentMethod}`;
       if (!paymentMap.has(paymentKey)) {
         await addPaymentMethod(householdId, {
