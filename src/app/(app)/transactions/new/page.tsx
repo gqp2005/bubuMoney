@@ -391,7 +391,7 @@ export default function NewTransactionPage() {
                       ? "border-b-2 border-[var(--accent)] text-[var(--accent)]"
                       : "text-[color:rgba(45,38,34,0.5)]"
                   }`}
-                  onClick={() => setPaymentOwner(tab.key)}
+                  onClick={() => setPaymentOwner(tab.key as PaymentOwner)}
                 >
                   {tab.label}
                 </button>
