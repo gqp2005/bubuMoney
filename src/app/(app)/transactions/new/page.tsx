@@ -2,19 +2,23 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
+import { getDoc } from "firebase/firestore";
 import { useAuth } from "@/components/auth-provider";
 import { useHousehold } from "@/components/household-provider";
 import { useCategories } from "@/hooks/use-categories";
 import { usePaymentMethods } from "@/hooks/use-payment-methods";
 import { useSubjects } from "@/hooks/use-subjects";
+import { householdDoc } from "@/lib/firebase/firestore";
 import { addTransaction } from "@/lib/transactions";
 import { toDateKey } from "@/lib/time";
 import type { TransactionType } from "@/types/ledger";
 
+type PaymentOwner = "husband" | "wife" | "our";
+
 export default function NewTransactionPage() {
   const router = useRouter();
   const { user } = useAuth();
-  const { householdId } = useHousehold();
+  const { householdId, displayName, spouseRole } = useHousehold();
   const { categories } = useCategories(householdId);
   const { subjects } = useSubjects(householdId);
   const { paymentMethods } = usePaymentMethods(householdId);
@@ -23,14 +27,81 @@ export default function NewTransactionPage() {
   const [type, setType] = useState<TransactionType>("expense");
   const [subject, setSubject] = useState("");
   const [paymentMethod, setPaymentMethod] = useState("");
+  const [paymentOwner, setPaymentOwner] = useState<PaymentOwner>("our");
+  const [partnerName, setPartnerName] = useState("");
+  const [categoryId, setCategoryId] = useState("");
+  const [isTypeSheetOpen, setIsTypeSheetOpen] = useState(false);
+  const [isSubjectSheetOpen, setIsSubjectSheetOpen] = useState(false);
+  const [isCategorySheetOpen, setIsCategorySheetOpen] = useState(false);
+  const [isPaymentSheetOpen, setIsPaymentSheetOpen] = useState(false);
+  const [expandedPaymentParentId, setExpandedPaymentParentId] = useState<
+    string | null
+  >(null);
   const today = toDateKey(new Date());
   const hasCategories = categories.length > 0;
+  const typeLabelMap: Record<TransactionType, string> = {
+    expense: "지출",
+    income: "수입",
+    transfer: "이체",
+  };
+  const typeOptions: { value: TransactionType; label: string }[] = [
+    { value: "expense", label: "지출" },
+    { value: "income", label: "수입" },
+    { value: "transfer", label: "이체" },
+  ];
+
+  const selectedCategoryName = useMemo(() => {
+    return categories.find((category) => category.id === categoryId)?.name ?? "";
+  }, [categories, categoryId]);
+
+  const spouseName = displayName?.trim() || "";
+  const partnerTrimmed = partnerName.trim();
+  const husbandLabel =
+    spouseRole === "wife"
+      ? partnerTrimmed || "남편"
+      : spouseName || "남편";
+  const wifeLabel =
+    spouseRole === "wife" ? spouseName || "아내" : partnerTrimmed || "아내";
 
   const filteredCategories = useMemo(() => {
     const byType = categories.filter((cat) => cat.type === type);
     const leaf = byType.filter((cat) => cat.parentId);
     return leaf.length ? leaf : byType;
   }, [categories, type]);
+
+  const paymentGrouped = useMemo(() => {
+    const byOwner: Record<
+      PaymentOwner,
+      { parents: typeof paymentMethods; children: typeof paymentMethods }
+    > = {
+      husband: { parents: [], children: [] },
+      wife: { parents: [], children: [] },
+      our: { parents: [], children: [] },
+    };
+    paymentMethods.forEach((method) => {
+      const owner = method.owner ?? "our";
+      if (method.parentId) {
+        byOwner[owner].children.push(method);
+      } else {
+        byOwner[owner].parents.push(method);
+      }
+    });
+    return byOwner;
+  }, [paymentMethods]);
+
+  useEffect(() => {
+    if (!householdId) {
+      setPartnerName("");
+      return;
+    }
+    getDoc(householdDoc(householdId)).then((snapshot) => {
+      if (!snapshot.exists()) {
+        return;
+      }
+      const data = snapshot.data() as { partnerDisplayName?: string | null };
+      setPartnerName(data.partnerDisplayName ?? "");
+    });
+  }, [householdId]);
 
   useEffect(() => {
     if (!subject && subjects.length > 0) {
@@ -39,10 +110,37 @@ export default function NewTransactionPage() {
   }, [subjects, subject]);
 
   useEffect(() => {
-    if (!paymentMethod && paymentMethods.length > 0) {
-      setPaymentMethod(paymentMethods[0].name);
+    const ownerParents = paymentGrouped[paymentOwner]?.parents ?? [];
+    if (!paymentMethod && ownerParents.length > 0) {
+      setPaymentMethod(ownerParents[0].name);
     }
-  }, [paymentMethods, paymentMethod]);
+  }, [paymentGrouped, paymentMethod, paymentOwner]);
+
+  useEffect(() => {
+    const ownerMethods = [
+      ...paymentGrouped[paymentOwner].parents,
+      ...paymentGrouped[paymentOwner].children,
+    ];
+    if (!paymentMethod) {
+      return;
+    }
+    if (ownerMethods.length > 0 && !ownerMethods.some((m) => m.name === paymentMethod)) {
+      setPaymentMethod(ownerMethods[0].name);
+    }
+  }, [paymentGrouped, paymentMethod, paymentOwner]);
+
+  useEffect(() => {
+    if (filteredCategories.length === 0) {
+      return;
+    }
+    if (!categoryId) {
+      setCategoryId(filteredCategories[0].id);
+      return;
+    }
+    if (!filteredCategories.some((cat) => cat.id === categoryId)) {
+      setCategoryId(filteredCategories[0].id);
+    }
+  }, [categoryId, filteredCategories]);
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -52,15 +150,11 @@ export default function NewTransactionPage() {
     setLoading(true);
     setError(null);
     const formData = new FormData(event.currentTarget);
-    const formType = String(formData.get("type") ?? "expense") as TransactionType;
     const amount = Number(formData.get("amount") ?? 0);
-    const categoryId = String(formData.get("categoryId") ?? "");
-    const formPayment = String(formData.get("paymentMethod") ?? "");
-    const formSubject = String(formData.get("subject") ?? "");
     const date = String(formData.get("date") ?? "");
     const note = String(formData.get("note") ?? "");
-    const subjectValue = formSubject || subjects[0]?.name || "우리";
-    const paymentValue = formPayment || paymentMethods[0]?.name || "카드";
+    const subjectValue = subject || subjects[0]?.name || "우리";
+    const paymentValue = paymentMethod || "현금";
     if (!amount || !categoryId || !date) {
       setError("필수 항목을 모두 입력해주세요.");
       setLoading(false);
@@ -69,7 +163,7 @@ export default function NewTransactionPage() {
     try {
       await addTransaction({
         householdId,
-        type: formType,
+        type,
         amount,
         categoryId,
         paymentMethod: paymentValue,
@@ -104,18 +198,13 @@ export default function NewTransactionPage() {
           </label>
           <label className="text-sm font-medium">
             유형
-            <select
-              name="type"
-              className="mt-2 w-full rounded-xl border border-[var(--border)] bg-white px-4 py-3"
-              value={type}
-              onChange={(event) =>
-                setType(event.target.value as TransactionType)
-              }
+            <button
+              type="button"
+              className="mt-2 w-full rounded-xl border border-[var(--border)] bg-white px-4 py-3 text-left"
+              onClick={() => setIsTypeSheetOpen(true)}
             >
-              <option value="expense">지출</option>
-              <option value="income">수입</option>
-              <option value="transfer">이체</option>
-            </select>
+              {typeLabelMap[type]}
+            </button>
           </label>
           <label className="text-sm font-medium">
             금액
@@ -128,33 +217,25 @@ export default function NewTransactionPage() {
           </label>
           <label className="text-sm font-medium">
             주체
-            <select
-              name="subject"
-              className="mt-2 w-full rounded-xl border border-[var(--border)] bg-white px-4 py-3"
-              value={subject}
-              onChange={(event) => setSubject(event.target.value)}
+            <button
+              type="button"
+              className="mt-2 w-full rounded-xl border border-[var(--border)] bg-white px-4 py-3 text-left disabled:opacity-60"
+              onClick={() => setIsSubjectSheetOpen(true)}
               disabled={subjects.length === 0}
             >
-              {subjects.map((item) => (
-                <option key={item.id} value={item.name}>
-                  {item.name}
-                </option>
-              ))}
-            </select>
+              {subject || "선택"}
+            </button>
           </label>
           <label className="text-sm font-medium">
             카테고리
-            <select
-              name="categoryId"
-              className="mt-2 w-full rounded-xl border border-[var(--border)] bg-white px-4 py-3"
+            <button
+              type="button"
+              className="mt-2 w-full rounded-xl border border-[var(--border)] bg-white px-4 py-3 text-left disabled:opacity-60"
+              onClick={() => setIsCategorySheetOpen(true)}
               disabled={!hasCategories}
             >
-              {filteredCategories.map((category) => (
-                <option key={category.id} value={category.id}>
-                  {category.name}
-                </option>
-              ))}
-            </select>
+              {selectedCategoryName || "선택"}
+            </button>
             {!hasCategories ? (
               <span className="mt-2 block text-xs text-[color:rgba(45,38,34,0.6)]">
                 카테고리를 먼저 추가해주세요.
@@ -163,19 +244,14 @@ export default function NewTransactionPage() {
           </label>
           <label className="text-sm font-medium">
             결제수단
-            <select
-              name="paymentMethod"
-              className="mt-2 w-full rounded-xl border border-[var(--border)] bg-white px-4 py-3"
-              value={paymentMethod}
-              onChange={(event) => setPaymentMethod(event.target.value)}
+            <button
+              type="button"
+              className="mt-2 w-full rounded-xl border border-[var(--border)] bg-white px-4 py-3 text-left disabled:opacity-60"
+              onClick={() => setIsPaymentSheetOpen(true)}
               disabled={paymentMethods.length === 0}
             >
-              {paymentMethods.map((method) => (
-                <option key={method.id} value={method.name}>
-                  {method.name}
-                </option>
-              ))}
-            </select>
+              {paymentMethod || "선택"}
+            </button>
           </label>
         </div>
         <label className="mt-4 block text-sm font-medium">
@@ -192,9 +268,204 @@ export default function NewTransactionPage() {
           className="mt-6 rounded-xl bg-[var(--accent)] px-4 py-3 text-white disabled:opacity-70"
           disabled={loading}
         >
-          {loading ? "저장 중..." : "저장"}
+          {loading ? "저장 중.." : "저장"}
         </button>
       </form>
+      {isTypeSheetOpen ? (
+        <div className="fixed inset-0 z-50">
+          <button
+            type="button"
+            className="absolute inset-0 bg-black/40"
+            onClick={() => setIsTypeSheetOpen(false)}
+            aria-label="닫기"
+          />
+          <div className="absolute bottom-0 left-0 right-0 max-h-[70vh] rounded-t-3xl bg-white p-6">
+            <h2 className="text-sm font-semibold">유형 선택</h2>
+            <div className="mt-4 grid gap-2">
+              {typeOptions.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  className={`rounded-xl border px-4 py-3 text-left text-sm ${
+                    type === option.value
+                      ? "border-[var(--accent)] bg-[color:rgba(145,102,82,0.12)]"
+                      : "border-[var(--border)] bg-white"
+                  }`}
+                  onClick={() => {
+                    setType(option.value);
+                    setIsTypeSheetOpen(false);
+                  }}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      ) : null}
+      {isSubjectSheetOpen ? (
+        <div className="fixed inset-0 z-50">
+          <button
+            type="button"
+            className="absolute inset-0 bg-black/40"
+            onClick={() => setIsSubjectSheetOpen(false)}
+            aria-label="닫기"
+          />
+          <div className="absolute bottom-0 left-0 right-0 max-h-[70vh] rounded-t-3xl bg-white p-6">
+            <h2 className="text-sm font-semibold">주체 선택</h2>
+            <div className="mt-4 grid gap-2">
+              {subjects.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  className={`rounded-xl border px-4 py-3 text-left text-sm ${
+                    subject === item.name
+                      ? "border-[var(--accent)] bg-[color:rgba(145,102,82,0.12)]"
+                      : "border-[var(--border)] bg-white"
+                  }`}
+                  onClick={() => {
+                    setSubject(item.name);
+                    setIsSubjectSheetOpen(false);
+                  }}
+                >
+                  {item.name}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      ) : null}
+      {isCategorySheetOpen ? (
+        <div className="fixed inset-0 z-50">
+          <button
+            type="button"
+            className="absolute inset-0 bg-black/40"
+            onClick={() => setIsCategorySheetOpen(false)}
+            aria-label="닫기"
+          />
+          <div className="absolute bottom-0 left-0 right-0 max-h-[70vh] rounded-t-3xl bg-white p-6">
+            <h2 className="text-sm font-semibold">카테고리 선택</h2>
+            <div className="mt-4 grid gap-2">
+              {filteredCategories.map((category) => (
+                <button
+                  key={category.id}
+                  type="button"
+                  className={`rounded-xl border px-4 py-3 text-left text-sm ${
+                    categoryId === category.id
+                      ? "border-[var(--accent)] bg-[color:rgba(145,102,82,0.12)]"
+                      : "border-[var(--border)] bg-white"
+                  }`}
+                  onClick={() => {
+                    setCategoryId(category.id);
+                    setIsCategorySheetOpen(false);
+                  }}
+                >
+                  {category.name}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      ) : null}
+      {isPaymentSheetOpen ? (
+        <div className="fixed inset-0 z-50">
+          <button
+            type="button"
+            className="absolute inset-0 bg-black/40"
+            onClick={() => setIsPaymentSheetOpen(false)}
+            aria-label="닫기"
+          />
+          <div className="absolute bottom-0 left-0 right-0 max-h-[70vh] rounded-t-3xl bg-white p-6">
+            <h2 className="text-sm font-semibold">결제수단 선택</h2>
+            <div className="mt-4 flex items-center justify-center gap-6 border-b border-[var(--border)] text-sm">
+              {[
+                { key: "husband", label: husbandLabel },
+                { key: "wife", label: wifeLabel },
+                { key: "our", label: "우리" },
+              ].map((tab) => (
+                <button
+                  key={tab.key}
+                  type="button"
+                  className={`pb-3 ${
+                    paymentOwner === tab.key
+                      ? "border-b-2 border-[var(--accent)] text-[var(--accent)]"
+                      : "text-[color:rgba(45,38,34,0.5)]"
+                  }`}
+                  onClick={() => setPaymentOwner(tab.key)}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+            <div className="mt-4 space-y-3">
+              {paymentGrouped[paymentOwner].parents.map((parent) => {
+                const childItems = paymentGrouped[paymentOwner].children.filter(
+                  (child) => child.parentId === parent.id
+                );
+                const isExpanded = expandedPaymentParentId === parent.id;
+                return (
+                  <div
+                    key={parent.id}
+                    className="rounded-2xl border border-[var(--border)] px-4 py-3 text-sm"
+                  >
+                    <button
+                      type="button"
+                      className="flex w-full items-center justify-between"
+                      onClick={() =>
+                        setExpandedPaymentParentId((prev) =>
+                          prev === parent.id ? null : parent.id
+                        )
+                      }
+                    >
+                      <span className="font-medium">{parent.name}</span>
+                      <span className="text-xs text-[color:rgba(45,38,34,0.6)]">
+                        소분류 {childItems.length}개
+                      </span>
+                    </button>
+                    {childItems.length === 0 ? (
+                      <button
+                        type="button"
+                        className={`mt-2 w-full rounded-xl border px-3 py-2 text-left text-xs ${
+                          paymentMethod === parent.name
+                            ? "border-[var(--accent)] bg-[color:rgba(145,102,82,0.12)]"
+                            : "border-[var(--border)] bg-white"
+                        }`}
+                        onClick={() => {
+                          setPaymentMethod(parent.name);
+                          setIsPaymentSheetOpen(false);
+                        }}
+                      >
+                        {parent.name} 선택
+                      </button>
+                    ) : null}
+                    {isExpanded ? (
+                      <div className="mt-3 space-y-2">
+                        {childItems.map((child) => (
+                          <button
+                            key={child.id}
+                            type="button"
+                            className={`w-full rounded-xl border px-3 py-2 text-left text-xs ${
+                              paymentMethod === child.name
+                                ? "border-[var(--accent)] bg-[color:rgba(145,102,82,0.12)]"
+                                : "border-[var(--border)] bg-white"
+                            }`}
+                            onClick={() => {
+                              setPaymentMethod(child.name);
+                              setIsPaymentSheetOpen(false);
+                            }}
+                          >
+                            {child.name}
+                          </button>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      ) : null}
       {error ? (
         <p className="text-center text-sm text-red-600">{error}</p>
       ) : null}
