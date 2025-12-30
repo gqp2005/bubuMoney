@@ -112,9 +112,16 @@ export async function createHousehold(
     { name: "대출", order: 5 },
     { name: "기타", order: 6 },
   ];
+  const owners: SpouseRole[] = ["husband", "wife"];
+  owners.forEach((owner) => {
+    defaultPaymentMethods.forEach((method) => {
+      const methodRef = doc(paymentMethodsCol(householdRef.id));
+      batch.set(methodRef, { ...method, owner, parentId: null });
+    });
+  });
   defaultPaymentMethods.forEach((method) => {
     const methodRef = doc(paymentMethodsCol(householdRef.id));
-    batch.set(methodRef, method);
+    batch.set(methodRef, { ...method, owner: "our", parentId: null });
   });
 
   await batch.commit();

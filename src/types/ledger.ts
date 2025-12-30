@@ -53,6 +53,8 @@ export interface Subject {
 export interface PaymentMethod {
   name: string;
   order: number;
+  owner?: "husband" | "wife" | "our";
+  parentId?: string | null;
   imported?: boolean;
 }
 

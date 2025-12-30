@@ -55,13 +55,18 @@ export default function SettingsPage() {
 
   const paymentMap = useMemo(() => {
     return new Map(
-      paymentMethods.map((method) => [method.name.trim(), method.id])
+      paymentMethods.map((method) => [
+        `${method.owner ?? "our"}:${method.name.trim()}`,
+        method.id,
+      ])
     );
   }, [paymentMethods]);
-  const nextPaymentOrder = useMemo(
-    () => paymentMethods.length + 1,
-    [paymentMethods.length]
-  );
+  const nextPaymentOrder = useMemo(() => {
+    const ours = paymentMethods.filter(
+      (method) => (method.owner ?? "our") === "our" && !method.parentId
+    );
+    return ours.length + 1;
+  }, [paymentMethods]);
 
   useEffect(() => {
     if (!householdId) {
@@ -152,6 +157,24 @@ export default function SettingsPage() {
     ];
   }
 
+  function resolvePaymentOwner(recorderName: string) {
+    const cleaned = normalizeText(recorderName);
+    const cleanedMy = normalizeText(nickname);
+    const cleanedPartner = normalizeText(partnerNickname);
+    const isWife = spouseRole === "wife";
+    const husbandName = isWife
+      ? cleanedPartner || "남편"
+      : cleanedMy || "남편";
+    const wifeName = isWife ? cleanedMy || "아내" : cleanedPartner || "아내";
+    if (cleaned && cleaned === husbandName) {
+      return "husband" as const;
+    }
+    if (cleaned && cleaned === wifeName) {
+      return "wife" as const;
+    }
+    return "our" as const;
+  }
+
   async function syncSubjectDefaults(myName: string, partnerName: string) {
     if (!householdId) {
       return;
@@ -202,30 +225,30 @@ export default function SettingsPage() {
   }
 
   function mapPayment(value: string) {
-    const normalized = value.trim();
-    if (normalized.includes("현금")) {
+    const normalized = normalizeText(value);
+    if (!normalized) {
+      return "기타";
+    }
+    if (normalized === "현금") {
       return "현금";
     }
-    if (normalized.includes("체크")) {
+    if (normalized === "체크" || normalized === "체크카드") {
       return "체크카드";
     }
-    if (normalized.includes("신용")) {
+    if (normalized === "신용" || normalized === "신용카드") {
       return "신용카드";
     }
-    if (normalized.includes("대출")) {
+    if (normalized === "대출") {
       return "대출";
     }
     if (
-      normalized.includes("은행") ||
-      normalized.includes("계좌이체") ||
-      normalized.includes("이체")
+      normalized === "은행" ||
+      normalized === "계좌이체" ||
+      normalized === "이체"
     ) {
       return "은행";
     }
-    if (normalized.includes("카드")) {
-      return "신용카드";
-    }
-    return normalized || "기타";
+    return normalized;
   }
 
   function normalizeText(value: string) {
@@ -302,24 +325,23 @@ export default function SettingsPage() {
       }
 
       const paymentMethod = mapPayment(paymentRaw);
-      if (!paymentMap.has(paymentMethod)) {
+      const paymentOwner = resolvePaymentOwner(nicknameRaw);
+      const paymentKey = `${paymentOwner}:${paymentMethod}`;
+      if (!paymentMap.has(paymentKey)) {
         await addPaymentMethod(householdId, {
           name: paymentMethod,
           order: nextPaymentOrder + paymentAdded,
+          owner: paymentOwner,
+          parentId: null,
           imported: true,
         });
-        paymentMap.set(paymentMethod, paymentMethod);
+        paymentMap.set(paymentKey, paymentMethod);
         paymentAdded += 1;
       }
 
       const amount = Number(amountRaw.replace(/,/g, ""));
       const date = parseDate(dateRaw);
-      const memoParts = [normalizeText(noteRaw)];
-      const nicknameText = normalizeText(nicknameRaw);
-      if (nicknameText) {
-        memoParts.unshift(`입력자:${nicknameText}`);
-      }
-      const memo = memoParts.filter(Boolean).join(" ");
+      const memo = normalizeText(noteRaw);
       try {
         await addTransaction({
           householdId,
