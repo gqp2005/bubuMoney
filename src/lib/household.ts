@@ -24,6 +24,8 @@ import {
   subjectsCol,
 } from "@/lib/firebase/firestore";
 
+type SpouseRole = "husband" | "wife";
+
 export function generateInviteCode(length = 6) {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
   let code = "";
@@ -37,7 +39,8 @@ export async function createHousehold(
   name: string,
   uid: string,
   creatorDisplayName?: string,
-  partnerDisplayName?: string
+  partnerDisplayName?: string,
+  creatorRole: SpouseRole = "husband"
 ) {
   const householdRef = await addDoc(collection(db, "households"), {
     name,
@@ -80,12 +83,17 @@ export async function createHousehold(
     batch.set(categoryRef, category);
   });
 
-  const cleanedName = creatorDisplayName?.trim();
+  const cleanedCreator = creatorDisplayName?.trim();
   const cleanedPartner = partnerDisplayName?.trim();
-  const partnerFallback = cleanedName === "아내" ? "남편" : "아내";
+  const husbandName =
+    creatorRole === "wife"
+      ? cleanedPartner || "남편"
+      : cleanedCreator || "남편";
+  const wifeName =
+    creatorRole === "wife" ? cleanedCreator || "아내" : cleanedPartner || "아내";
   const subjectDefaults = [
-    { name: cleanedName || "남편", order: 1 },
-    { name: cleanedPartner || (cleanedName ? partnerFallback : "아내"), order: 2 },
+    { name: husbandName, order: 1 },
+    { name: wifeName, order: 2 },
     { name: "우리", order: 3 },
     { name: "시댁", order: 4 },
     { name: "처가댁", order: 5 },

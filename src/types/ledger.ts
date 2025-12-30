@@ -67,4 +67,5 @@ export interface UserProfile {
   householdId: string;
   createdAt: Timestamp;
   displayName?: string;
+  spouseRole?: "husband" | "wife" | null;
 }

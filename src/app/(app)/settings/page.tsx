@@ -18,7 +18,7 @@ import { addSubject, updateSubject } from "@/lib/subjects";
 
 export default function SettingsPage() {
   const { user } = useAuth();
-  const { householdId, displayName } = useHousehold();
+  const { householdId, displayName, spouseRole } = useHousehold();
   const { categories } = useCategories(householdId);
   const { subjects } = useSubjects(householdId);
   const { paymentMethods } = usePaymentMethods(householdId);
@@ -137,10 +137,14 @@ export default function SettingsPage() {
   function buildSubjectDefaults(myName: string, partnerName: string) {
     const cleanedMy = myName.trim();
     const cleanedPartner = partnerName.trim();
-    const partnerFallback = cleanedMy === "남편" ? "아내" : "남편";
+    const isWife = spouseRole === "wife";
+    const husbandName = isWife
+      ? cleanedPartner || "남편"
+      : cleanedMy || "남편";
+    const wifeName = isWife ? cleanedMy || "아내" : cleanedPartner || "아내";
     return [
-      cleanedMy || "남편",
-      cleanedPartner || (cleanedMy ? partnerFallback : "아내"),
+      husbandName,
+      wifeName,
       "우리",
       "시댁",
       "처가댁",

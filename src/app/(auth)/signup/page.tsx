@@ -29,22 +29,31 @@ export default function SignupPage() {
     const email = String(formData.get("email") ?? "");
     const password = String(formData.get("password") ?? "");
     const nickname = String(formData.get("nickname") ?? "");
+    const rawRole = String(formData.get("spouseRole") ?? "husband");
+    const spouseRole = rawRole === "wife" ? "wife" : "husband";
     const householdName = "우리집";
     try {
       const credential = await signUpWithEmail(email, password);
       const householdId = await createHousehold(
         householdName,
         credential.user.uid,
-        nickname
+        nickname,
+        undefined,
+        spouseRole
       );
-      await createUserProfile(credential.user.uid, householdId, nickname);
+      await createUserProfile(
+        credential.user.uid,
+        householdId,
+        nickname,
+        spouseRole
+      );
       router.replace("/dashboard");
     } catch (err) {
       if (err instanceof FirebaseError) {
         if (err.code === "auth/email-already-in-use") {
           setError("이미 사용 중인 이메일입니다.");
         } else if (err.code === "auth/weak-password") {
-          setError("비밀번호는 6자 이상이어야 합니다.");
+          setError("비밀번호는 6자리 이상이어야 합니다.");
         } else {
           setError(`회원가입 오류: ${err.code}`);
         }
@@ -61,16 +70,34 @@ export default function SignupPage() {
       <div className="flex flex-col gap-2 text-center">
         <h1 className="text-2xl font-semibold">회원가입</h1>
         <p className="text-sm text-[color:rgba(45,38,34,0.7)]">
-          새 가계부를 만들고 시작하세요.
+          새 계정을 만들고 가계부를 시작하세요.
         </p>
       </div>
       <form className="flex flex-col gap-4" onSubmit={handleSubmit}>
+        <label className="text-sm font-medium">
+          내 역할
+          <div className="mt-2 flex items-center gap-4 text-sm">
+            <label className="flex items-center gap-2">
+              <input
+                type="radio"
+                name="spouseRole"
+                value="husband"
+                defaultChecked
+              />
+              남편
+            </label>
+            <label className="flex items-center gap-2">
+              <input type="radio" name="spouseRole" value="wife" />
+              아내
+            </label>
+          </div>
+        </label>
         <label className="text-sm font-medium">
           닉네임
           <input
             type="text"
             name="nickname"
-            placeholder="예) 빵디"
+            placeholder="예) 민수"
             className="mt-2 w-full rounded-xl border border-[var(--border)] bg-white px-4 py-3"
           />
         </label>
@@ -88,7 +115,7 @@ export default function SignupPage() {
           <input
             type="password"
             name="password"
-            placeholder="••••••"
+            placeholder="●●●●●●"
             className="mt-2 w-full rounded-xl border border-[var(--border)] bg-white px-4 py-3"
           />
         </label>
@@ -97,7 +124,7 @@ export default function SignupPage() {
           className="rounded-xl bg-[var(--accent)] px-4 py-3 text-white disabled:opacity-70"
           disabled={loading}
         >
-          {loading ? "가입 중..." : "계정 만들기"}
+          {loading ? "가입 중.." : "계정 만들기"}
         </button>
       </form>
       {error ? (

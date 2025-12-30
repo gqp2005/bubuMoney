@@ -6,11 +6,13 @@ export const userDoc = (uid: string) => doc(db, "users", uid);
 export async function createUserProfile(
   uid: string,
   householdId: string,
-  displayName?: string
+  displayName?: string,
+  spouseRole?: "husband" | "wife"
 ) {
   await setDoc(userDoc(uid), {
     householdId,
     displayName: displayName ?? null,
+    spouseRole: spouseRole ?? null,
     createdAt: serverTimestamp(),
   });
 }
