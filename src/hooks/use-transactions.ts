@@ -1,6 +1,12 @@
 "use client";
 
-import { onSnapshot, orderBy, query, where } from "firebase/firestore";
+import {
+  Timestamp,
+  onSnapshot,
+  orderBy,
+  query,
+  where,
+} from "firebase/firestore";
 import { useEffect, useMemo, useState } from "react";
 import { transactionsCol } from "@/lib/firebase/firestore";
 import { toMonthKey } from "@/lib/time";
@@ -57,4 +63,46 @@ export function useMonthlyTransactions(
   }, [transactions]);
 
   return { transactions, summary, loading, monthKey };
+}
+
+export function useTransactionsRange(
+  householdId: string | null,
+  startDate: Date | null,
+  endDate: Date | null
+) {
+  const [transactions, setTransactions] = useState<
+    (Transaction & { id: string })[]
+  >([]);
+  const [loading, setLoading] = useState(true);
+
+  const startTime = startDate ? startDate.getTime() : null;
+  const endTime = endDate ? endDate.getTime() : null;
+
+  useEffect(() => {
+    if (!householdId || !startDate || !endDate) {
+      setTransactions([]);
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
+    const q = query(
+      transactionsCol(householdId),
+      where("date", ">=", Timestamp.fromDate(startDate)),
+      where("date", "<=", Timestamp.fromDate(endDate)),
+      orderBy("date", "desc")
+    );
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const items = snapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...(doc.data() as Transaction),
+      }));
+      setTransactions(items);
+      setLoading(false);
+    });
+
+    return () => unsubscribe();
+  }, [householdId, startTime, endTime]);
+
+  return { transactions, loading };
 }

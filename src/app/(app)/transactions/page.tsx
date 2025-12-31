@@ -137,12 +137,22 @@ export default function TransactionsPage() {
         <div>
           <h1 className="text-2xl font-semibold">내역</h1>
         </div>
-        <Link
-          className="rounded-full bg-[var(--accent)] px-5 py-2 text-white"
-          href="/transactions/new"
-        >
-          새 내역
-        </Link>
+        <div className="flex items-center gap-2">
+          <Link
+            className="flex h-10 w-10 items-center justify-center rounded-full border border-[var(--border)] bg-white text-sm"
+            href="/stats"
+            aria-label="통계"
+            title="통계"
+          >
+            📊
+          </Link>
+          <Link
+            className="rounded-full bg-[var(--accent)] px-5 py-2 text-white"
+            href="/transactions/new"
+          >
+            새 내역
+          </Link>
+        </div>
       </div>
       <section
         className="rounded-3xl border border-[var(--border)] bg-white px-0 py-6"
