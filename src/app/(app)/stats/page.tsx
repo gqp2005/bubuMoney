@@ -1229,7 +1229,7 @@ export default function StatsPage() {
                 </button>
                 <button
                   type="button"
-                  className="flex-[2] rounded-2xl bg-[var(--text)] px-4 py-3 text-sm text-[var(--background)]"
+                  className="flex-[2] rounded-2xl bg-[var(--accent)] px-4 py-3 text-sm text-white"
                   onClick={applyFilters}
                 >
                   필터 적용 완료

@@ -2,14 +2,17 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import {
   addDays,
+  addMonths,
+  endOfDay,
   endOfMonth,
   endOfWeek,
   format,
   isSameDay,
   isSameMonth,
+  startOfDay,
   startOfMonth,
   startOfWeek,
 } from "date-fns";
@@ -18,7 +21,7 @@ import { formatKrw } from "@/lib/format";
 import { toMonthKey } from "@/lib/time";
 import { toDateKey } from "@/lib/time";
 import { useCategories } from "@/hooks/use-categories";
-import { useMonthlyTransactions } from "@/hooks/use-transactions";
+import { useMonthlyTransactions, useTransactionsRange } from "@/hooks/use-transactions";
 
 const DAY_LABELS = ["일", "월", "화", "수", "목", "금", "토"];
 
@@ -49,16 +52,32 @@ export default function TransactionsPage() {
   const monthKey = useMemo(() => toMonthKey(selectedDate), [selectedDate]);
   const { transactions, loading } = useMonthlyTransactions(householdId, monthKey);
   const [showPicker, setShowPicker] = useState(false);
+  const [showSearch, setShowSearch] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchType, setSearchType] = useState<
+    "all" | "income" | "expense" | "transfer"
+  >("all");
+  const [searchStart, setSearchStart] = useState<Date | null>(() =>
+    startOfDay(startOfMonth(new Date()))
+  );
+  const [searchEnd, setSearchEnd] = useState<Date | null>(() =>
+    endOfDay(endOfMonth(new Date()))
+  );
   const [yearValue, setYearValue] = useState(() => new Date().getFullYear());
   const [monthValue, setMonthValue] = useState(() => new Date().getMonth());
   const [touchStartX, setTouchStartX] = useState<number | null>(null);
   const [touchEndX, setTouchEndX] = useState<number | null>(null);
+  const searchStartRef = useRef<HTMLInputElement | null>(null);
+  const searchEndRef = useRef<HTMLInputElement | null>(null);
   const router = useRouter();
 
   const categoryMap = useMemo(
     () => new Map(categories.map((category) => [category.id, category.name])),
     [categories]
   );
+
+  const { transactions: searchTransactions, loading: searchLoading } =
+    useTransactionsRange(householdId, searchStart, searchEnd);
 
   const { days, dailyMap } = useMemo(() => {
     const monthStart = startOfMonth(selectedDate);
@@ -133,13 +152,109 @@ export default function TransactionsPage() {
     setShowPicker(false);
   }
 
+  function openSearchSheet() {
+    setSearchStart(startOfDay(startOfMonth(selectedDate)));
+    setSearchEnd(endOfDay(endOfMonth(selectedDate)));
+    setShowSearch(true);
+  }
+
+  function toInputDate(value: Date | null) {
+    return value ? format(value, "yyyy-MM-dd") : "";
+  }
+
+  function handleSearchStart(value: string) {
+    if (!value) {
+      setSearchStart(null);
+      return;
+    }
+    const nextStart = startOfDay(new Date(value));
+    setSearchStart(nextStart);
+    if (!searchEnd) {
+      setSearchEnd(endOfDay(new Date(value)));
+    }
+    setTimeout(() => {
+      searchEndRef.current?.focus();
+    }, 0);
+  }
+
+  function handleSearchEnd(value: string) {
+    if (!value) {
+      setSearchEnd(null);
+      return;
+    }
+    setSearchEnd(endOfDay(new Date(value)));
+  }
+
+  function applySearchRange(months: number) {
+    const endDate = endOfDay(new Date());
+    const startDate = startOfDay(addMonths(endDate, -months));
+    setSearchStart(startDate);
+    setSearchEnd(endDate);
+  }
+
+  function applySearchPreset(preset: "week" | "month" | "custom") {
+    const today = new Date();
+    if (preset === "week") {
+      setSearchStart(startOfDay(startOfWeek(today, { weekStartsOn: 0 })));
+      setSearchEnd(endOfDay(today));
+      return;
+    }
+    if (preset === "month") {
+      setSearchStart(startOfDay(startOfMonth(today)));
+      setSearchEnd(endOfDay(today));
+      return;
+    }
+    setSearchStart(startOfDay(today));
+    setSearchEnd(endOfDay(today));
+    setTimeout(() => {
+      searchStartRef.current?.focus();
+    }, 0);
+  }
+
+  const filteredSearchItems = useMemo(() => {
+    const normalizedQuery = searchQuery.trim();
+    return searchTransactions.filter((tx) => {
+      if (searchType !== "all" && tx.type !== searchType) {
+        return false;
+      }
+      if (!normalizedQuery) {
+        return true;
+      }
+      const categoryName = categoryMap.get(tx.categoryId) ?? "";
+      const noteText = stripRecorderPrefix(tx.note);
+      const haystack = [
+        noteText,
+        categoryName,
+        tx.subject ?? "",
+        formatPaymentMethod(tx.paymentMethod),
+      ]
+        .join(" ")
+        .toLowerCase();
+      return haystack.includes(normalizedQuery.toLowerCase());
+    });
+  }, [searchTransactions, searchType, searchQuery, categoryMap]);
+
+  const searchTotal = useMemo(
+    () => filteredSearchItems.reduce((sum, tx) => sum + tx.amount, 0),
+    [filteredSearchItems]
+  );
+
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-1">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold">내역</h1>
         </div>
         <div className="flex items-center gap-2">
+          <button
+            type="button"
+            className="flex h-10 w-10 items-center justify-center rounded-full border border-[var(--border)] bg-white text-sm"
+            onClick={openSearchSheet}
+            aria-label="검색"
+            title="검색"
+          >
+            🔍
+          </button>
           <Link
             className="flex h-10 w-10 items-center justify-center rounded-full border border-[var(--border)] bg-white text-sm"
             href="/stats"
@@ -149,15 +264,17 @@ export default function TransactionsPage() {
             📊
           </Link>
           <Link
-            className="rounded-full bg-[var(--accent)] px-5 py-2 text-white"
+            className="flex h-10 w-10 items-center justify-center rounded-full bg-[var(--accent)] text-white"
             href="/transactions/new"
+            aria-label="새 내역"
+            title="새 내역"
           >
-            새 내역
+            ➕
           </Link>
         </div>
       </div>
       <section
-        className="rounded-3xl border border-[var(--border)] bg-white px-0 py-6"
+        className="rounded-3xl border border-[var(--border)] bg-white px-0 py-3"
         onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
@@ -191,12 +308,12 @@ export default function TransactionsPage() {
             오늘
           </button>
         </div>
-        <div className="mt-4 grid grid-cols-7 gap-2 text-center text-xs text-[color:rgba(45,38,34,0.6)]">
+        <div className="mt-2 grid grid-cols-7 gap-2 text-center text-xs text-[color:rgba(45,38,34,0.6)]">
           {DAY_LABELS.map((day) => (
             <div key={day}>{day}</div>
           ))}
         </div>
-        <div className="mt-2 grid grid-cols-7 gap-0 px-0">
+        <div className="mt-0.5 grid grid-cols-7 gap-0 px-0">
           {days.map((day) => {
             const key = toDateKey(day);
             const data = dailyMap.get(key);
@@ -280,25 +397,179 @@ export default function TransactionsPage() {
           </div>
         </div>
       ) : null}
-      <section className="rounded-3xl border border-[var(--border)] bg-white p-6">
-        <div className="flex items-center justify-end gap-3 text-sm">
-          <span className="text-blue-600">
-            {formatKrw(selectedDaily?.income ?? 0)}
-          </span>
-          <span className="text-red-600">
-            {formatKrw(selectedDaily?.expense ?? 0)}
-          </span>
+      {showSearch ? (
+        <div className="fixed inset-0 z-50 flex items-end bg-black/40">
+          <div className="w-full rounded-t-3xl border border-[var(--border)] bg-white p-5">
+            <div className="flex items-center justify-between">
+              <button
+                type="button"
+                className="rounded-full border border-[var(--border)] px-4 py-2 text-sm"
+                onClick={() => setShowSearch(false)}
+              >
+                닫기
+              </button>
+              <h2 className="text-base font-semibold">검색</h2>
+              <div className="w-14" />
+            </div>
+            <div className="mt-4 space-y-4">
+              <label className="block text-sm text-[color:rgba(45,38,34,0.6)]">
+                검색어
+                <input
+                  className="mt-2 w-full rounded-2xl border border-[var(--border)] px-4 py-3 text-sm"
+                  placeholder="메모, 카테고리, 주체"
+                  value={searchQuery}
+                  onChange={(event) => setSearchQuery(event.target.value)}
+                />
+              </label>
+              <div>
+                <p className="text-xs text-[color:rgba(45,38,34,0.6)]">유형</p>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {[
+                    { key: "all", label: "전체" },
+                    { key: "income", label: "입금" },
+                    { key: "expense", label: "지출" },
+                    { key: "transfer", label: "이체" },
+                  ].map((option) => (
+                    <button
+                      key={option.key}
+                      type="button"
+                      className={`rounded-full border px-4 py-2 text-sm ${
+                        searchType === option.key
+                          ? "border-[var(--accent)] bg-[var(--accent)] text-white"
+                          : "border-[var(--border)] text-[color:rgba(45,38,34,0.7)]"
+                      }`}
+                      onClick={() =>
+                        setSearchType(
+                          option.key as "all" | "income" | "expense" | "transfer"
+                        )
+                      }
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <p className="text-xs text-[color:rgba(45,38,34,0.6)]">
+                  조회 기간
+                </p>
+                <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                  <input
+                    type="date"
+                    className="w-full rounded-2xl border border-[var(--border)] px-3 py-2 text-sm"
+                    value={toInputDate(searchStart)}
+                    onChange={(event) => handleSearchStart(event.target.value)}
+                    ref={searchStartRef}
+                  />
+                  <input
+                    type="date"
+                    className="w-full rounded-2xl border border-[var(--border)] px-3 py-2 text-sm"
+                    value={toInputDate(searchEnd)}
+                    onChange={(event) => handleSearchEnd(event.target.value)}
+                    ref={searchEndRef}
+                  />
+                </div>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {[
+                    { months: 1, label: "1개월" },
+                    { months: 3, label: "3개월" },
+                    { months: 6, label: "6개월" },
+                  ].map((option) => (
+                    <button
+                      key={option.months}
+                      type="button"
+                      className="rounded-full border border-[var(--border)] px-4 py-2 text-sm text-[color:rgba(45,38,34,0.7)]"
+                      onClick={() => applySearchRange(option.months)}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                  {[
+                    { key: "week", label: "이번주" },
+                    { key: "month", label: "이번달" },
+                    { key: "custom", label: "사용자 지정" },
+                  ].map((option) => (
+                    <button
+                      key={option.key}
+                      type="button"
+                      className="rounded-full border border-[var(--border)] px-4 py-2 text-sm text-[color:rgba(45,38,34,0.7)]"
+                      onClick={() =>
+                        applySearchPreset(
+                          option.key as "week" | "month" | "custom"
+                        )
+                      }
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="flex items-center justify-between text-sm text-[color:rgba(45,38,34,0.6)]">
+                <span>합계</span>
+                <span className="text-[color:rgba(45,38,34,0.9)]">
+                  {formatKrw(searchTotal)}
+                </span>
+              </div>
+              <div className="max-h-[45vh] space-y-2 overflow-y-auto pb-2">
+                {searchLoading ? (
+                  <p className="text-sm text-[color:rgba(45,38,34,0.6)]">
+                    검색 중...
+                  </p>
+                ) : filteredSearchItems.length === 0 ? (
+                  <p className="text-sm text-[color:rgba(45,38,34,0.6)]">
+                    검색 결과가 없습니다.
+                  </p>
+                ) : (
+                  filteredSearchItems.map((tx) => (
+                    <button
+                      key={tx.id}
+                      type="button"
+                      className="flex w-full items-center justify-between gap-4 rounded-2xl border border-[var(--border)] px-4 py-3 text-left text-sm"
+                      onClick={() => router.push(`/transactions/${tx.id}`)}
+                    >
+                      <div className="min-w-0">
+                        <p className="truncate font-medium">
+                          {stripRecorderPrefix(tx.note)}
+                        </p>
+                        <p className="mt-1 text-xs text-[color:rgba(45,38,34,0.6)]">
+                          {format(tx.date.toDate(), "yyyy.MM.dd")} ·{" "}
+                          {categoryMap.get(tx.categoryId) ?? "미분류"} ·{" "}
+                          {tx.subject || "주체"}
+                        </p>
+                      </div>
+                      <span
+                        className={
+                          tx.type === "expense"
+                            ? "text-red-600"
+                            : tx.type === "income"
+                            ? "text-emerald-600"
+                            : "text-[color:rgba(45,38,34,0.7)]"
+                        }
+                      >
+                        {tx.type === "expense"
+                          ? "-"
+                          : tx.type === "income"
+                          ? "+"
+                          : ""}
+                        {formatKrw(tx.amount)}
+                      </span>
+                    </button>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
         </div>
+      ) : null}
+      <section className="rounded-3xl border border-[var(--border)] bg-white p-3">
         {loading ? (
-          <div className="mt-4 text-sm text-[color:rgba(45,38,34,0.7)]">
+          <div className="mt-2 text-sm text-[color:rgba(45,38,34,0.7)]">
             불러오는 중...
           </div>
         ) : selectedItems.length === 0 ? (
-          <div className="mt-4 text-sm text-[color:rgba(45,38,34,0.7)]">
-            선택한 날짜의 기록이 없습니다.
-          </div>
+          <div className="mt-2" />
         ) : (
-          <div className="mt-4 space-y-3">
+          <div className="mt-2 space-y-1">
             {selectedItems.map((tx) => (
               <div
                 key={tx.id}
@@ -344,6 +615,14 @@ export default function TransactionsPage() {
             ))}
           </div>
         )}
+        <div className="mt-4 flex justify-center">
+          <Link
+            className="rounded-full bg-[var(--accent)] px-8 py-3 text-sm text-white"
+            href="/transactions/new"
+          >
+            새 내역 등록
+          </Link>
+        </div>
       </section>
     </div>
   );
