@@ -1,6 +1,7 @@
 "use client";
 
 import { format } from "date-fns";
+import { useEffect } from "react";
 import { useAuth } from "@/components/auth-provider";
 import { useHousehold } from "@/components/household-provider";
 import {
@@ -26,25 +27,17 @@ export default function NotificationsPage() {
   const { notifications, loading } = useNotifications(householdId, uid);
   const hasUnread =
     uid && notifications.some((item) => !item.readBy?.[uid]);
+
+  useEffect(() => {
+    if (!householdId || !uid || !hasUnread) {
+      return;
+    }
+    markAllNotificationsRead(householdId, uid);
+  }, [hasUnread, householdId, uid]);
   return (
     <div className="flex flex-col gap-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold">알림</h1>
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            className="rounded-full border border-[var(--border)] px-3 py-1 text-xs"
-            onClick={() => {
-              if (!householdId || !uid) {
-                return;
-              }
-              markAllNotificationsRead(householdId, uid);
-            }}
-            disabled={!hasUnread}
-          >
-            모두 읽음
-          </button>
-        </div>
       </div>
       <section className="rounded-3xl border border-[var(--border)] bg-white p-4">
         {loading ? (
