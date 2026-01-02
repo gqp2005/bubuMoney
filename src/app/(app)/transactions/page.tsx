@@ -15,6 +15,7 @@ import {
 } from "date-fns";
 import { useHousehold } from "@/components/household-provider";
 import { formatKrw } from "@/lib/format";
+import { toMonthKey } from "@/lib/time";
 import { toDateKey } from "@/lib/time";
 import { useCategories } from "@/hooks/use-categories";
 import { useMonthlyTransactions } from "@/hooks/use-transactions";
@@ -44,8 +45,9 @@ function stripRecorderPrefix(note?: string) {
 export default function TransactionsPage() {
   const { householdId } = useHousehold();
   const { categories } = useCategories(householdId);
-  const { transactions, loading } = useMonthlyTransactions(householdId);
   const [selectedDate, setSelectedDate] = useState(() => new Date());
+  const monthKey = useMemo(() => toMonthKey(selectedDate), [selectedDate]);
+  const { transactions, loading } = useMonthlyTransactions(householdId, monthKey);
   const [showPicker, setShowPicker] = useState(false);
   const [yearValue, setYearValue] = useState(() => new Date().getFullYear());
   const [monthValue, setMonthValue] = useState(() => new Date().getMonth());

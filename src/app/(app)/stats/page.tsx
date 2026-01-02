@@ -411,6 +411,17 @@ export default function StatsPage() {
     setIsFilterSheetOpen(false);
   }
 
+  function resetAppliedFilters() {
+    setAppliedCategoryIds(new Set());
+    setAppliedSubjects(new Set());
+    setAppliedPayments(new Set());
+    setDraftCategoryIds(new Set());
+    setDraftSubjects(new Set());
+    setDraftPayments(new Set());
+    setExpandedCategoryParents(new Set());
+    setExpandedPaymentParents(new Set());
+  }
+
   function applyFilters() {
     setAppliedCategoryIds(new Set(draftCategoryIds));
     setAppliedSubjects(new Set(draftSubjects));
@@ -587,6 +598,7 @@ export default function StatsPage() {
                 type="button"
                 className="flex h-10 w-10 items-center justify-center rounded-full border border-[var(--border)] text-sm"
                 aria-label="새로고침"
+                onClick={resetAppliedFilters}
               >
                 ↻
               </button>
@@ -1217,7 +1229,7 @@ export default function StatsPage() {
                 </button>
                 <button
                   type="button"
-                  className="flex-[2] rounded-2xl bg-[var(--text)] px-4 py-3 text-sm text-white"
+                  className="flex-[2] rounded-2xl bg-[var(--text)] px-4 py-3 text-sm text-[var(--background)]"
                   onClick={applyFilters}
                 >
                   필터 적용 완료

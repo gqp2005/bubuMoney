@@ -34,6 +34,7 @@ export default function SettingsPage() {
   const [importStatus, setImportStatus] = useState<string | null>(null);
   const [importTotal, setImportTotal] = useState(0);
   const [importProcessed, setImportProcessed] = useState(0);
+  const [importLogs, setImportLogs] = useState<string[]>([]);
 
   const categoryMap = useMemo(() => {
     return new Map(
@@ -289,6 +290,7 @@ export default function SettingsPage() {
     setImportStatus(null);
     setImportTotal(0);
     setImportProcessed(0);
+    setImportLogs([]);
     const text = await file.text();
     const rows = text
       .split(/\r?\n/)
@@ -306,10 +308,12 @@ export default function SettingsPage() {
     let categoryAdded = 0;
     let subjectAdded = 0;
     let paymentAdded = 0;
+    const logs: string[] = [];
     for (const row of dataRows) {
       const cols = row.split(",").map((col) => col.trim());
       if (cols.length < 8) {
         failed += 1;
+        logs.push(`행 ${processed + 1}: 컬럼 수 부족 (${cols.length})`);
         processed += 1;
         setImportProcessed(processed);
         continue;
@@ -366,6 +370,20 @@ export default function SettingsPage() {
 
       const amount = Number(amountRaw.replace(/,/g, ""));
       const date = parseDate(dateRaw);
+      if (Number.isNaN(amount)) {
+        failed += 1;
+        logs.push(`행 ${processed + 1}: 금액 파싱 실패 (${amountRaw})`);
+        processed += 1;
+        setImportProcessed(processed);
+        continue;
+      }
+      if (Number.isNaN(date.getTime())) {
+        failed += 1;
+        logs.push(`행 ${processed + 1}: 날짜 파싱 실패 (${dateRaw})`);
+        processed += 1;
+        setImportProcessed(processed);
+        continue;
+      }
       const memo = normalizeText(noteRaw);
       try {
         await addTransaction({
@@ -382,10 +400,16 @@ export default function SettingsPage() {
         success += 1;
       } catch (err) {
         failed += 1;
+        const message =
+          err instanceof Error ? err.message : "알 수 없는 오류";
+        logs.push(`행 ${processed + 1}: 저장 실패 (${message})`);
       } finally {
         processed += 1;
         setImportProcessed(processed);
       }
+    }
+    if (logs.length > 0) {
+      setImportLogs(logs.slice(0, 20));
     }
     setImportStatus(`가져오기 완료: 성공 ${success}, 실패 ${failed}`);
   }
@@ -504,6 +528,16 @@ export default function SettingsPage() {
           <p className="mt-2 text-xs text-[color:rgba(45,38,34,0.7)]">
             {importStatus}
           </p>
+        ) : null}
+        {importLogs.length > 0 ? (
+          <div className="mt-2 rounded-xl border border-[var(--border)] bg-white p-3 text-xs text-[color:rgba(45,38,34,0.7)]">
+            <p className="font-medium">가져오기 로그</p>
+            <ul className="mt-2 space-y-1">
+              {importLogs.map((log, index) => (
+                <li key={`${log}-${index}`}>{log}</li>
+              ))}
+            </ul>
+          </div>
         ) : null}
       </section>
     </div>
