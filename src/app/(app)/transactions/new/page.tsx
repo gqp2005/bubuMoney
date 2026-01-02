@@ -1,6 +1,6 @@
 "use client";
 
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { getDoc } from "firebase/firestore";
 import { useAuth } from "@/components/auth-provider";
@@ -8,7 +8,9 @@ import { useHousehold } from "@/components/household-provider";
 import { useCategories } from "@/hooks/use-categories";
 import { usePaymentMethods } from "@/hooks/use-payment-methods";
 import { useSubjects } from "@/hooks/use-subjects";
+import { formatKrw } from "@/lib/format";
 import { householdDoc } from "@/lib/firebase/firestore";
+import { addNotification } from "@/lib/notifications";
 import { addTransaction } from "@/lib/transactions";
 import { toDateKey } from "@/lib/time";
 import type { TransactionType } from "@/types/ledger";
@@ -17,6 +19,7 @@ type PaymentOwner = "husband" | "wife" | "our";
 
 export default function NewTransactionPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { user } = useAuth();
   const { householdId, displayName, spouseRole } = useHousehold();
   const { categories } = useCategories(householdId);
@@ -38,6 +41,7 @@ export default function NewTransactionPage() {
     string | null
   >(null);
   const today = toDateKey(new Date());
+  const defaultDate = searchParams.get("date") ?? today;
   const hasCategories = categories.length > 0;
   const typeLabelMap: Record<TransactionType, string> = {
     expense: "지출",
@@ -172,7 +176,13 @@ export default function NewTransactionPage() {
         note: note.length ? note : undefined,
         createdBy: user.uid,
       });
-      router.replace("/transactions");
+      await addNotification(householdId, {
+        title: "내역 추가",
+        message: `${typeLabelMap[type]} ${formatKrw(amount)} · ${date}`,
+        level: "success",
+        type: "transaction.create",
+      });
+      router.replace(`/transactions?date=${date}`);
     } catch (err) {
       setError("저장에 실패했습니다. 입력값을 확인해주세요.");
     } finally {
@@ -193,7 +203,7 @@ export default function NewTransactionPage() {
               type="date"
               name="date"
               className="mt-2 w-full rounded-xl border border-[var(--border)] bg-white px-4 py-3"
-              defaultValue={today}
+              defaultValue={defaultDate}
             />
           </label>
           <label className="text-sm font-medium">

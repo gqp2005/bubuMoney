@@ -57,6 +57,11 @@ service cloud.firestore {
         allow create, update, delete: if isMember(householdId);
       }
 
+      match /notifications/{notificationId} {
+        allow read: if isMember(householdId);
+        allow create, update, delete: if isMember(householdId);
+      }
+
       match /invites/{inviteId} {
         allow read: if isMember(householdId)
           || (isSignedIn()

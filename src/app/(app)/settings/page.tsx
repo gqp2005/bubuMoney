@@ -11,9 +11,10 @@ import { addCategory } from "@/lib/categories";
 import { signOutUser } from "@/lib/firebase/auth";
 import { householdDoc } from "@/lib/firebase/firestore";
 import { updateUserDisplayName } from "@/lib/firebase/user";
-import { createInvite } from "@/lib/household";
+import { createInvite, resetHouseholdData } from "@/lib/household";
+import { addNotification } from "@/lib/notifications";
 import { addPaymentMethod } from "@/lib/payment-methods";
-import { addTransaction } from "@/lib/transactions";
+import { addTransaction, updateTransactionsSubjectName } from "@/lib/transactions";
 import { addSubject, updateSubject } from "@/lib/subjects";
 
 export default function SettingsPage() {
@@ -35,6 +36,20 @@ export default function SettingsPage() {
   const [importTotal, setImportTotal] = useState(0);
   const [importProcessed, setImportProcessed] = useState(0);
   const [importLogs, setImportLogs] = useState<string[]>([]);
+  const [resetOpen, setResetOpen] = useState(false);
+  const [resetLoading, setResetLoading] = useState(false);
+  const [resetStatus, setResetStatus] = useState<string | null>(null);
+  const [resetOptions, setResetOptions] = useState({
+    transactions: false,
+    memos: false,
+    categories: false,
+    subjects: false,
+    paymentMethods: false,
+    budgets: false,
+    invites: false,
+    members: false,
+    household: false,
+  });
 
   const categoryMap = useMemo(() => {
     return new Map(
@@ -113,6 +128,14 @@ export default function SettingsPage() {
       const trimmed = nickname.trim();
       await updateUserDisplayName(user.uid, trimmed);
       await syncSubjectDefaults(trimmed, partnerNickname.trim());
+      if (householdId) {
+        await addNotification(householdId, {
+          title: "닉네임 변경",
+          message: `내 닉네임을 ${trimmed}로 변경했습니다.`,
+          level: "info",
+          type: "profile.nickname",
+        });
+      }
       setNameStatus("저장 완료");
     } catch (err) {
       setNameStatus("저장 실패");
@@ -132,6 +155,12 @@ export default function SettingsPage() {
         partnerDisplayName: partnerNickname.trim(),
       });
       await syncSubjectDefaults(nickname.trim(), partnerNickname.trim());
+      await addNotification(householdId, {
+        title: "닉네임 변경",
+        message: `상대방 닉네임을 ${partnerNickname.trim()}로 변경했습니다.`,
+        level: "info",
+        type: "profile.partner",
+      });
       setPartnerStatus("저장 완료");
     } catch (err) {
       setPartnerStatus("저장 실패");
@@ -192,6 +221,13 @@ export default function SettingsPage() {
             name: targetName,
             order,
           });
+          if (existing.name !== targetName) {
+            await updateTransactionsSubjectName(
+              householdId,
+              existing.name,
+              targetName
+            );
+          }
         }
       } else {
         await addSubject(householdId, { name: targetName, order });
@@ -262,6 +298,77 @@ export default function SettingsPage() {
   function normalizeText(value: string) {
     return value.trim().replace(/\s+/g, " ");
   }
+
+  function toggleResetOption(key: keyof typeof resetOptions) {
+    setResetOptions((prev) => {
+      if (key === "household") {
+        if (prev.household) {
+          return { ...prev, household: false };
+        }
+        return {
+          transactions: true,
+          memos: true,
+          categories: true,
+          subjects: true,
+          paymentMethods: true,
+          budgets: true,
+          invites: true,
+          members: true,
+          household: true,
+        };
+      }
+      if (prev.household) {
+        return prev;
+      }
+      return { ...prev, [key]: !prev[key] };
+    });
+  }
+
+  function selectAllResetOptions() {
+    setResetOptions({
+      transactions: true,
+      memos: true,
+      categories: true,
+      subjects: true,
+      paymentMethods: true,
+      budgets: true,
+      invites: true,
+      members: true,
+      household: false,
+    });
+  }
+
+  async function handleResetConfirm() {
+    if (!householdId) {
+      return;
+    }
+    setResetLoading(true);
+    setResetStatus(null);
+    try {
+      await resetHouseholdData(householdId, resetOptions);
+      setResetStatus("데이터 초기화 완료");
+      await addNotification(householdId, {
+        title: "데이터 초기화",
+        message: resetOptions.household
+          ? "전체 가계부 데이터를 삭제했습니다."
+          : "선택한 항목을 초기화했습니다.",
+        level: "success",
+        type: "data.reset",
+      });
+      setResetOpen(false);
+    } catch (err) {
+      setResetStatus("데이터 초기화 실패");
+      await addNotification(householdId, {
+        title: "데이터 초기화 실패",
+        message: "데이터 초기화 중 오류가 발생했습니다.",
+        level: "error",
+        type: "data.reset",
+      });
+    } finally {
+      setResetLoading(false);
+    }
+  }
+
 
   function resolveSubjectName(rawValue: string, recorderValue: string) {
     const cleaned = normalizeText(rawValue);
@@ -412,6 +519,12 @@ export default function SettingsPage() {
       setImportLogs(logs.slice(0, 20));
     }
     setImportStatus(`가져오기 완료: 성공 ${success}, 실패 ${failed}`);
+    await addNotification(householdId, {
+      title: "CSV 가져오기",
+      message: `가져오기 완료 (성공 ${success}, 실패 ${failed})`,
+      level: failed > 0 ? "error" : "success",
+      type: "csv.import",
+    });
   }
 
   const importPercent =
@@ -540,6 +653,119 @@ export default function SettingsPage() {
           </div>
         ) : null}
       </section>
+      <section className="rounded-3xl border border-[var(--border)] bg-white p-6">
+        <h2 className="text-sm font-semibold">카테고리 편집</h2>
+        <p className="mt-2 text-xs text-[color:rgba(45,38,34,0.7)]">
+          수입/지출/이체/주체/결제수단을 편집합니다.
+        </p>
+        <a
+          className="mt-4 inline-flex items-center rounded-full border border-[var(--border)] px-4 py-2 text-sm"
+          href="/categories"
+        >
+          카테고리 편집 열기
+        </a>
+      </section>
+      <section className="rounded-3xl border border-[var(--border)] bg-white p-6">
+        <h2 className="text-sm font-semibold">결제수단 편집</h2>
+        <p className="mt-2 text-xs text-[color:rgba(45,38,34,0.7)]">
+          결제수단을 분류별로 편집합니다.
+        </p>
+        <a
+          className="mt-4 inline-flex items-center rounded-full border border-[var(--border)] px-4 py-2 text-sm"
+          href="/settings/payment-methods"
+        >
+          결제수단 편집 열기
+        </a>
+        {paymentMethods.length === 0 ? (
+          <p className="mt-3 text-xs text-[color:rgba(45,38,34,0.6)]">
+            등록된 결제수단이 없습니다.
+          </p>
+        ) : null}
+      </section>
+      <section className="rounded-3xl border border-[var(--border)] bg-white p-6">
+        <h2 className="text-sm font-semibold">데이터 초기화</h2>
+        <p className="mt-2 text-xs text-[color:rgba(45,38,34,0.7)]">
+          선택한 항목만 초기화하거나 전체 가계부 삭제를 진행할 수 있습니다.
+        </p>
+        <button
+          className="mt-4 rounded-full border border-[var(--border)] px-4 py-2 text-sm"
+          onClick={() => setResetOpen(true)}
+        >
+          초기화 옵션 선택
+        </button>
+        {resetStatus ? (
+          <p className="mt-2 text-xs text-[color:rgba(45,38,34,0.7)]">
+            {resetStatus}
+          </p>
+        ) : null}
+      </section>
+      {resetOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="w-full max-w-md rounded-2xl border border-[var(--border)] bg-white p-6">
+            <h2 className="text-base font-semibold">초기화 옵션</h2>
+            <p className="mt-2 text-xs text-[color:rgba(45,38,34,0.6)]">
+              전체 가계부 삭제를 선택하면 모든 데이터가 삭제됩니다.
+            </p>
+            <div className="mt-4 space-y-2 text-sm">
+              {[
+                { key: "transactions", label: "거래 내역" },
+                { key: "memos", label: "메모" },
+                { key: "categories", label: "카테고리" },
+                { key: "subjects", label: "주체" },
+                { key: "paymentMethods", label: "결제수단" },
+                { key: "budgets", label: "예산" },
+                { key: "invites", label: "초대 코드" },
+                { key: "members", label: "구성원" },
+              ].map((item) => (
+                <label key={item.key} className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={resetOptions[item.key as keyof typeof resetOptions]}
+                    onChange={() =>
+                      toggleResetOption(item.key as keyof typeof resetOptions)
+                    }
+                    disabled={resetOptions.household}
+                  />
+                  <span>{item.label}</span>
+                </label>
+              ))}
+              <label className="mt-2 flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={resetOptions.household}
+                  onChange={() => toggleResetOption("household")}
+                />
+                <span className="text-red-600">전체 가계부 삭제</span>
+              </label>
+            </div>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <button
+                className="rounded-full border border-[var(--border)] px-4 py-2 text-sm"
+                onClick={selectAllResetOptions}
+                disabled={resetOptions.household}
+              >
+                모두 선택
+              </button>
+              <button
+                className="rounded-full border border-[var(--border)] px-4 py-2 text-sm"
+                onClick={() => setResetOpen(false)}
+              >
+                취소
+              </button>
+              <button
+                className="rounded-full bg-red-600 px-4 py-2 text-sm text-white disabled:opacity-70"
+                onClick={handleResetConfirm}
+                disabled={
+                  resetLoading ||
+                  Object.values(resetOptions).every((value) => !value)
+                }
+              >
+                {resetLoading ? "처리 중..." : "삭제 실행"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

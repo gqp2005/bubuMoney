@@ -2,48 +2,49 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { format } from "date-fns";
 import { useHousehold } from "@/components/household-provider";
 import { formatKrw } from "@/lib/format";
 import { formatDate, toMonthKey } from "@/lib/time";
 import { useMonthlyTransactions } from "@/hooks/use-transactions";
-import { deleteMonthlyMemo, getMonthlyMemo } from "@/lib/memos";
+import { getMonthlyMemoEntries } from "@/lib/memos";
 
 export default function DashboardPage() {
   const { householdId } = useHousehold();
   const { transactions, summary, loading } = useMonthlyTransactions(householdId);
-  const [memo, setMemo] = useState("");
+  const [memoEntries, setMemoEntries] = useState<
+    { id: string; text: string; createdAt?: Date | null }[]
+  >([]);
   const [memoLoading, setMemoLoading] = useState(false);
   const [memoError, setMemoError] = useState<string | null>(null);
   const monthKey = toMonthKey(new Date());
 
   useEffect(() => {
     if (!householdId) {
-      setMemo("");
+      setMemoEntries([]);
       return;
     }
     setMemoLoading(true);
     setMemoError(null);
-    getMonthlyMemo(householdId, monthKey)
-      .then((text) => setMemo(text ?? ""))
+    getMonthlyMemoEntries(householdId, monthKey)
+      .then((entries) =>
+        setMemoEntries(
+          entries
+            .map((entry) => ({
+              id: entry.id,
+              text: entry.text,
+              createdAt: entry.createdAt ? entry.createdAt.toDate() : null,
+            }))
+            .sort((a, b) => {
+              const aTime = a.createdAt?.getTime() ?? 0;
+              const bTime = b.createdAt?.getTime() ?? 0;
+              return bTime - aTime;
+            })
+        )
+      )
       .catch(() => setMemoError("메모를 불러오지 못했습니다."))
       .finally(() => setMemoLoading(false));
   }, [householdId, monthKey]);
-
-  async function handleDeleteMemo() {
-    if (!householdId) {
-      return;
-    }
-    setMemoLoading(true);
-    setMemoError(null);
-    try {
-      await deleteMonthlyMemo(householdId, monthKey);
-      setMemo("");
-    } catch (err) {
-      setMemoError("메모 삭제에 실패했습니다.");
-    } finally {
-      setMemoLoading(false);
-    }
-  }
 
   return (
     <div className="flex flex-col gap-6">
@@ -61,17 +62,26 @@ export default function DashboardPage() {
           <p className="mt-4 text-sm text-[color:rgba(45,38,34,0.7)]">
             불러오는 중...
           </p>
-        ) : memo ? (
-          <div className="mt-4 flex items-center justify-between gap-3 rounded-2xl border border-[var(--border)] px-4 py-3 text-sm">
-            <Link className="flex-1 whitespace-pre-line" href="/memos/new">
-              {memo}
-            </Link>
-            <button
-              className="text-xs text-red-600"
-              onClick={handleDeleteMemo}
-            >
-              삭제
-            </button>
+        ) : memoEntries.length > 0 ? (
+          <div className="mt-4 space-y-2 text-sm">
+            {memoEntries.map((entry) => (
+              <div
+                key={entry.id}
+                className="flex items-start justify-between gap-3 rounded-2xl border border-[var(--border)] px-4 py-3"
+              >
+                <Link
+                  className="flex-1 whitespace-pre-line"
+                  href={`/memos/new?entryId=${entry.id}`}
+                >
+                  <span className="block text-xs text-[color:rgba(45,38,34,0.6)]">
+                    {entry.createdAt
+                      ? format(entry.createdAt, "yyyy.MM.dd HH:mm")
+                      : "날짜 없음"}
+                  </span>
+                  <span>{entry.text}</span>
+                </Link>
+              </div>
+            ))}
           </div>
         ) : (
           <p className="mt-4 text-sm text-[color:rgba(45,38,34,0.7)]">

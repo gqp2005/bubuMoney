@@ -22,5 +22,8 @@ export const paymentMethodsCol = (householdId: string) =>
 export const transactionsCol = (householdId: string) =>
   collection(db, "households", householdId, "transactions");
 
+export const notificationsCol = (householdId: string) =>
+  collection(db, "households", householdId, "notifications");
+
 export const budgetsCol = (householdId: string) =>
   collection(db, "households", householdId, "budgets");

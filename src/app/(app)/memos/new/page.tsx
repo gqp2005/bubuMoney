@@ -5,7 +5,12 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useAuth } from "@/components/auth-provider";
 import { useHousehold } from "@/components/household-provider";
-import { getMonthlyMemo, setMonthlyMemo } from "@/lib/memos";
+import {
+  addMonthlyMemoEntry,
+  deleteMonthlyMemoEntry,
+  getMonthlyMemoEntries,
+  updateMonthlyMemoEntry,
+} from "@/lib/memos";
 import { toMonthKey } from "@/lib/time";
 
 export default function NewMemoPage() {
@@ -17,31 +22,39 @@ export default function NewMemoPage() {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const monthKey = toMonthKey(new Date());
   const isCreateMode = searchParams.get("mode") === "create";
+  const entryId = searchParams.get("entryId");
 
   useEffect(() => {
     if (!householdId) {
       return;
     }
-    if (isCreateMode) {
-      setMemo("");
-      return;
-    }
     setLoading(true);
-    getMonthlyMemo(householdId, monthKey)
-      .then((text) => setMemo(text ?? ""))
+    getMonthlyMemoEntries(householdId, monthKey)
+      .then((entries) => {
+        if (isCreateMode) {
+          setMemo("");
+          return;
+        }
+        const target =
+          entryId && entries.length > 0
+            ? entries.find((entry) => entry.id === entryId)
+            : entries[0];
+        setMemo(target?.text ?? "");
+      })
       .finally(() => setLoading(false));
-  }, [householdId, isCreateMode, monthKey]);
+  }, [householdId, isCreateMode, monthKey, entryId]);
 
   useEffect(() => {
-    if (!householdId || !user) {
+    if (!householdId || !user || isCreateMode || !entryId) {
       return;
     }
     const timeout = setTimeout(async () => {
       setStatus("자동 저장 중...");
       try {
-        await setMonthlyMemo(householdId, monthKey, memo, user.uid);
+        await updateMonthlyMemoEntry(householdId, monthKey, entryId, memo, user.uid);
         setStatus("자동 저장됨");
       } catch (err) {
         setStatus("자동 저장 실패");
@@ -56,7 +69,36 @@ export default function NewMemoPage() {
     }
     setSaving(true);
     try {
-      await setMonthlyMemo(householdId, monthKey, memo, user.uid);
+      const trimmed = memo.trim();
+      if (!trimmed) {
+        setSaving(false);
+        return;
+      }
+      if (isCreateMode) {
+        await addMonthlyMemoEntry(
+          householdId,
+          monthKey,
+          trimmed,
+          user.uid
+        );
+      } else if (entryId) {
+        await updateMonthlyMemoEntry(householdId, monthKey, entryId, trimmed, user.uid);
+      } else {
+        await addMonthlyMemoEntry(householdId, monthKey, trimmed, user.uid);
+      }
+      router.replace("/dashboard");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleDelete() {
+    if (!householdId || !user || !entryId) {
+      return;
+    }
+    setSaving(true);
+    try {
+      await deleteMonthlyMemoEntry(householdId, monthKey, entryId, user.uid);
       router.replace("/dashboard");
     } finally {
       setSaving(false);
@@ -89,15 +131,48 @@ export default function NewMemoPage() {
         />
         <div className="mt-4 flex items-center justify-between text-sm text-[color:rgba(45,38,34,0.7)]">
           <span>{status ?? ""}</span>
-          <button
-            className="rounded-full bg-[var(--accent)] px-5 py-2 text-sm text-white disabled:opacity-70"
-            onClick={handleSave}
-            disabled={saving || !householdId || !user}
-          >
-            {saving ? "저장 중..." : "저장"}
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              className="rounded-full border border-[var(--border)] px-5 py-2 text-sm text-red-600 disabled:opacity-60"
+              onClick={() => setShowDeleteConfirm(true)}
+              disabled={saving || !entryId}
+            >
+              삭제
+            </button>
+            <button
+              className="rounded-full bg-[var(--accent)] px-5 py-2 text-sm text-white disabled:opacity-70"
+              onClick={handleSave}
+              disabled={saving || !householdId || !user}
+            >
+              {saving ? "저장 중..." : "저장"}
+            </button>
+          </div>
         </div>
       </section>
+      {showDeleteConfirm ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="w-full max-w-sm rounded-2xl border border-[var(--border)] bg-white p-6">
+            <h2 className="text-base font-semibold">메모 삭제</h2>
+            <p className="mt-2 text-sm text-[color:rgba(45,38,34,0.7)]">
+              이 메모를 삭제할까요?
+            </p>
+            <div className="mt-6 flex justify-end gap-2">
+              <button
+                className="rounded-full border border-[var(--border)] px-4 py-2 text-sm"
+                onClick={() => setShowDeleteConfirm(false)}
+              >
+                아니오
+              </button>
+              <button
+                className="rounded-full bg-[var(--accent)] px-4 py-2 text-sm text-white"
+                onClick={handleDelete}
+              >
+                예
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

@@ -2,6 +2,10 @@
 
 부부의 재테크 및 가계부 통합 관리 PWA.
 
+## v1.0
+
+v1.0 baseline release.
+
 ## Setup
 
 1) 의존성 설치

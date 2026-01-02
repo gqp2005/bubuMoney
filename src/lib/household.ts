@@ -3,10 +3,12 @@ import {
   addDoc,
   collection,
   collectionGroup,
+  deleteDoc,
   doc,
   getDoc,
   getDocs,
   increment,
+  limit,
   query,
   serverTimestamp,
   setDoc,
@@ -16,15 +18,78 @@ import {
 } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import {
+  budgetsCol,
   categoriesCol,
   householdDoc,
   invitesCol,
   membersCol,
   paymentMethodsCol,
+  transactionsCol,
   subjectsCol,
 } from "@/lib/firebase/firestore";
 
 type SpouseRole = "husband" | "wife";
+
+type ResetOptions = {
+  transactions?: boolean;
+  memos?: boolean;
+  categories?: boolean;
+  subjects?: boolean;
+  paymentMethods?: boolean;
+  budgets?: boolean;
+  invites?: boolean;
+  members?: boolean;
+  household?: boolean;
+};
+
+async function deleteCollectionDocs(colRef: ReturnType<typeof collection>) {
+  let snapshot = await getDocs(query(colRef, limit(500)));
+  while (!snapshot.empty) {
+    const batch = writeBatch(db);
+    snapshot.docs.forEach((docSnap) => {
+      batch.delete(docSnap.ref);
+    });
+    await batch.commit();
+    snapshot = await getDocs(query(colRef, limit(500)));
+  }
+}
+
+export async function resetHouseholdData(
+  householdId: string,
+  options: ResetOptions
+) {
+  if (!householdId) {
+    return;
+  }
+  if (options.transactions || options.household) {
+    await deleteCollectionDocs(transactionsCol(householdId));
+  }
+  if (options.memos || options.household) {
+    const memosCol = collection(db, "households", householdId, "memos");
+    await deleteCollectionDocs(memosCol);
+  }
+  if (options.categories || options.household) {
+    await deleteCollectionDocs(categoriesCol(householdId));
+  }
+  if (options.subjects || options.household) {
+    await deleteCollectionDocs(subjectsCol(householdId));
+  }
+  if (options.paymentMethods || options.household) {
+    await deleteCollectionDocs(paymentMethodsCol(householdId));
+  }
+  if (options.budgets || options.household) {
+    await deleteCollectionDocs(budgetsCol(householdId));
+  }
+  if (options.invites || options.household) {
+    await deleteCollectionDocs(invitesCol(householdId));
+  }
+  if (options.members || options.household) {
+    await deleteCollectionDocs(membersCol(householdId));
+  }
+  if (options.household) {
+    await deleteDoc(householdDoc(householdId));
+  }
+}
 
 export function generateInviteCode(length = 6) {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";

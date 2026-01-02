@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useMemo, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   addDays,
   addMonths,
@@ -46,6 +46,7 @@ function stripRecorderPrefix(note?: string) {
 }
 
 export default function TransactionsPage() {
+  const searchParams = useSearchParams();
   const { householdId } = useHousehold();
   const { categories } = useCategories(householdId);
   const [selectedDate, setSelectedDate] = useState(() => new Date());
@@ -71,10 +72,26 @@ export default function TransactionsPage() {
   const searchEndRef = useRef<HTMLInputElement | null>(null);
   const router = useRouter();
 
+  function parseDateParam(value: string) {
+    const parsed = new Date(`${value}T00:00:00`);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  }
+
   const categoryMap = useMemo(
     () => new Map(categories.map((category) => [category.id, category.name])),
     [categories]
   );
+
+  useEffect(() => {
+    const param = searchParams.get("date");
+    if (!param) {
+      return;
+    }
+    const parsed = parseDateParam(param);
+    if (parsed) {
+      setSelectedDate(parsed);
+    }
+  }, [searchParams]);
 
   const { transactions: searchTransactions, loading: searchLoading } =
     useTransactionsRange(householdId, searchStart, searchEnd);
@@ -109,6 +126,7 @@ export default function TransactionsPage() {
   }, [selectedDate, transactions]);
 
   const selectedKey = toDateKey(selectedDate);
+  const selectedDateParam = format(selectedDate, "yyyy-MM-dd");
   const selectedDaily = dailyMap.get(selectedKey);
   const selectedItems = selectedDaily?.items ?? [];
 
@@ -240,7 +258,7 @@ export default function TransactionsPage() {
   );
 
   return (
-    <div className="flex flex-col gap-1">
+    <div className="flex flex-col gap-0">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold">내역</h1>
@@ -265,7 +283,7 @@ export default function TransactionsPage() {
           </Link>
           <Link
             className="flex h-10 w-10 items-center justify-center rounded-full bg-[var(--accent)] text-white"
-            href="/transactions/new"
+            href={`/transactions/new?date=${selectedDateParam}`}
             aria-label="새 내역"
             title="새 내역"
           >
@@ -274,7 +292,7 @@ export default function TransactionsPage() {
         </div>
       </div>
       <section
-        className="rounded-3xl border border-[var(--border)] bg-white px-0 py-3"
+        className="rounded-t-3xl border border-b-0 border-[var(--border)] bg-white px-0 py-3"
         onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
@@ -561,7 +579,7 @@ export default function TransactionsPage() {
           </div>
         </div>
       ) : null}
-      <section className="rounded-3xl border border-[var(--border)] bg-white p-3">
+      <section className="rounded-b-3xl border border-t-0 border-[var(--border)] bg-white p-3">
         {loading ? (
           <div className="mt-2 text-sm text-[color:rgba(45,38,34,0.7)]">
             불러오는 중...
@@ -618,7 +636,7 @@ export default function TransactionsPage() {
         <div className="mt-4 flex justify-center">
           <Link
             className="rounded-full bg-[var(--accent)] px-8 py-3 text-sm text-white"
-            href="/transactions/new"
+            href={`/transactions/new?date=${selectedDateParam}`}
           >
             새 내역 등록
           </Link>

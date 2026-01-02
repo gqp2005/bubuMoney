@@ -6,7 +6,7 @@ const navItems = [
   { href: "/transactions", label: "내역" },
   { href: "/stats", label: "통계" },
   { href: "/budget", label: "예산" },
-  { href: "/categories", label: "카테고리" },
+  { href: "/notifications", label: "알림" },
 ];
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {

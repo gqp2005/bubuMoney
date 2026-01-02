@@ -8,7 +8,9 @@ import { useHousehold } from "@/components/household-provider";
 import { useCategories } from "@/hooks/use-categories";
 import { usePaymentMethods } from "@/hooks/use-payment-methods";
 import { useSubjects } from "@/hooks/use-subjects";
+import { formatKrw } from "@/lib/format";
 import { householdDoc } from "@/lib/firebase/firestore";
+import { addNotification } from "@/lib/notifications";
 import { deleteTransaction, updateTransaction } from "@/lib/transactions";
 import { toDateKey } from "@/lib/time";
 import type { TransactionType } from "@/types/ledger";
@@ -201,7 +203,13 @@ export default function EditTransactionPage() {
         date: new Date(date),
         note: note || undefined,
       });
-      router.replace("/transactions");
+      await addNotification(householdId, {
+        title: "내역 수정",
+        message: `${typeLabelMap[type]} ${formatKrw(Number(amount))} · ${date}`,
+        level: "info",
+        type: "transaction.update",
+      });
+      router.replace(`/transactions?date=${date}`);
     } catch (err) {
       setError("수정에 실패했습니다.");
     } finally {
@@ -216,6 +224,12 @@ export default function EditTransactionPage() {
     setSaving(true);
     try {
       await deleteTransaction(householdId, transactionId);
+      await addNotification(householdId, {
+        title: "내역 삭제",
+        message: `${typeLabelMap[type]} ${formatKrw(Number(amount))} · ${date}`,
+        level: "error",
+        type: "transaction.delete",
+      });
       router.replace("/transactions");
     } catch (err) {
       setError("삭제에 실패했습니다.");
