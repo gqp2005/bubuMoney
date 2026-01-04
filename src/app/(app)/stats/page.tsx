@@ -192,6 +192,7 @@ export default function StatsPage() {
   const [paymentOwnerFilter, setPaymentOwnerFilter] = useState<
     "husband" | "wife" | "our"
   >("our");
+  const [showResetConfirm, setShowResetConfirm] = useState(false);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -681,8 +682,8 @@ export default function StatsPage() {
               <button
                 type="button"
                 className="flex h-10 w-10 items-center justify-center rounded-full border border-[var(--border)] text-sm"
-                aria-label="새로고침"
-                onClick={resetAppliedFilters}
+                aria-label="필터 초기화"
+                onClick={() => setShowResetConfirm(true)}
               >
                 ↻
               </button>
@@ -1319,6 +1320,30 @@ export default function StatsPage() {
                   필터 적용 완료
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+      {showResetConfirm ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
+          <div className="w-full max-w-xs rounded-2xl border border-[var(--border)] bg-white p-6">
+            <p className="text-sm">필터를 초기화하시겠습니까?</p>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                className="rounded-xl border border-[var(--border)] px-4 py-2 text-sm"
+                onClick={() => setShowResetConfirm(false)}
+              >
+                아니오
+              </button>
+              <button
+                className="rounded-xl bg-[var(--accent)] px-4 py-2 text-sm text-white"
+                onClick={() => {
+                  resetAppliedFilters();
+                  setShowResetConfirm(false);
+                }}
+              >
+                예
+              </button>
             </div>
           </div>
         </div>

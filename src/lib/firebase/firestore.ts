@@ -27,3 +27,5 @@ export const notificationsCol = (householdId: string) =>
 
 export const budgetsCol = (householdId: string) =>
   collection(db, "households", householdId, "budgets");
+
+export const publicInvitesCol = () => collection(db, "publicInvites");

@@ -82,16 +82,17 @@ export default function TransactionsPage() {
     [categories]
   );
 
+  const dateParam = searchParams.get("date");
+
   useEffect(() => {
-    const param = searchParams.get("date");
-    if (!param) {
+    if (!dateParam) {
       return;
     }
-    const parsed = parseDateParam(param);
-    if (parsed) {
+    const parsed = parseDateParam(dateParam);
+    if (parsed && !isSameDay(parsed, selectedDate)) {
       setSelectedDate(parsed);
     }
-  }, [searchParams]);
+  }, [dateParam, selectedDate]);
 
   const { transactions: searchTransactions, loading: searchLoading } =
     useTransactionsRange(householdId, searchStart, searchEnd);

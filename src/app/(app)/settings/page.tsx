@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { getDoc, updateDoc } from "firebase/firestore";
+import { doc, getDoc, getDocs, query, updateDoc, where } from "firebase/firestore";
 import { useAuth } from "@/components/auth-provider";
 import { useHousehold } from "@/components/household-provider";
 import { useCategories } from "@/hooks/use-categories";
@@ -9,20 +9,13 @@ import { usePaymentMethods } from "@/hooks/use-payment-methods";
 import { useSubjects } from "@/hooks/use-subjects";
 import { addCategory } from "@/lib/categories";
 import { signOutUser } from "@/lib/firebase/auth";
-import { householdDoc } from "@/lib/firebase/firestore";
+import { householdDoc, invitesCol, membersCol } from "@/lib/firebase/firestore";
 import { updateUserDisplayName } from "@/lib/firebase/user";
-import {
-  acceptInvite,
-  createInvite,
-  findInviteByCode,
-  joinHousehold,
-  resetHouseholdData,
-} from "@/lib/household";
+import { createInvite, resetHouseholdData } from "@/lib/household";
 import { addNotification } from "@/lib/notifications";
 import { addPaymentMethod } from "@/lib/payment-methods";
 import { addTransaction, updateTransactionsSubjectName } from "@/lib/transactions";
 import { addSubject, updateSubject } from "@/lib/subjects";
-import { setUserHousehold } from "@/lib/firebase/user";
 
 export default function SettingsPage() {
   const { user } = useAuth();
@@ -32,7 +25,11 @@ export default function SettingsPage() {
   const { paymentMethods } = usePaymentMethods(householdId);
   const [nickname, setNickname] = useState(displayName ?? "");
   const [partnerNickname, setPartnerNickname] = useState("");
+  const [isOwner, setIsOwner] = useState<boolean | null>(null);
   const [inviteCode, setInviteCode] = useState<string | null>(null);
+  const [inviteExpiresAt, setInviteExpiresAt] = useState<{
+    toMillis: () => number;
+  } | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [savingName, setSavingName] = useState(false);
@@ -46,9 +43,6 @@ export default function SettingsPage() {
   const [resetOpen, setResetOpen] = useState(false);
   const [resetLoading, setResetLoading] = useState(false);
   const [resetStatus, setResetStatus] = useState<string | null>(null);
-  const [joinCode, setJoinCode] = useState("");
-  const [joinLoading, setJoinLoading] = useState(false);
-  const [joinStatus, setJoinStatus] = useState<string | null>(null);
   const [resetOptions, setResetOptions] = useState({
     transactions: false,
     memos: false,
@@ -60,6 +54,7 @@ export default function SettingsPage() {
     members: false,
     household: false,
   });
+  const [nowTick, setNowTick] = useState(Date.now());
 
   const categoryMap = useMemo(() => {
     return new Map(
@@ -97,26 +92,124 @@ export default function SettingsPage() {
   useEffect(() => {
     if (!householdId) {
       setPartnerNickname("");
+      setIsOwner(null);
       return;
     }
-    getDoc(householdDoc(householdId)).then((snapshot) => {
-      if (!snapshot.exists()) {
-        return;
+    const load = async () => {
+      try {
+        const [householdSnap, memberSnap] = await Promise.all([
+          getDoc(householdDoc(householdId)),
+          user ? getDoc(doc(membersCol(householdId), user.uid)) : null,
+        ]);
+        if (householdSnap?.exists()) {
+          const data = householdSnap.data() as {
+            creatorDisplayName?: string | null;
+            partnerDisplayName?: string | null;
+          };
+          const creatorName = data.creatorDisplayName ?? "";
+          const partnerName = data.partnerDisplayName ?? "";
+          const currentName = (displayName ?? "").trim();
+          if (currentName && creatorName && currentName === creatorName) {
+            setPartnerNickname(partnerName);
+          } else if (currentName && partnerName && currentName === partnerName) {
+            setPartnerNickname(creatorName);
+          } else {
+            setPartnerNickname(partnerName);
+          }
+        }
+        if (memberSnap?.exists()) {
+          const memberData = memberSnap.data() as { role?: string };
+          setIsOwner(memberData.role === "owner");
+        }
+      } catch {
+        setPartnerNickname("");
+        setIsOwner(null);
       }
-      const data = snapshot.data() as { partnerDisplayName?: string | null };
-      setPartnerNickname(data.partnerDisplayName ?? "");
-    });
+    };
+    load();
+  }, [displayName, householdId, user]);
+
+  useEffect(() => {
+    if (!householdId) {
+      setInviteCode(null);
+      setInviteExpiresAt(null);
+      return;
+    }
+    const loadInvite = async () => {
+      try {
+        const snapshot = await getDocs(
+          query(invitesCol(householdId), where("usedBy", "==", null))
+        );
+        if (snapshot.empty) {
+          setInviteCode(null);
+          setInviteExpiresAt(null);
+          return;
+        }
+        const now = Date.now();
+        let latest: {
+          code?: string;
+          expiresAt?: { toMillis: () => number };
+          createdAt?: { toMillis: () => number };
+        } | null = null;
+        snapshot.docs.forEach((docSnap) => {
+          const data = docSnap.data() as {
+            code?: string;
+            expiresAt?: { toMillis: () => number };
+            createdAt?: { toMillis: () => number };
+          };
+          if (!data.code || !data.expiresAt) {
+            return;
+          }
+          if (data.expiresAt.toMillis() <= now) {
+            return;
+          }
+          if (!latest) {
+            latest = data;
+            return;
+          }
+          const current = data.createdAt?.toMillis?.() ?? 0;
+          const prev = latest.createdAt?.toMillis?.() ?? 0;
+          if (current >= prev) {
+            latest = data;
+          }
+        });
+        if (latest?.code && latest.expiresAt) {
+          setInviteCode(latest.code);
+          setInviteExpiresAt(latest.expiresAt);
+        } else {
+          setInviteCode(null);
+          setInviteExpiresAt(null);
+        }
+      } catch {
+        setInviteCode(null);
+        setInviteExpiresAt(null);
+      }
+    };
+    loadInvite();
   }, [householdId]);
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setNowTick(Date.now());
+    }, 60 * 1000);
+    return () => clearInterval(timer);
+  }, []);
 
   async function handleInvite() {
     if (!user || !householdId) {
       return;
+    }
+    if (inviteCode && inviteExpiresAt) {
+      if (inviteExpiresAt.toMillis() > Date.now()) {
+        return;
+      }
     }
     setLoading(true);
     setError(null);
     try {
       const invite = await createInvite(householdId, user.uid);
       setInviteCode(invite.code);
+      setInviteExpiresAt(invite.expiresAt);
     } catch (err) {
       setError("초대 코드 생성에 실패했습니다.");
     } finally {
@@ -128,41 +221,6 @@ export default function SettingsPage() {
     await signOutUser();
   }
 
-  async function handleJoinInvite() {
-    if (!user) {
-      return;
-    }
-    const code = joinCode.trim().toUpperCase();
-    if (!code) {
-      setJoinStatus("초대 코드를 입력해주세요.");
-      return;
-    }
-    setJoinLoading(true);
-    setJoinStatus(null);
-    try {
-      const invite = await findInviteByCode(code);
-      if (!invite) {
-        setJoinStatus("유효하지 않은 초대 코드입니다.");
-        return;
-      }
-      await joinHousehold(invite.householdId, user.uid, invite.createdBy);
-      await acceptInvite(invite.inviteId, invite.householdId, user.uid);
-      await setUserHousehold(user.uid, invite.householdId);
-      await addNotification(invite.householdId, {
-        title: "초대 참여",
-        message: `${nickname || "구성원"}님이 가계부에 참여했습니다.`,
-        level: "success",
-        type: "invite.join",
-      });
-      setJoinStatus("초대 코드 참여 완료");
-      setJoinCode("");
-    } catch (err) {
-      setJoinStatus("초대 코드 참여 실패");
-    } finally {
-      setJoinLoading(false);
-    }
-  }
-
   async function handleNicknameSave() {
     if (!user) {
       return;
@@ -172,6 +230,13 @@ export default function SettingsPage() {
     try {
       const trimmed = nickname.trim();
       await updateUserDisplayName(user.uid, trimmed);
+      if (householdId && isOwner !== null) {
+        await updateDoc(householdDoc(householdId), {
+          ...(isOwner
+            ? { creatorDisplayName: trimmed }
+            : { partnerDisplayName: trimmed }),
+        });
+      }
       await syncSubjectDefaults(trimmed, partnerNickname.trim());
       if (householdId) {
         await addNotification(householdId, {
@@ -196,9 +261,13 @@ export default function SettingsPage() {
     setSavingPartner(true);
     setPartnerStatus(null);
     try {
-      await updateDoc(householdDoc(householdId), {
-        partnerDisplayName: partnerNickname.trim(),
-      });
+      if (isOwner !== null) {
+        await updateDoc(householdDoc(householdId), {
+          ...(isOwner
+            ? { partnerDisplayName: partnerNickname.trim() }
+            : { creatorDisplayName: partnerNickname.trim() }),
+        });
+      }
       await syncSubjectDefaults(nickname.trim(), partnerNickname.trim());
       await addNotification(householdId, {
         title: "닉네임 변경",
@@ -579,6 +648,9 @@ export default function SettingsPage() {
     <div className="flex flex-col gap-6">
       <section className="rounded-3xl border border-[var(--border)] bg-white p-6">
         <div className="mb-4 rounded-2xl border border-[var(--border)] px-4 py-3">
+          <p className="text-xs text-[color:rgba(45,38,34,0.6)]">
+            내 아이디: {user?.email ?? "-"}
+          </p>
           <label className="text-xs text-[color:rgba(45,38,34,0.7)]">
             내 닉네임
           </label>
@@ -639,6 +711,16 @@ export default function SettingsPage() {
                 {inviteCode}
               </div>
             ) : null}
+            {inviteExpiresAt ? (
+              <p className="mt-2 text-xs text-[color:rgba(45,38,34,0.6)]">
+                남은 시간:{" "}
+                {Math.max(
+                  0,
+                  Math.ceil((inviteExpiresAt.toMillis() - nowTick) / 60000)
+                )}{" "}
+                분
+              </p>
+            ) : null}
             <button
               className="mt-4 rounded-full bg-[var(--accent)] px-4 py-2 text-sm text-white disabled:opacity-70"
               onClick={handleInvite}
@@ -648,32 +730,6 @@ export default function SettingsPage() {
             </button>
             {error ? (
               <p className="mt-2 text-sm text-red-600">{error}</p>
-            ) : null}
-          </div>
-          <div className="rounded-2xl border border-[var(--border)] p-4">
-            <h2 className="text-sm font-semibold">초대 코드 입력</h2>
-            <p className="mt-2 text-sm text-[color:rgba(45,38,34,0.7)]">
-              받은 초대 코드를 입력해 가계부에 참여하세요.
-            </p>
-            <div className="mt-3 flex flex-wrap items-center gap-2">
-              <input
-                className="flex-1 rounded-xl border border-[var(--border)] px-3 py-2 text-sm"
-                value={joinCode}
-                onChange={(event) => setJoinCode(event.target.value)}
-                placeholder="초대 코드 입력"
-              />
-              <button
-                className="rounded-full bg-[var(--accent)] px-4 py-2 text-sm text-white disabled:opacity-70"
-                onClick={handleJoinInvite}
-                disabled={joinLoading || !joinCode.trim()}
-              >
-                {joinLoading ? "참여 중.." : "참여하기"}
-              </button>
-            </div>
-            {joinStatus ? (
-              <p className="mt-2 text-xs text-[color:rgba(45,38,34,0.7)]">
-                {joinStatus}
-              </p>
             ) : null}
           </div>
           <div className="rounded-2xl border border-[var(--border)] p-4">

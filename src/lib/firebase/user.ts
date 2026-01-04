@@ -10,6 +10,7 @@ export async function createUserProfile(
   spouseRole?: "husband" | "wife"
 ) {
   await setDoc(userDoc(uid), {
+    id: uid,
     householdId,
     displayName: displayName ?? null,
     spouseRole: spouseRole ?? null,
@@ -19,9 +20,10 @@ export async function createUserProfile(
 
 export async function setUserHousehold(uid: string, householdId: string) {
   try {
-    await updateDoc(userDoc(uid), { householdId });
+    await updateDoc(userDoc(uid), { id: uid, householdId });
   } catch (err) {
     await setDoc(userDoc(uid), {
+      id: uid,
       householdId,
       createdAt: serverTimestamp(),
     });

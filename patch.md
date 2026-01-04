@@ -1,5 +1,21 @@
 # Patch Notes
 
+## v1.2
+
+- Invites: public invite lookup with stricter rules and fixed join flow for non-members.
+- Settings: persistent invite code until expiry with remaining-time display; invite input card removed.
+- Settings: show account email, fix partner nickname mapping across spouses.
+- Users: store `id` field on profiles and add backfill script for existing users.
+- Transactions: stabilize date param sync to avoid render loops.
+
+### v1.2 (한국어)
+
+- 초대 코드: 공개 조회 방식으로 전환, 권한 규칙 정리, 비멤버 참여 흐름 수정.
+- 설정: 초대 코드 만료 전까지 유지 + 남은 시간 표시, 초대 코드 입력 카드 제거.
+- 설정: 내 아이디(이메일) 표시, 서로 다른 닉네임 매핑 오류 수정.
+- 사용자: `users` 문서에 `id` 저장, 기존 데이터 백필 스크립트 추가.
+- 내역: 날짜 파라미터 동기화 안정화(렌더 루프 방지).
+
 ## v1.1
 
 - Budget dashboard: monthly detail with top-category spend, budget save/load to Firestore, and category budgets with progress.

@@ -1,22 +1,25 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { signInWithEmail } from "@/lib/firebase/auth";
 import { useAuth } from "@/components/auth-provider";
 
 export default function LoginPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { user } = useAuth();
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const nextPath = searchParams.get("next") ?? "/dashboard";
+  const safeNextPath = nextPath.startsWith("/") ? nextPath : "/dashboard";
 
   useEffect(() => {
     if (user) {
-      router.replace("/dashboard");
+      router.replace(safeNextPath);
     }
-  }, [router, user]);
+  }, [router, safeNextPath, user]);
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -27,7 +30,7 @@ export default function LoginPage() {
     const password = String(formData.get("password") ?? "");
     try {
       await signInWithEmail(email, password);
-      router.replace("/dashboard");
+      router.replace(safeNextPath);
     } catch (err) {
       setError("로그인에 실패했습니다. 이메일과 비밀번호를 확인하세요.");
     } finally {
@@ -78,7 +81,7 @@ export default function LoginPage() {
           계정이 없나요? 회원가입
         </Link>
         <Link className="text-[var(--accent)]" href="/invite">
-          초대코드로 참여하기
+          초대코드로 회원가입하기
         </Link>
       </div>
     </div>

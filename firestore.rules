@@ -63,21 +63,19 @@ service cloud.firestore {
       }
 
       match /invites/{inviteId} {
-        allow read: if isMember(householdId)
-          || (isSignedIn()
-              && resource.data.usedBy == null
-              && resource.data.expiresAt > request.time);
+        allow read: if isMember(householdId);
         allow create: if isMember(householdId);
-        allow update: if isMember(householdId)
-          || (isSignedIn()
-              && resource.data.usedBy == null
-              && request.resource.data.usedBy == request.auth.uid
-              && request.resource.data.code == resource.data.code
-              && request.resource.data.createdBy == resource.data.createdBy
-              && request.resource.data.createdAt == resource.data.createdAt
-              && request.resource.data.expiresAt == resource.data.expiresAt);
+        allow update: if isMember(householdId);
         allow delete: if isMember(householdId);
       }
+    }
+
+    match /publicInvites/{code} {
+      allow read: if resource.data.usedBy == null
+        && resource.data.expiresAt > request.time;
+      allow create: if isMember(request.resource.data.householdId);
+      allow update: if isMember(resource.data.householdId);
+      allow delete: if isMember(resource.data.householdId);
     }
   }
 }

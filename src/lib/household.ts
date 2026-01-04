@@ -2,7 +2,6 @@ import {
   Timestamp,
   addDoc,
   collection,
-  collectionGroup,
   deleteDoc,
   doc,
   getDoc,
@@ -24,9 +23,11 @@ import {
   invitesCol,
   membersCol,
   paymentMethodsCol,
+  publicInvitesCol,
   transactionsCol,
   subjectsCol,
 } from "@/lib/firebase/firestore";
+import { getUserProfile } from "@/lib/firebase/user";
 
 type SpouseRole = "husband" | "wife";
 
@@ -181,13 +182,33 @@ export async function createInvite(householdId: string, uid: string) {
   const expiresAt = Timestamp.fromDate(
     new Date(Date.now() + 1000 * 60 * 60 * 24 * 7)
   );
+  const userProfile = await getUserProfile(uid);
+  const householdSnapshot = await getDoc(householdDoc(householdId));
+  const householdData = householdSnapshot.exists()
+    ? (householdSnapshot.data() as { partnerDisplayName?: string | null })
+    : {};
   const inviteRef = await addDoc(invitesCol(householdId), {
     code,
     createdBy: uid,
     createdAt: serverTimestamp(),
     expiresAt,
+    inviterRole: userProfile?.spouseRole ?? null,
+    inviterDisplayName: userProfile?.displayName ?? null,
+    partnerDisplayName: householdData.partnerDisplayName ?? null,
   });
-  return { id: inviteRef.id, code };
+  await setDoc(doc(publicInvitesCol(), code), {
+    code,
+    householdId,
+    inviteId: inviteRef.id,
+    createdBy: uid,
+    createdAt: serverTimestamp(),
+    expiresAt,
+    usedBy: null,
+    inviterRole: userProfile?.spouseRole ?? null,
+    inviterDisplayName: userProfile?.displayName ?? null,
+    partnerDisplayName: householdData.partnerDisplayName ?? null,
+  });
+  return { id: inviteRef.id, code, expiresAt };
 }
 
 export async function joinHousehold(
@@ -196,9 +217,13 @@ export async function joinHousehold(
   invitedBy: string
 ) {
   const memberRef = doc(membersCol(householdId), uid);
-  const existing = await getDoc(memberRef);
-  if (existing.exists()) {
-    return;
+  try {
+    const existing = await getDoc(memberRef);
+    if (existing.exists()) {
+      return;
+    }
+  } catch {
+    // Non-members may not have permission to read members; continue to create.
   }
 
   await setDoc(memberRef, {
@@ -207,9 +232,13 @@ export async function joinHousehold(
     createdAt: serverTimestamp(),
   });
 
-  await updateDoc(householdDoc(householdId), {
-    membersCount: increment(1),
-  });
+  try {
+    await updateDoc(householdDoc(householdId), {
+      membersCount: increment(1),
+    });
+  } catch {
+    // Non-members may not have permission to update the household doc.
+  }
 }
 
 export async function findInviteByCode(
@@ -218,32 +247,40 @@ export async function findInviteByCode(
   inviteId: string;
   householdId: string;
   createdBy: string;
+  inviterRole?: SpouseRole | null;
+  inviterDisplayName?: string | null;
+  partnerDisplayName?: string | null;
 } | null> {
-  const invitesQuery = query(
-    collectionGroup(db, "invites"),
-    where("code", "==", code.toUpperCase()),
-    where("usedBy", "==", null),
-    where("expiresAt", ">", Timestamp.now())
-  );
-  const snapshot = await getDocs(invitesQuery);
-  if (snapshot.empty) {
+  const snapshot = await getDoc(doc(publicInvitesCol(), code.toUpperCase()));
+  if (!snapshot.exists()) {
     return null;
   }
-
-  const inviteDoc = snapshot.docs[0];
-  const householdRef = inviteDoc.ref.parent.parent;
-  if (!householdRef) {
+  const data = snapshot.data() as {
+    inviteId?: string;
+    householdId?: string;
+    createdBy?: string;
+    inviterRole?: SpouseRole | null;
+    inviterDisplayName?: string | null;
+    partnerDisplayName?: string | null;
+    usedBy?: string | null;
+    expiresAt?: Timestamp;
+  };
+  if (!data.inviteId || !data.householdId || !data.createdBy) {
     return null;
   }
-  const data = inviteDoc.data() as { createdBy?: string };
-  if (!data.createdBy) {
+  if (data.usedBy) {
     return null;
   }
-
+  if (data.expiresAt && data.expiresAt.toMillis() <= Timestamp.now().toMillis()) {
+    return null;
+  }
   return {
-    inviteId: inviteDoc.id,
-    householdId: householdRef.id,
+    inviteId: data.inviteId,
+    householdId: data.householdId,
     createdBy: data.createdBy,
+    inviterRole: data.inviterRole ?? null,
+    inviterDisplayName: data.inviterDisplayName ?? null,
+    partnerDisplayName: data.partnerDisplayName ?? null,
   };
 }
 
@@ -252,7 +289,17 @@ export async function acceptInvite(
   householdId: string,
   uid: string
 ) {
-  await updateDoc(doc(invitesCol(householdId), inviteId), {
+  const inviteRef = doc(invitesCol(householdId), inviteId);
+  const snapshot = await getDoc(inviteRef);
+  const data = snapshot.exists()
+    ? (snapshot.data() as { code?: string })
+    : {};
+  await updateDoc(inviteRef, {
     usedBy: uid,
   });
+  if (data.code) {
+    await updateDoc(doc(publicInvitesCol(), data.code), {
+      usedBy: uid,
+    });
+  }
 }
