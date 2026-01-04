@@ -39,5 +39,13 @@ export async function getUserProfile(uid: string) {
   if (!snapshot.exists()) {
     return null;
   }
-  return { id: snapshot.id, ...snapshot.data() };
+  return {
+    id: snapshot.id,
+    ...(snapshot.data() as {
+      householdId?: string;
+      displayName?: string | null;
+      spouseRole?: "husband" | "wife" | null;
+      createdAt?: unknown;
+    }),
+  };
 }
