@@ -115,10 +115,26 @@ export default function CategoriesPage() {
       if (!snapshot.exists()) {
         return;
       }
-      const data = snapshot.data() as { partnerDisplayName?: string | null };
-      setPartnerName(data.partnerDisplayName ?? "");
+      const data = snapshot.data() as {
+        creatorDisplayName?: string | null;
+        partnerDisplayName?: string | null;
+      };
+      const creatorName = data.creatorDisplayName ?? "";
+      const partnerDisplayName = data.partnerDisplayName ?? "";
+      const currentName = (displayName ?? "").trim();
+      if (currentName && creatorName && currentName === creatorName) {
+        setPartnerName(partnerDisplayName);
+      } else if (
+        currentName &&
+        partnerDisplayName &&
+        currentName === partnerDisplayName
+      ) {
+        setPartnerName(creatorName);
+      } else {
+        setPartnerName(partnerDisplayName);
+      }
     });
-  }, [householdId]);
+  }, [displayName, householdId]);
 
   useEffect(() => {
     if (showAddForm) {

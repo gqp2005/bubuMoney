@@ -550,12 +550,14 @@ export default function StatsPage() {
     setTouchEndX(event.touches[0]?.clientX ?? null);
   }
 
+  const swipeThreshold = 120;
+
   function handleTouchEnd() {
     if (touchStartX === null || touchEndX === null) {
       return;
     }
     const delta = touchStartX - touchEndX;
-    if (Math.abs(delta) < 50) {
+    if (Math.abs(delta) < swipeThreshold) {
       return;
     }
     if (delta > 0) {

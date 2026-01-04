@@ -31,6 +31,7 @@ export default function NewTransactionPage() {
   const [subject, setSubject] = useState("");
   const [paymentMethod, setPaymentMethod] = useState("");
   const [paymentOwner, setPaymentOwner] = useState<PaymentOwner>("our");
+  const [amountInput, setAmountInput] = useState("");
   const hasSetInitialOwner = useRef(false);
   const [partnerName, setPartnerName] = useState("");
   const [categoryId, setCategoryId] = useState("");
@@ -54,6 +55,18 @@ export default function NewTransactionPage() {
     { value: "income", label: "수입" },
     { value: "transfer", label: "이체" },
   ];
+
+  function formatAmountValue(value: string) {
+    const digits = value.replace(/[^\d]/g, "");
+    if (!digits) {
+      return "";
+    }
+    return digits.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  }
+
+  function parseAmountValue(value: string) {
+    return Number(value.replace(/,/g, ""));
+  }
 
   const selectedCategoryName = useMemo(() => {
     return categories.find((category) => category.id === categoryId)?.name ?? "";
@@ -165,7 +178,7 @@ export default function NewTransactionPage() {
     setLoading(true);
     setError(null);
     const formData = new FormData(event.currentTarget);
-    const amount = Number(formData.get("amount") ?? 0);
+    const amount = parseAmountValue(amountInput);
     const date = String(formData.get("date") ?? "");
     const note = String(formData.get("note") ?? "");
     const subjectValue = subject || subjects[0]?.name || "우리";
@@ -230,10 +243,13 @@ export default function NewTransactionPage() {
           <label className="text-sm font-medium">
             금액
             <input
-              type="number"
-              name="amount"
+              type="text"
+              inputMode="numeric"
+              autoComplete="off"
               className="mt-2 w-full rounded-xl border border-[var(--border)] bg-white px-4 py-3"
               placeholder="0"
+              value={amountInput}
+              onChange={(event) => setAmountInput(formatAmountValue(event.target.value))}
             />
           </label>
           <label className="text-sm font-medium">

@@ -57,6 +57,18 @@ export default function EditTransactionPage() {
     { value: "transfer", label: "이체" },
   ];
 
+  function formatAmountValue(value: string) {
+    const digits = value.replace(/[^\d]/g, "");
+    if (!digits) {
+      return "";
+    }
+    return digits.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  }
+
+  function parseAmountValue(value: string) {
+    return Number(value.replace(/,/g, ""));
+  }
+
   const filteredCategories = useMemo(() => {
     const byType = categories.filter((cat) => cat.type === type);
     const leaf = byType.filter((cat) => cat.parentId);
@@ -125,7 +137,7 @@ export default function EditTransactionPage() {
           note?: string;
         };
         setType(data.type);
-        setAmount(String(data.amount));
+        setAmount(formatAmountValue(String(data.amount)));
         setCategoryId(data.categoryId);
         setPaymentMethod(data.paymentMethod);
         setSubject(data.subject);
@@ -210,7 +222,7 @@ export default function EditTransactionPage() {
         householdId,
         transactionId,
         type,
-        amount: Number(amount),
+        amount: parseAmountValue(amount),
         categoryId,
         paymentMethod,
         subject,
@@ -219,7 +231,7 @@ export default function EditTransactionPage() {
       });
       await addNotification(householdId, {
         title: "내역 수정",
-        message: `${typeLabelMap[type]} ${formatKrw(Number(amount))} · ${date}`,
+        message: `${typeLabelMap[type]} ${formatKrw(parseAmountValue(amount))} · ${date}`,
         level: "info",
         type: "transaction.update",
       });
@@ -240,7 +252,7 @@ export default function EditTransactionPage() {
       await deleteTransaction(householdId, transactionId);
       await addNotification(householdId, {
         title: "내역 삭제",
-        message: `${typeLabelMap[type]} ${formatKrw(Number(amount))} · ${date}`,
+        message: `${typeLabelMap[type]} ${formatKrw(parseAmountValue(amount))} · ${date}`,
         level: "error",
         type: "transaction.delete",
       });
@@ -294,11 +306,13 @@ export default function EditTransactionPage() {
           <label className="text-sm font-medium">
             금액
             <input
-              type="number"
+              type="text"
+              inputMode="numeric"
+              autoComplete="off"
               name="amount"
               className="mt-2 w-full rounded-xl border border-[var(--border)] bg-white px-4 py-3"
               value={amount}
-              onChange={(event) => setAmount(event.target.value)}
+              onChange={(event) => setAmount(formatAmountValue(event.target.value))}
             />
           </label>
           <label className="text-sm font-medium">

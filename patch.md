@@ -1,5 +1,17 @@
 # Patch Notes
 
+## v1.3
+
+- Amount inputs show comma separators while typing on new/edit transaction forms.
+- Swipe threshold increased for calendar/statistics to prevent accidental month changes.
+- Payment owner labels now align with each spouse nickname in payment edit and category tabs.
+
+### v1.3 (한국어)
+
+- 내역 추가/수정 금액 입력 시 콤마 표기 적용.
+- 달력/통계 스와이프 임계값 상향(의도치 않은 월 변경 방지).
+- 결제수단 탭/편집 화면에서 배우자 닉네임 표시 일치하도록 수정.
+
 ## v1.2
 
 - Invites: public invite lookup with stricter rules and fixed join flow for non-members.
