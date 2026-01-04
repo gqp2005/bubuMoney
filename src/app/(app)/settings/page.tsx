@@ -152,23 +152,22 @@ export default function SettingsPage() {
           return;
         }
         const now = Date.now();
-        let latest: InviteSnapshot | null = null;
-        snapshot.docs.forEach((docSnap) => {
-          const data = docSnap.data() as InviteSnapshot;
-          if (data.expiresAt.toMillis() <= now) {
-            return;
-          }
-          if (!latest) {
-            latest = data;
-            return;
-          }
-          const current = data.createdAt?.toMillis?.() ?? 0;
-          const prev = latest.createdAt?.toMillis?.() ?? 0;
-          if (current >= prev) {
-            latest = data;
-          }
-        });
-        if (latest && latest.code && latest.expiresAt) {
+        const latest = snapshot.docs.reduce<InviteSnapshot | null>(
+          (acc, docSnap) => {
+            const data = docSnap.data() as InviteSnapshot;
+            if (data.expiresAt.toMillis() <= now) {
+              return acc;
+            }
+            if (!acc) {
+              return data;
+            }
+            const current = data.createdAt?.toMillis?.() ?? 0;
+            const prev = acc.createdAt?.toMillis?.() ?? 0;
+            return current >= prev ? data : acc;
+          },
+          null
+        );
+        if (latest) {
           setInviteCode(latest.code);
           setInviteExpiresAt(latest.expiresAt);
         } else {
