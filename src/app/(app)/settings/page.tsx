@@ -17,6 +17,12 @@ import { addPaymentMethod } from "@/lib/payment-methods";
 import { addTransaction, updateTransactionsSubjectName } from "@/lib/transactions";
 import { addSubject, updateSubject } from "@/lib/subjects";
 
+type InviteSnapshot = {
+  code: string;
+  expiresAt: Timestamp;
+  createdAt?: Timestamp | null;
+};
+
 export default function SettingsPage() {
   const { user } = useAuth();
   const { householdId, displayName, spouseRole } = useHousehold();
@@ -55,11 +61,6 @@ export default function SettingsPage() {
     household: false,
   });
   const [nowTick, setNowTick] = useState(Date.now());
-  type InviteSnapshot = {
-    code: string;
-    expiresAt: Timestamp;
-    createdAt?: Timestamp | null;
-  };
 
   const categoryMap = useMemo(() => {
     return new Map(
@@ -167,7 +168,7 @@ export default function SettingsPage() {
             latest = data;
           }
         });
-        if (latest?.code && latest.expiresAt) {
+        if (latest && latest.code && latest.expiresAt) {
           setInviteCode(latest.code);
           setInviteExpiresAt(latest.expiresAt);
         } else {
