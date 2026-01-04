@@ -57,6 +57,8 @@ const PAYMENT_COLORS = [
   "#fbbf24",
 ];
 
+const STATS_STORAGE_KEY = "couple-ledger.stats.filters";
+
 type ViewType = "income" | "expense";
 
 type BreakdownItem = {
@@ -190,6 +192,88 @@ export default function StatsPage() {
   const [paymentOwnerFilter, setPaymentOwnerFilter] = useState<
     "husband" | "wife" | "our"
   >("our");
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    try {
+      const raw = window.localStorage.getItem(STATS_STORAGE_KEY);
+      if (!raw) {
+        return;
+      }
+      const parsed = JSON.parse(raw) as {
+        viewType?: ViewType;
+        appliedRangeMode?: "monthly" | "custom";
+        appliedStart?: string | null;
+        appliedEnd?: string | null;
+        appliedMonthDate?: string;
+        appliedCategoryIds?: string[];
+        appliedSubjects?: string[];
+        appliedPayments?: string[];
+        paymentOwnerFilter?: "husband" | "wife" | "our";
+      };
+      if (parsed.viewType) {
+        setViewType(parsed.viewType);
+      }
+      if (parsed.appliedRangeMode) {
+        setAppliedRangeMode(parsed.appliedRangeMode);
+      }
+      if (parsed.appliedStart !== undefined) {
+        setAppliedStart(parsed.appliedStart);
+      }
+      if (parsed.appliedEnd !== undefined) {
+        setAppliedEnd(parsed.appliedEnd);
+      }
+      if (parsed.appliedMonthDate) {
+        const next = startOfMonth(new Date(parsed.appliedMonthDate));
+        setAppliedMonthDate(next);
+        setMonthDate(next);
+      }
+      if (parsed.appliedCategoryIds) {
+        setAppliedCategoryIds(new Set(parsed.appliedCategoryIds));
+      }
+      if (parsed.appliedSubjects) {
+        setAppliedSubjects(new Set(parsed.appliedSubjects));
+      }
+      if (parsed.appliedPayments) {
+        setAppliedPayments(new Set(parsed.appliedPayments));
+      }
+      if (parsed.paymentOwnerFilter) {
+        setPaymentOwnerFilter(parsed.paymentOwnerFilter);
+      }
+    } catch (err) {
+      window.localStorage.removeItem(STATS_STORAGE_KEY);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    const payload = {
+      viewType,
+      appliedRangeMode,
+      appliedStart,
+      appliedEnd,
+      appliedMonthDate: appliedMonthDate.toISOString(),
+      appliedCategoryIds: Array.from(appliedCategoryIds),
+      appliedSubjects: Array.from(appliedSubjects),
+      appliedPayments: Array.from(appliedPayments),
+      paymentOwnerFilter,
+    };
+    window.localStorage.setItem(STATS_STORAGE_KEY, JSON.stringify(payload));
+  }, [
+    viewType,
+    appliedRangeMode,
+    appliedStart,
+    appliedEnd,
+    appliedMonthDate,
+    appliedCategoryIds,
+    appliedSubjects,
+    appliedPayments,
+    paymentOwnerFilter,
+  ]);
 
   const categoryMap = useMemo(
     () => new Map(categories.map((cat) => [cat.id, cat.name])),

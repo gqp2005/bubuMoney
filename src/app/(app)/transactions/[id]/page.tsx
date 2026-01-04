@@ -166,11 +166,25 @@ export default function EditTransactionPage() {
     if (!paymentMethod) {
       return;
     }
-    const match = paymentMethods.find((method) => method.name === paymentMethod);
-    if (match?.owner) {
-      setPaymentOwner(match.owner);
+    const candidates = paymentMethods.filter(
+      (method) => method.name === paymentMethod
+    );
+    if (candidates.length === 0) {
+      return;
     }
-  }, [paymentMethod, paymentMethods]);
+    const preferredOwner =
+      spouseRole === "wife" ? "wife" : spouseRole === "husband" ? "husband" : null;
+    const preferredMatch = preferredOwner
+      ? candidates.find((method) => method.owner === preferredOwner)
+      : null;
+    const ownerMatch =
+      preferredMatch ??
+      candidates.find((method) => method.owner) ??
+      candidates[0];
+    if (ownerMatch?.owner) {
+      setPaymentOwner(ownerMatch.owner);
+    }
+  }, [paymentMethod, paymentMethods, spouseRole]);
 
   useEffect(() => {
     const ownerMethods = [

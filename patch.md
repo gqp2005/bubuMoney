@@ -1,5 +1,23 @@
 # Patch Notes
 
+## v1.1
+
+- Budget dashboard: monthly detail with top-category spend, budget save/load to Firestore, and category budgets with progress.
+- Budget inputs format with thousand separators and save/load success notifications.
+- Settings: add invite code join card with success notification.
+- Transactions: scrollable sheets for category/subject/payment in new/edit pages.
+- Transactions edit: preselect payment owner tab matching existing payment.
+- Stats: persist selected month and filters across refresh.
+
+### v1.1 (한국어)
+
+- 예산 화면: 월별 상세(상위 카테고리 지출), Firestore 저장/불러오기, 카테고리별 예산+진행률 추가.
+- 예산 입력 콤마 포맷 및 저장/불러오기 알림 기록.
+- 설정에 초대 코드 입력/참여 카드 추가(성공 알림 포함).
+- 내역 추가/수정 시 카테고리·주체·결제수단 시트 스크롤 적용.
+- 내역 수정 시 기존 결제수단 소유 탭 자동 선택.
+- 통계 탭: 선택 월/필터 새로고침 유지.
+
 ## v1.0
 
 - Added notifications page and per-user read status, with TTL-based cleanup (requires Firestore TTL on `expiresAt`).

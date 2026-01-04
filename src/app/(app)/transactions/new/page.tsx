@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { getDoc } from "firebase/firestore";
 import { useAuth } from "@/components/auth-provider";
 import { useHousehold } from "@/components/household-provider";
@@ -31,6 +31,7 @@ export default function NewTransactionPage() {
   const [subject, setSubject] = useState("");
   const [paymentMethod, setPaymentMethod] = useState("");
   const [paymentOwner, setPaymentOwner] = useState<PaymentOwner>("our");
+  const hasSetInitialOwner = useRef(false);
   const [partnerName, setPartnerName] = useState("");
   const [categoryId, setCategoryId] = useState("");
   const [isTypeSheetOpen, setIsTypeSheetOpen] = useState(false);
@@ -112,6 +113,16 @@ export default function NewTransactionPage() {
       setSubject(subjects[0].name);
     }
   }, [subjects, subject]);
+
+  useEffect(() => {
+    if (hasSetInitialOwner.current) {
+      return;
+    }
+    if (spouseRole === "husband" || spouseRole === "wife") {
+      setPaymentOwner(spouseRole);
+      hasSetInitialOwner.current = true;
+    }
+  }, [spouseRole]);
 
   useEffect(() => {
     const ownerParents = paymentGrouped[paymentOwner]?.parents ?? [];
