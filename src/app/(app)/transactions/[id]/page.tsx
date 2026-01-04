@@ -414,7 +414,7 @@ export default function EditTransactionPage() {
           />
           <div className="absolute bottom-0 left-0 right-0 max-h-[70vh] rounded-t-3xl bg-white p-6">
             <h2 className="text-sm font-semibold">주체 선택</h2>
-            <div className="mt-4 grid gap-2">
+            <div className="mt-4 max-h-[55vh] grid gap-2 overflow-y-auto pr-1">
               {subjectOptions.map((name) => (
                 <button
                   key={name}
@@ -446,7 +446,7 @@ export default function EditTransactionPage() {
           />
           <div className="absolute bottom-0 left-0 right-0 max-h-[70vh] rounded-t-3xl bg-white p-6">
             <h2 className="text-sm font-semibold">카테고리 선택</h2>
-            <div className="mt-4 grid gap-2">
+            <div className="mt-4 max-h-[55vh] grid gap-2 overflow-y-auto pr-1">
               {filteredCategories.map((category) => (
                 <button
                   key={category.id}
@@ -498,7 +498,7 @@ export default function EditTransactionPage() {
                 </button>
               ))}
             </div>
-            <div className="mt-4 space-y-3">
+            <div className="mt-4 max-h-[55vh] space-y-3 overflow-y-auto pr-1">
               {paymentGrouped[paymentOwner].parents.map((parent) => {
                 const childItems = paymentGrouped[paymentOwner].children.filter(
                   (child) => child.parentId === parent.id

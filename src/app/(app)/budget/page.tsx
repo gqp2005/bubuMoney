@@ -1,10 +1,651 @@
+"use client";
+
+import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  addMonths,
+  endOfMonth,
+  format,
+  startOfMonth,
+} from "date-fns";
+import { doc, getDoc, serverTimestamp, setDoc } from "firebase/firestore";
+import { useAuth } from "@/components/auth-provider";
+import { useHousehold } from "@/components/household-provider";
+import { useCategories } from "@/hooks/use-categories";
+import { useTransactionsRange } from "@/hooks/use-transactions";
+import { budgetsCol } from "@/lib/firebase/firestore";
+import { formatKrw } from "@/lib/format";
+import { addNotification } from "@/lib/notifications";
+
+type RangeOption = 6 | 12;
+type ChartType = "bar" | "line";
+
+type MonthPoint = {
+  month: Date;
+  net: number;
+  income: number;
+  expense: number;
+};
+
+type BudgetDoc = {
+  monthKey: string;
+  total: number;
+  byCategory?: Record<string, number>;
+  createdAt?: { toDate: () => Date };
+};
+
+const BAR_POSITIVE_COLORS = ["#34d399", "#22c55e", "#10b981", "#14b8a6"];
+const BAR_NEGATIVE_COLORS = ["#fb7185", "#f87171", "#ef4444", "#f97316"];
+const LINE_COLORS = ["#2d2622", "#0f766e", "#2563eb", "#7c3aed"];
+
+function normalizeNumberInput(value: string) {
+  return value.replace(/[^\d]/g, "");
+}
+
+function formatNumberInput(value: string) {
+  const cleaned = normalizeNumberInput(value);
+  if (!cleaned) {
+    return "";
+  }
+  return new Intl.NumberFormat("ko-KR").format(Number(cleaned));
+}
+
+function monthKeyToDate(monthKey: string) {
+  return new Date(`${monthKey}-01T00:00:00`);
+}
+
+function buildMonthPoints(
+  endMonth: Date,
+  range: RangeOption,
+  transactions: { amount: number; type: "income" | "expense"; date: { toDate: () => Date } }[]
+): MonthPoint[] {
+  const months: MonthPoint[] = [];
+  for (let i = range - 1; i >= 0; i -= 1) {
+    const month = startOfMonth(addMonths(endMonth, -i));
+    months.push({ month, net: 0, income: 0, expense: 0 });
+  }
+
+  const byKey = new Map(
+    months.map((item) => [format(item.month, "yyyy-MM"), item])
+  );
+
+  transactions.forEach((tx) => {
+    const date = tx.date.toDate();
+    const key = format(date, "yyyy-MM");
+    const target = byKey.get(key);
+    if (!target) {
+      return;
+    }
+    if (tx.type === "income") {
+      target.income += tx.amount;
+      target.net += tx.amount;
+    } else if (tx.type === "expense") {
+      target.expense += tx.amount;
+      target.net -= tx.amount;
+    }
+  });
+
+  return months;
+}
+
+function buildLinePath(points: MonthPoint[], width = 100, height = 160) {
+  const maxAbs = Math.max(1, ...points.map((point) => Math.abs(point.net)));
+  const mid = height / 2;
+  const usable = height / 2 - 12;
+  const step = points.length > 1 ? width / (points.length - 1) : 0;
+  return points
+    .map((point, index) => {
+      const x = index * step;
+      const y = mid - (point.net / maxAbs) * usable;
+      return `${index === 0 ? "M" : "L"} ${x} ${y}`;
+    })
+    .join(" ");
+}
+
 export default function BudgetPage() {
+  const { user } = useAuth();
+  const { householdId } = useHousehold();
+  const { categories } = useCategories(householdId);
+  const [range, setRange] = useState<RangeOption>(6);
+  const [chartType, setChartType] = useState<ChartType>("bar");
+  const [barPositiveColor, setBarPositiveColor] = useState(BAR_POSITIVE_COLORS[0]);
+  const [barNegativeColor, setBarNegativeColor] = useState(BAR_NEGATIVE_COLORS[0]);
+  const [lineColor, setLineColor] = useState(LINE_COLORS[0]);
+  const [monthlyBudget, setMonthlyBudget] = useState<string>("");
+  const [categoryBudgets, setCategoryBudgets] = useState<Record<string, string>>({});
+  const [saving, setSaving] = useState(false);
+  const [saveMessage, setSaveMessage] = useState<string | null>(null);
+  const [showAllTopCategories, setShowAllTopCategories] = useState(false);
+  const lastNotifiedLoadKey = useRef<string | null>(null);
+
+  const endMonth = startOfMonth(new Date());
+  const rangeStart = startOfMonth(addMonths(endMonth, -(range - 1)));
+  const rangeEnd = endOfMonth(endMonth);
+  const { transactions, loading } = useTransactionsRange(
+    householdId,
+    rangeStart,
+    rangeEnd
+  );
+
+  const monthPoints = useMemo(
+    () => buildMonthPoints(endMonth, range, transactions),
+    [endMonth, range, transactions]
+  );
+
+  const [selectedMonthKey, setSelectedMonthKey] = useState(
+    format(endMonth, "yyyy-MM")
+  );
+
+  useEffect(() => {
+    const keys = new Set(monthPoints.map((point) => format(point.month, "yyyy-MM")));
+    if (!keys.has(selectedMonthKey) && monthPoints.length > 0) {
+      setSelectedMonthKey(format(monthPoints[monthPoints.length - 1].month, "yyyy-MM"));
+    }
+  }, [monthPoints, selectedMonthKey]);
+
+  const maxAbs = useMemo(
+    () => Math.max(1, ...monthPoints.map((point) => Math.abs(point.net))),
+    [monthPoints]
+  );
+
+  const totalNet = monthPoints.reduce((acc, point) => acc + point.net, 0);
+  const selectedPoint =
+    monthPoints.find((point) => format(point.month, "yyyy-MM") === selectedMonthKey) ??
+    monthPoints[monthPoints.length - 1];
+
+  const categoryMap = useMemo(
+    () => new Map(categories.map((cat) => [cat.id, cat])),
+    [categories]
+  );
+
+  const topCategories = useMemo(
+    () =>
+      categories
+        .filter((cat) => cat.type === "expense" && !cat.parentId)
+        .sort((a, b) => a.order - b.order),
+    [categories]
+  );
+
+  const selectedMonthExpenses = useMemo(() => {
+    if (!selectedMonthKey) {
+      return [];
+    }
+    return transactions.filter((tx) => {
+      if (tx.type !== "expense") {
+        return false;
+      }
+      const key = format(tx.date.toDate(), "yyyy-MM");
+      return key === selectedMonthKey;
+    });
+  }, [selectedMonthKey, transactions]);
+
+  const topCategorySpend = useMemo(() => {
+    const totals: Record<string, number> = {};
+    selectedMonthExpenses.forEach((tx) => {
+      const category = categoryMap.get(tx.categoryId);
+      const topId = category?.parentId ?? category?.id ?? tx.categoryId;
+      totals[topId] = (totals[topId] ?? 0) + tx.amount;
+    });
+    return Object.entries(totals)
+      .map(([categoryId, amount]) => ({
+        categoryId,
+        amount,
+        name: categoryMap.get(categoryId)?.name ?? "미지정",
+      }))
+      .sort((a, b) => b.amount - a.amount);
+  }, [categoryMap, selectedMonthExpenses]);
+
+  useEffect(() => {
+    setSaveMessage(null);
+    setShowAllTopCategories(false);
+  }, [selectedMonthKey]);
+
+  useEffect(() => {
+    if (!householdId || !selectedMonthKey) {
+      return;
+    }
+    let active = true;
+    const loadBudget = async () => {
+      const ref = doc(budgetsCol(householdId), selectedMonthKey);
+      const snapshot = await getDoc(ref);
+      if (!active) {
+        return;
+      }
+      if (snapshot.exists()) {
+        const data = snapshot.data() as BudgetDoc;
+        setMonthlyBudget(data.total ? formatNumberInput(String(data.total)) : "");
+        const byCategory = data.byCategory ?? {};
+        const mapped: Record<string, string> = {};
+        Object.entries(byCategory).forEach(([key, value]) => {
+          mapped[key] = formatNumberInput(String(value));
+        });
+        setCategoryBudgets(mapped);
+        if (user && lastNotifiedLoadKey.current !== selectedMonthKey) {
+          lastNotifiedLoadKey.current = selectedMonthKey;
+          addNotification(householdId, {
+            title: "예산 불러오기 완료",
+            message: `${format(monthKeyToDate(selectedMonthKey), "yyyy년 M월")} 예산을 불러왔습니다.`,
+            level: "success",
+            type: "budget",
+          });
+        }
+      } else {
+        setMonthlyBudget("");
+        setCategoryBudgets({});
+      }
+    };
+    loadBudget();
+    return () => {
+      active = false;
+    };
+  }, [householdId, selectedMonthKey]);
+
+  const budgetValue = Number(normalizeNumberInput(monthlyBudget));
+  const budgetProgress =
+    budgetValue > 0 && selectedPoint
+      ? Math.min(100, Math.round((selectedPoint.expense / budgetValue) * 100))
+      : 0;
+
+  const handleCategoryBudgetChange = (categoryId: string, value: string) => {
+    setCategoryBudgets((prev) => ({ ...prev, [categoryId]: formatNumberInput(value) }));
+  };
+
+  const handleSaveBudget = async () => {
+    if (!householdId || !selectedMonthKey) {
+      return;
+    }
+    setSaving(true);
+    setSaveMessage(null);
+    const byCategory: Record<string, number> = {};
+    Object.entries(categoryBudgets).forEach(([key, value]) => {
+      const num = Number(normalizeNumberInput(value));
+      if (!Number.isNaN(num) && num > 0) {
+        byCategory[key] = num;
+      }
+    });
+    const total = Number(normalizeNumberInput(monthlyBudget));
+    await setDoc(
+      doc(budgetsCol(householdId), selectedMonthKey),
+      {
+        monthKey: selectedMonthKey,
+        total: Number.isNaN(total) ? 0 : total,
+        byCategory,
+        createdAt: serverTimestamp(),
+      },
+      { merge: true }
+    );
+    setSaving(false);
+    setSaveMessage("저장 완료");
+    if (user) {
+      addNotification(householdId, {
+        title: "예산 저장 완료",
+        message: `${format(monthKeyToDate(selectedMonthKey), "yyyy년 M월")} 예산을 저장했습니다.`,
+        level: "success",
+        type: "budget",
+      });
+    }
+  };
+
   return (
     <div className="flex flex-col gap-6">
       <section className="rounded-3xl border border-[var(--border)] bg-white p-6">
-        <p className="text-sm text-[color:rgba(45,38,34,0.7)]">
-          예산 설정 화면을 준비 중입니다.
-        </p>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h1 className="text-xl font-semibold">예산</h1>
+            <p className="text-xs text-[color:rgba(45,38,34,0.6)]">
+              최근 {range}개월 자산 증감 추이
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            {[6, 12].map((value) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() => setRange(value as RangeOption)}
+                className={`rounded-full border px-3 py-1 text-xs ${
+                  range === value
+                    ? "border-[var(--text)] bg-[var(--text)] text-white"
+                    : "border-[var(--border)] text-[color:rgba(45,38,34,0.7)]"
+                }`}
+              >
+                {value}개월
+              </button>
+            ))}
+            {(["bar", "line"] as ChartType[]).map((value) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() => setChartType(value)}
+                className={`rounded-full border px-3 py-1 text-xs ${
+                  chartType === value
+                    ? "border-[var(--text)] bg-[var(--text)] text-white"
+                    : "border-[var(--border)] text-[color:rgba(45,38,34,0.7)]"
+                }`}
+              >
+                {value === "bar" ? "막대" : "라인"}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="mt-4 rounded-2xl border border-[var(--border)] bg-[color:rgba(45,38,34,0.03)] p-4">
+          <p className="text-xs text-[color:rgba(45,38,34,0.6)]">
+            누적 자산 변화
+          </p>
+          <p className="mt-1 text-2xl font-semibold">
+            {formatKrw(totalNet)}
+          </p>
+        </div>
+
+        <div className="mt-4 grid gap-4 md:grid-cols-[1.2fr_1fr]">
+          <div className="rounded-2xl border border-[var(--border)] bg-white p-4">
+            <p className="text-xs text-[color:rgba(45,38,34,0.6)]">월 예산 입력</p>
+            <input
+              type="text"
+              inputMode="numeric"
+              placeholder="월 지출 예산을 입력"
+              value={monthlyBudget}
+              onChange={(event) => setMonthlyBudget(formatNumberInput(event.target.value))}
+              className="mt-2 w-full rounded-xl border border-[var(--border)] px-3 py-2 text-sm"
+            />
+            <div className="mt-3 flex items-center justify-between gap-2">
+              <button
+                type="button"
+                onClick={handleSaveBudget}
+                className="rounded-full bg-[var(--text)] px-4 py-2 text-xs text-white"
+                disabled={saving}
+              >
+                {saving ? "저장 중..." : "예산 저장"}
+              </button>
+              {saveMessage ? (
+                <span className="text-xs text-[color:rgba(45,38,34,0.6)]">
+                  {saveMessage}
+                </span>
+              ) : null}
+            </div>
+            <div className="mt-4">
+              <div className="flex items-center justify-between text-xs text-[color:rgba(45,38,34,0.6)]">
+                <span>예산 대비</span>
+                <span>{budgetProgress}%</span>
+              </div>
+              <div className="mt-2 h-2 w-full rounded-full bg-[color:rgba(45,38,34,0.1)]">
+                <div
+                  className="h-full rounded-full bg-[var(--accent)]"
+                  style={{ width: `${budgetProgress}%` }}
+                />
+              </div>
+              {selectedPoint ? (
+                <p className="mt-2 text-xs text-[color:rgba(45,38,34,0.6)]">
+                  {format(selectedPoint.month, "yyyy년 M월")} 지출 {formatKrw(selectedPoint.expense)}
+                </p>
+              ) : null}
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-[var(--border)] bg-white p-4">
+            <p className="text-xs text-[color:rgba(45,38,34,0.6)]">
+              선택 월 상세
+            </p>
+            {selectedPoint ? (
+              <div className="mt-3 space-y-2 text-sm">
+                <p className="font-semibold">{format(selectedPoint.month, "yyyy년 M월")}</p>
+                <div className="flex items-center justify-between">
+                  <span className="text-[color:rgba(45,38,34,0.6)]">수입</span>
+                  <span className="font-semibold text-emerald-600">
+                    {formatKrw(selectedPoint.income)}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-[color:rgba(45,38,34,0.6)]">지출</span>
+                  <span className="font-semibold text-rose-600">
+                    {formatKrw(selectedPoint.expense)}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-[color:rgba(45,38,34,0.6)]">증감</span>
+                  <span className="font-semibold">
+                    {formatKrw(selectedPoint.net)}
+                  </span>
+                </div>
+                <div className="pt-2">
+                  <p className="text-xs text-[color:rgba(45,38,34,0.6)]">
+                    상위 카테고리 지출
+                  </p>
+                  {topCategorySpend.length === 0 ? (
+                    <p className="mt-1 text-xs text-[color:rgba(45,38,34,0.5)]">
+                      지출 내역이 없습니다.
+                    </p>
+                  ) : (
+                    <div className="mt-2 space-y-1 text-xs">
+                      {(showAllTopCategories
+                        ? topCategorySpend
+                        : topCategorySpend.slice(0, 4)
+                      ).map((item) => (
+                        <div key={item.categoryId} className="flex items-center justify-between">
+                          <span>{item.name}</span>
+                          <span className="font-semibold text-rose-600">
+                            {formatKrw(item.amount)}
+                          </span>
+                        </div>
+                      ))}
+                      {topCategorySpend.length > 4 ? (
+                        <button
+                          type="button"
+                          className="mt-2 text-[11px] text-[color:rgba(45,38,34,0.6)]"
+                          onClick={() => setShowAllTopCategories((prev) => !prev)}
+                        >
+                          {showAllTopCategories ? "접기" : "더보기"}
+                        </button>
+                      ) : null}
+                    </div>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <p className="mt-2 text-xs text-[color:rgba(45,38,34,0.6)]">
+                선택된 월이 없습니다.
+              </p>
+            )}
+          </div>
+        </div>
+
+        <div className="mt-4 rounded-2xl border border-[var(--border)] bg-white p-4">
+          <p className="text-sm font-semibold">카테고리별 예산</p>
+          <p className="mt-1 text-xs text-[color:rgba(45,38,34,0.6)]">
+            선택 월 기준으로 상위 카테고리 예산을 입력하세요.
+          </p>
+          <div className="mt-3 space-y-3">
+            {topCategories.length === 0 ? (
+              <p className="text-xs text-[color:rgba(45,38,34,0.6)]">
+                지출 카테고리가 없습니다.
+              </p>
+            ) : (
+              topCategories.map((category) => {
+                const raw = categoryBudgets[category.id] ?? "";
+                const budget = Number(raw);
+                const spent =
+                  topCategorySpend.find((item) => item.categoryId === category.id)
+                    ?.amount ?? 0;
+                const progress =
+                  !Number.isNaN(budget) && budget > 0
+                    ? Math.min(100, Math.round((spent / budget) * 100))
+                    : 0;
+                return (
+                  <div key={category.id} className="rounded-xl border border-[var(--border)] p-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-sm font-medium">{category.name}</span>
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        placeholder="예산"
+                        value={raw}
+                        onChange={(event) =>
+                          handleCategoryBudgetChange(category.id, event.target.value)
+                        }
+                        className="w-24 rounded-lg border border-[var(--border)] px-2 py-1 text-xs text-right"
+                      />
+                    </div>
+                    <div className="mt-2 flex items-center justify-between text-xs text-[color:rgba(45,38,34,0.6)]">
+                      <span>지출 {formatKrw(spent)}</span>
+                      <span>{progress}%</span>
+                    </div>
+                    <div className="mt-2 h-2 w-full rounded-full bg-[color:rgba(45,38,34,0.1)]">
+                      <div
+                        className="h-full rounded-full bg-[var(--accent)]"
+                        style={{ width: `${progress}%` }}
+                      />
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </div>
+
+        <div className="mt-4 flex flex-wrap gap-4 text-xs">
+          <div className="flex items-center gap-2">
+            <span className="text-[color:rgba(45,38,34,0.6)]">양수 색상</span>
+            {BAR_POSITIVE_COLORS.map((color) => (
+              <button
+                key={color}
+                type="button"
+                onClick={() => setBarPositiveColor(color)}
+                className={`h-5 w-5 rounded-full border ${
+                  barPositiveColor === color
+                    ? "border-[var(--text)]"
+                    : "border-[var(--border)]"
+                }`}
+                style={{ backgroundColor: color }}
+                aria-label="양수 색상 선택"
+              />
+            ))}
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-[color:rgba(45,38,34,0.6)]">음수 색상</span>
+            {BAR_NEGATIVE_COLORS.map((color) => (
+              <button
+                key={color}
+                type="button"
+                onClick={() => setBarNegativeColor(color)}
+                className={`h-5 w-5 rounded-full border ${
+                  barNegativeColor === color
+                    ? "border-[var(--text)]"
+                    : "border-[var(--border)]"
+                }`}
+                style={{ backgroundColor: color }}
+                aria-label="음수 색상 선택"
+              />
+            ))}
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-[color:rgba(45,38,34,0.6)]">라인 색상</span>
+            {LINE_COLORS.map((color) => (
+              <button
+                key={color}
+                type="button"
+                onClick={() => setLineColor(color)}
+                className={`h-5 w-5 rounded-full border ${
+                  lineColor === color
+                    ? "border-[var(--text)]"
+                    : "border-[var(--border)]"
+                }`}
+                style={{ backgroundColor: color }}
+                aria-label="라인 색상 선택"
+              />
+            ))}
+          </div>
+        </div>
+
+        <div className="mt-6">
+          {loading ? (
+            <p className="text-sm text-[color:rgba(45,38,34,0.6)]">
+              불러오는 중...
+            </p>
+          ) : chartType === "bar" ? (
+            <div className="relative h-44">
+              <div className="absolute left-0 right-0 top-1/2 h-px bg-[color:rgba(45,38,34,0.2)]" />
+              <div className="flex h-full items-end gap-2">
+                {monthPoints.map((point) => {
+                  const height = Math.round((Math.abs(point.net) / maxAbs) * 100);
+                  const isPositive = point.net >= 0;
+                  const monthKey = format(point.month, "yyyy-MM");
+                  return (
+                    <button
+                      key={point.month.toISOString()}
+                      type="button"
+                      onClick={() => setSelectedMonthKey(monthKey)}
+                      className="flex flex-1 flex-col items-center justify-end"
+                    >
+                      <div className="relative h-full w-full">
+                        <div
+                          className="absolute left-1/2 w-3 -translate-x-1/2 rounded-full"
+                          style={{
+                            height: `${height}%`,
+                            backgroundColor: isPositive
+                              ? barPositiveColor
+                              : barNegativeColor,
+                            bottom: isPositive ? "50%" : undefined,
+                            top: isPositive ? undefined : "50%",
+                          }}
+                        />
+                      </div>
+                      <span
+                        className={`mt-2 text-[10px] ${
+                          monthKey === selectedMonthKey
+                            ? "font-semibold text-[var(--text)]"
+                            : "text-[color:rgba(45,38,34,0.6)]"
+                        }`}
+                      >
+                        {format(point.month, "M월")}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ) : (
+            <div className="relative h-44">
+              <svg
+                viewBox="0 0 100 160"
+                className="h-full w-full"
+                preserveAspectRatio="none"
+              >
+                <line
+                  x1="0"
+                  y1="80"
+                  x2="100"
+                  y2="80"
+                  stroke="rgba(45,38,34,0.2)"
+                  strokeWidth="1"
+                />
+                <path
+                  d={buildLinePath(monthPoints)}
+                  fill="none"
+                  stroke={lineColor}
+                  strokeWidth="2"
+                />
+              </svg>
+              <div className="mt-2 flex items-center gap-2">
+                {monthPoints.map((point) => {
+                  const monthKey = format(point.month, "yyyy-MM");
+                  return (
+                    <button
+                      key={point.month.toISOString()}
+                      type="button"
+                      onClick={() => setSelectedMonthKey(monthKey)}
+                      className={`flex-1 text-center text-[10px] ${
+                        monthKey === selectedMonthKey
+                          ? "font-semibold text-[var(--text)]"
+                          : "text-[color:rgba(45,38,34,0.6)]"
+                      }`}
+                    >
+                      {format(point.month, "M월")}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
       </section>
     </div>
   );

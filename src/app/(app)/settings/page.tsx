@@ -11,11 +11,18 @@ import { addCategory } from "@/lib/categories";
 import { signOutUser } from "@/lib/firebase/auth";
 import { householdDoc } from "@/lib/firebase/firestore";
 import { updateUserDisplayName } from "@/lib/firebase/user";
-import { createInvite, resetHouseholdData } from "@/lib/household";
+import {
+  acceptInvite,
+  createInvite,
+  findInviteByCode,
+  joinHousehold,
+  resetHouseholdData,
+} from "@/lib/household";
 import { addNotification } from "@/lib/notifications";
 import { addPaymentMethod } from "@/lib/payment-methods";
 import { addTransaction, updateTransactionsSubjectName } from "@/lib/transactions";
 import { addSubject, updateSubject } from "@/lib/subjects";
+import { setUserHousehold } from "@/lib/firebase/user";
 
 export default function SettingsPage() {
   const { user } = useAuth();
@@ -39,6 +46,9 @@ export default function SettingsPage() {
   const [resetOpen, setResetOpen] = useState(false);
   const [resetLoading, setResetLoading] = useState(false);
   const [resetStatus, setResetStatus] = useState<string | null>(null);
+  const [joinCode, setJoinCode] = useState("");
+  const [joinLoading, setJoinLoading] = useState(false);
+  const [joinStatus, setJoinStatus] = useState<string | null>(null);
   const [resetOptions, setResetOptions] = useState({
     transactions: false,
     memos: false,
@@ -116,6 +126,41 @@ export default function SettingsPage() {
 
   async function handleLogout() {
     await signOutUser();
+  }
+
+  async function handleJoinInvite() {
+    if (!user) {
+      return;
+    }
+    const code = joinCode.trim().toUpperCase();
+    if (!code) {
+      setJoinStatus("초대 코드를 입력해주세요.");
+      return;
+    }
+    setJoinLoading(true);
+    setJoinStatus(null);
+    try {
+      const invite = await findInviteByCode(code);
+      if (!invite) {
+        setJoinStatus("유효하지 않은 초대 코드입니다.");
+        return;
+      }
+      await joinHousehold(invite.householdId, user.uid, invite.createdBy);
+      await acceptInvite(invite.inviteId, invite.householdId, user.uid);
+      await setUserHousehold(user.uid, invite.householdId);
+      await addNotification(invite.householdId, {
+        title: "초대 참여",
+        message: `${nickname || "구성원"}님이 가계부에 참여했습니다.`,
+        level: "success",
+        type: "invite.join",
+      });
+      setJoinStatus("초대 코드 참여 완료");
+      setJoinCode("");
+    } catch (err) {
+      setJoinStatus("초대 코드 참여 실패");
+    } finally {
+      setJoinLoading(false);
+    }
   }
 
   async function handleNicknameSave() {
@@ -603,6 +648,32 @@ export default function SettingsPage() {
             </button>
             {error ? (
               <p className="mt-2 text-sm text-red-600">{error}</p>
+            ) : null}
+          </div>
+          <div className="rounded-2xl border border-[var(--border)] p-4">
+            <h2 className="text-sm font-semibold">초대 코드 입력</h2>
+            <p className="mt-2 text-sm text-[color:rgba(45,38,34,0.7)]">
+              받은 초대 코드를 입력해 가계부에 참여하세요.
+            </p>
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <input
+                className="flex-1 rounded-xl border border-[var(--border)] px-3 py-2 text-sm"
+                value={joinCode}
+                onChange={(event) => setJoinCode(event.target.value)}
+                placeholder="초대 코드 입력"
+              />
+              <button
+                className="rounded-full bg-[var(--accent)] px-4 py-2 text-sm text-white disabled:opacity-70"
+                onClick={handleJoinInvite}
+                disabled={joinLoading || !joinCode.trim()}
+              >
+                {joinLoading ? "참여 중.." : "참여하기"}
+              </button>
+            </div>
+            {joinStatus ? (
+              <p className="mt-2 text-xs text-[color:rgba(45,38,34,0.7)]">
+                {joinStatus}
+              </p>
             ) : null}
           </div>
           <div className="rounded-2xl border border-[var(--border)] p-4">
