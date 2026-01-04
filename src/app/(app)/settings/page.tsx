@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { doc, getDoc, getDocs, query, updateDoc, where } from "firebase/firestore";
+import { Timestamp, doc, getDoc, getDocs, query, updateDoc, where } from "firebase/firestore";
 import { useAuth } from "@/components/auth-provider";
 import { useHousehold } from "@/components/household-provider";
 import { useCategories } from "@/hooks/use-categories";
@@ -55,6 +55,11 @@ export default function SettingsPage() {
     household: false,
   });
   const [nowTick, setNowTick] = useState(Date.now());
+  type InviteSnapshot = {
+    code: string;
+    expiresAt: Timestamp;
+    createdAt?: Timestamp | null;
+  };
 
   const categoryMap = useMemo(() => {
     return new Map(
@@ -146,20 +151,9 @@ export default function SettingsPage() {
           return;
         }
         const now = Date.now();
-        let latest: {
-          code?: string;
-          expiresAt?: { toMillis: () => number };
-          createdAt?: { toMillis: () => number };
-        } | null = null;
+        let latest: InviteSnapshot | null = null;
         snapshot.docs.forEach((docSnap) => {
-          const data = docSnap.data() as {
-            code?: string;
-            expiresAt?: { toMillis: () => number };
-            createdAt?: { toMillis: () => number };
-          };
-          if (!data.code || !data.expiresAt) {
-            return;
-          }
+          const data = docSnap.data() as InviteSnapshot;
           if (data.expiresAt.toMillis() <= now) {
             return;
           }
