@@ -15,6 +15,7 @@ import { useTransactionsRange } from "@/hooks/use-transactions";
 import { budgetsCol } from "@/lib/firebase/firestore";
 import { formatKrw } from "@/lib/format";
 import { addNotification } from "@/lib/notifications";
+import type { Transaction, TransactionType } from "@/types/ledger";
 
 type RangeOption = 6 | 12;
 type ChartType = "bar" | "line";
@@ -56,7 +57,7 @@ function monthKeyToDate(monthKey: string) {
 function buildMonthPoints(
   endMonth: Date,
   range: RangeOption,
-  transactions: { amount: number; type: "income" | "expense"; date: { toDate: () => Date } }[]
+  transactions: (Transaction & { id: string })[]
 ): MonthPoint[] {
   const months: MonthPoint[] = [];
   for (let i = range - 1; i >= 0; i -= 1) {
