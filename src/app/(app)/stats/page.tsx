@@ -11,6 +11,7 @@ import {
   format,
   isSameDay,
   isSameMonth,
+  parse,
   startOfDay,
   startOfMonth,
   startOfWeek,
@@ -58,6 +59,34 @@ const PAYMENT_COLORS = [
 ];
 
 const STATS_STORAGE_KEY = "couple-ledger.stats.filters";
+
+type StoredStatsFilters = {
+  viewType?: ViewType;
+  appliedRangeMode?: "monthly" | "custom";
+  appliedStart?: string | null;
+  appliedEnd?: string | null;
+  appliedMonthDate?: string;
+  appliedCategoryIds?: string[];
+  appliedSubjects?: string[];
+  appliedPayments?: string[];
+  paymentOwnerFilter?: "husband" | "wife" | "our";
+};
+
+function loadStoredStatsFilters(): StoredStatsFilters | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+  try {
+    const raw = window.localStorage.getItem(STATS_STORAGE_KEY);
+    if (!raw) {
+      return null;
+    }
+    return JSON.parse(raw) as StoredStatsFilters;
+  } catch (err) {
+    window.localStorage.removeItem(STATS_STORAGE_KEY);
+    return null;
+  }
+}
 
 type ViewType = "income" | "expense";
 
@@ -114,14 +143,29 @@ function SectionHeader({ title }: { title: string }) {
   );
 }
 
+function parseLocalDate(value: string) {
+  const parsed = parse(value, "yyyy-MM-dd", new Date());
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
 export default function StatsPage() {
   const router = useRouter();
   const { householdId, displayName, spouseRole } = useHousehold();
   const { categories } = useCategories(householdId);
   const { subjects } = useSubjects(householdId);
   const { paymentMethods } = usePaymentMethods(householdId);
-  const [monthDate, setMonthDate] = useState(() => startOfMonth(new Date()));
-  const [viewType, setViewType] = useState<ViewType>("expense");
+  const [storedFilters] = useState<StoredStatsFilters | null>(() =>
+    loadStoredStatsFilters()
+  );
+  const initialAppliedMonthDate = storedFilters?.appliedMonthDate
+    ? startOfMonth(new Date(storedFilters.appliedMonthDate))
+    : startOfMonth(new Date());
+  const [monthDate, setMonthDate] = useState(() => initialAppliedMonthDate);
+  const [viewType, setViewType] = useState<ViewType>(() =>
+    storedFilters?.viewType === "income" || storedFilters?.viewType === "expense"
+      ? storedFilters.viewType
+      : "expense"
+  );
   const [expanded, setExpanded] = useState(false);
   const [isRangeSheetOpen, setIsRangeSheetOpen] = useState(false);
   const [rangeMode, setRangeMode] = useState<"monthly" | "custom">("monthly");
@@ -134,27 +178,48 @@ export default function StatsPage() {
   );
   const [appliedRangeMode, setAppliedRangeMode] = useState<
     "monthly" | "custom"
-  >("monthly");
-  const [appliedMonthDate, setAppliedMonthDate] = useState(() =>
-    startOfMonth(new Date())
+  >(() =>
+    storedFilters?.appliedRangeMode === "custom" ||
+    storedFilters?.appliedRangeMode === "monthly"
+      ? storedFilters.appliedRangeMode
+      : "monthly"
   );
-  const [appliedStart, setAppliedStart] = useState<string | null>(null);
-  const [appliedEnd, setAppliedEnd] = useState<string | null>(null);
+  const [appliedMonthDate, setAppliedMonthDate] = useState(
+    () => initialAppliedMonthDate
+  );
+  const [appliedStart, setAppliedStart] = useState<string | null>(
+    () => storedFilters?.appliedStart ?? null
+  );
+  const [appliedEnd, setAppliedEnd] = useState<string | null>(
+    () => storedFilters?.appliedEnd ?? null
+  );
   const monthKey = toMonthKey(appliedMonthDate);
   const { transactions: monthlyTransactions, loading: monthlyLoading } =
     useMonthlyTransactions(householdId, monthKey);
-  const rangeStart = useMemo(
-    () => (appliedStart ? startOfDay(new Date(appliedStart)) : null),
-    [appliedStart]
-  );
-  const rangeEnd = useMemo(
-    () => (appliedEnd ? endOfDay(new Date(appliedEnd)) : null),
-    [appliedEnd]
-  );
+  const rangeStart = useMemo(() => {
+    if (!appliedStart) {
+      return null;
+    }
+    const parsed = parseLocalDate(appliedStart);
+    return parsed ? startOfDay(parsed) : null;
+  }, [appliedStart]);
+  const rangeEnd = useMemo(() => {
+    if (!appliedEnd) {
+      return null;
+    }
+    const parsed = parseLocalDate(appliedEnd);
+    return parsed ? endOfDay(parsed) : null;
+  }, [appliedEnd]);
+  const shouldUseRange =
+    appliedRangeMode === "custom" && rangeStart && rangeEnd;
   const { transactions: rangeTransactions, loading: rangeLoading } =
-    useTransactionsRange(householdId, rangeStart, rangeEnd);
+    useTransactionsRange(
+      householdId,
+      shouldUseRange ? rangeStart : null,
+      shouldUseRange ? rangeEnd : null
+    );
   const activeTransactions =
-    appliedRangeMode === "custom" && rangeStart && rangeEnd
+    appliedRangeMode === "custom" && shouldUseRange
       ? rangeTransactions
       : monthlyTransactions;
   const activeLoading =
@@ -175,13 +240,13 @@ export default function StatsPage() {
     () => new Set()
   );
   const [appliedCategoryIds, setAppliedCategoryIds] = useState<Set<string>>(
-    () => new Set()
+    () => new Set(storedFilters?.appliedCategoryIds ?? [])
   );
   const [appliedSubjects, setAppliedSubjects] = useState<Set<string>>(
-    () => new Set()
+    () => new Set(storedFilters?.appliedSubjects ?? [])
   );
   const [appliedPayments, setAppliedPayments] = useState<Set<string>>(
-    () => new Set()
+    () => new Set(storedFilters?.appliedPayments ?? [])
   );
   const [expandedCategoryParents, setExpandedCategoryParents] = useState<
     Set<string>
@@ -191,62 +256,14 @@ export default function StatsPage() {
   >(() => new Set());
   const [paymentOwnerFilter, setPaymentOwnerFilter] = useState<
     "husband" | "wife" | "our"
-  >("our");
+  >(() =>
+    storedFilters?.paymentOwnerFilter === "husband" ||
+    storedFilters?.paymentOwnerFilter === "wife" ||
+    storedFilters?.paymentOwnerFilter === "our"
+      ? storedFilters.paymentOwnerFilter
+      : "our"
+  );
   const [showResetConfirm, setShowResetConfirm] = useState(false);
-
-  useEffect(() => {
-    if (typeof window === "undefined") {
-      return;
-    }
-    try {
-      const raw = window.localStorage.getItem(STATS_STORAGE_KEY);
-      if (!raw) {
-        return;
-      }
-      const parsed = JSON.parse(raw) as {
-        viewType?: ViewType;
-        appliedRangeMode?: "monthly" | "custom";
-        appliedStart?: string | null;
-        appliedEnd?: string | null;
-        appliedMonthDate?: string;
-        appliedCategoryIds?: string[];
-        appliedSubjects?: string[];
-        appliedPayments?: string[];
-        paymentOwnerFilter?: "husband" | "wife" | "our";
-      };
-      if (parsed.viewType) {
-        setViewType(parsed.viewType);
-      }
-      if (parsed.appliedRangeMode) {
-        setAppliedRangeMode(parsed.appliedRangeMode);
-      }
-      if (parsed.appliedStart !== undefined) {
-        setAppliedStart(parsed.appliedStart);
-      }
-      if (parsed.appliedEnd !== undefined) {
-        setAppliedEnd(parsed.appliedEnd);
-      }
-      if (parsed.appliedMonthDate) {
-        const next = startOfMonth(new Date(parsed.appliedMonthDate));
-        setAppliedMonthDate(next);
-        setMonthDate(next);
-      }
-      if (parsed.appliedCategoryIds) {
-        setAppliedCategoryIds(new Set(parsed.appliedCategoryIds));
-      }
-      if (parsed.appliedSubjects) {
-        setAppliedSubjects(new Set(parsed.appliedSubjects));
-      }
-      if (parsed.appliedPayments) {
-        setAppliedPayments(new Set(parsed.appliedPayments));
-      }
-      if (parsed.paymentOwnerFilter) {
-        setPaymentOwnerFilter(parsed.paymentOwnerFilter);
-      }
-    } catch (err) {
-      window.localStorage.removeItem(STATS_STORAGE_KEY);
-    }
-  }, []);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -365,6 +382,38 @@ export default function StatsPage() {
   const shownCategoryItems = expanded
     ? categoryBreakdown
     : categoryBreakdown.slice(0, 4);
+  const activeCategoryNames = useMemo(() => {
+    if (appliedCategoryIds.size === 0) {
+      return "전체";
+    }
+    const names = Array.from(appliedCategoryIds)
+      .map((id) => categoryMap.get(id) ?? "미분류")
+      .filter(Boolean);
+    if (names.length > 3) {
+      return `${names.slice(0, 3).join(", ")} 외 ${names.length - 3}개`;
+    }
+    return names.join(", ");
+  }, [appliedCategoryIds, categoryMap]);
+  const activeSubjectNames = useMemo(() => {
+    if (appliedSubjects.size === 0) {
+      return "전체";
+    }
+    const names = Array.from(appliedSubjects);
+    if (names.length > 3) {
+      return `${names.slice(0, 3).join(", ")} 외 ${names.length - 3}개`;
+    }
+    return names.join(", ");
+  }, [appliedSubjects]);
+  const activePaymentNames = useMemo(() => {
+    if (appliedPayments.size === 0) {
+      return "전체";
+    }
+    const names = Array.from(appliedPayments);
+    if (names.length > 3) {
+      return `${names.slice(0, 3).join(", ")} 외 ${names.length - 3}개`;
+    }
+    return names.join(", ");
+  }, [appliedPayments]);
 
   const yearOptions = useMemo(() => {
     const currentYear = new Date().getFullYear();
@@ -421,27 +470,30 @@ export default function StatsPage() {
     return { husbandLabel, wifeLabel };
   }, [displayName, spouseRole, subjects]);
 
-  useEffect(() => {
-    if (!customStart) {
+  function updateCustomStart(value: string) {
+    setCustomStart(value);
+    if (!value) {
       return;
     }
-    const parsed = new Date(customStart);
-    if (!Number.isNaN(parsed.getTime())) {
+    const parsed = parseLocalDate(value);
+    if (parsed) {
       setCustomMonthDate(startOfMonth(parsed));
     }
-  }, [customStart]);
+  }
 
   function openRangeSheet() {
     if (appliedRangeMode === "custom" && appliedStart && appliedEnd) {
-      const appliedStartDate = new Date(appliedStart);
-      setCustomStart(appliedStart);
+      const appliedStartDate = parseLocalDate(appliedStart);
+      updateCustomStart(appliedStart);
       setCustomEnd(appliedEnd);
-      setCustomMonthDate(startOfMonth(appliedStartDate));
+      if (appliedStartDate) {
+        setCustomMonthDate(startOfMonth(appliedStartDate));
+      }
       setRangeMode("custom");
     } else {
       setSelectedYear(appliedMonthDate.getFullYear());
       setSelectedMonth(appliedMonthDate.getMonth());
-      setCustomStart("");
+      updateCustomStart("");
       setCustomEnd("");
       setRangeMode("monthly");
       setCustomMonthDate(startOfMonth(appliedMonthDate));
@@ -451,12 +503,17 @@ export default function StatsPage() {
 
   function handleRangeConfirm() {
     if (rangeMode === "custom" && customStart) {
+      const parsedStart = parseLocalDate(customStart);
       const fallbackEnd = customEnd || customStart;
+      const parsedEnd = parseLocalDate(fallbackEnd);
+      if (!parsedStart || !parsedEnd) {
+        return;
+      }
       setAppliedRangeMode("custom");
       setAppliedStart(customStart);
       setAppliedEnd(fallbackEnd);
-      setAppliedMonthDate(startOfMonth(new Date(customStart)));
-      setMonthDate(startOfMonth(new Date(customStart)));
+      setAppliedMonthDate(startOfMonth(parsedStart));
+      setMonthDate(startOfMonth(parsedStart));
     } else {
       const nextMonth = new Date(selectedYear, selectedMonth, 1);
       setAppliedRangeMode("monthly");
@@ -470,8 +527,11 @@ export default function StatsPage() {
 
   const headerLabel =
     appliedRangeMode === "custom" && appliedStart && appliedEnd
-      ? `${format(new Date(appliedStart), "yy.MM.dd")}~${format(
-          new Date(appliedEnd),
+      ? `${format(
+          parseLocalDate(appliedStart) ?? new Date(),
+          "yy.MM.dd"
+        )}~${format(
+          parseLocalDate(appliedEnd) ?? new Date(),
           "yy.MM.dd"
         )}`
       : format(appliedMonthDate, "M월");
@@ -528,8 +588,8 @@ export default function StatsPage() {
     return days;
   }, [customMonthDate]);
 
-  const customStartDate = customStart ? new Date(customStart) : null;
-  const customEndDate = customEnd ? new Date(customEnd) : null;
+  const customStartDate = customStart ? parseLocalDate(customStart) : null;
+  const customEndDate = customEnd ? parseLocalDate(customEnd) : null;
 
   function moveMonth(direction: "prev" | "next") {
     const delta = direction === "prev" ? -1 : 1;
@@ -550,7 +610,7 @@ export default function StatsPage() {
     setTouchEndX(event.touches[0]?.clientX ?? null);
   }
 
-  const swipeThreshold = 120;
+  const swipeThreshold = 150;
 
   function handleTouchEnd() {
     if (touchStartX === null || touchEndX === null) {
@@ -689,6 +749,13 @@ export default function StatsPage() {
               >
                 ↻
               </button>
+            </div>
+            <div className="text-[11px] text-[color:rgba(45,38,34,0.55)]">
+              <span>카테고리: {activeCategoryNames}</span>
+              <span className="mx-2">•</span>
+              <span>구성원: {activeSubjectNames}</span>
+              <span className="mx-2">•</span>
+              <span>자산: {activePaymentNames}</span>
             </div>
 
             <div className="space-y-4">
@@ -856,7 +923,7 @@ export default function StatsPage() {
                       type="date"
                       className="sr-only"
                       value={customStart}
-                      onChange={(event) => setCustomStart(event.target.value)}
+                      onChange={(event) => updateCustomStart(event.target.value)}
                     />
                     {customStart
                       ? format(new Date(customStart), "yyyy.MM.dd") + " 부터"
@@ -883,7 +950,7 @@ export default function StatsPage() {
                       onClick={() => {
                         const end = endOfMonth(monthDate);
                         const start = startOfMonth(addMonths(end, -(months - 1)));
-                        setCustomStart(format(start, "yyyy-MM-dd"));
+                        updateCustomStart(format(start, "yyyy-MM-dd"));
                         setCustomEnd(format(end, "yyyy-MM-dd"));
                         setCustomMonthDate(startOfMonth(end));
                       }}
@@ -926,12 +993,12 @@ export default function StatsPage() {
                           } ${isCurrentMonth ? "" : "text-[color:rgba(45,38,34,0.3)]"}`}
                           onClick={() => {
                             if (!customStartDate || (customStartDate && customEndDate)) {
-                              setCustomStart(format(day, "yyyy-MM-dd"));
+                              updateCustomStart(format(day, "yyyy-MM-dd"));
                               setCustomEnd("");
                               return;
                             }
                             if (day < customStartDate) {
-                              setCustomStart(format(day, "yyyy-MM-dd"));
+                              updateCustomStart(format(day, "yyyy-MM-dd"));
                               setCustomEnd("");
                             } else {
                               setCustomEnd(format(day, "yyyy-MM-dd"));

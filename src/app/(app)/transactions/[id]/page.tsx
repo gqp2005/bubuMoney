@@ -35,6 +35,9 @@ export default function EditTransactionPage() {
   const [isSubjectSheetOpen, setIsSubjectSheetOpen] = useState(false);
   const [isCategorySheetOpen, setIsCategorySheetOpen] = useState(false);
   const [isPaymentSheetOpen, setIsPaymentSheetOpen] = useState(false);
+  const [expandedCategoryParentIds, setExpandedCategoryParentIds] = useState<
+    Set<string>
+  >(() => new Set());
   const [expandedPaymentParentId, setExpandedPaymentParentId] = useState<
     string | null
   >(null);
@@ -46,6 +49,15 @@ export default function EditTransactionPage() {
   const [subject, setSubject] = useState("");
   const [date, setDate] = useState(toDateKey(new Date()));
   const [note, setNote] = useState("");
+  const [originalTransaction, setOriginalTransaction] = useState<{
+    type: TransactionType;
+    amount: number;
+    categoryId: string;
+    paymentMethod: string;
+    subject: string;
+    date: string;
+    note?: string;
+  } | null>(null);
   const typeLabelMap: Record<TransactionType, string> = {
     expense: "지출",
     income: "수입",
@@ -69,15 +81,42 @@ export default function EditTransactionPage() {
     return Number(value.replace(/,/g, ""));
   }
 
-  const filteredCategories = useMemo(() => {
-    const byType = categories.filter((cat) => cat.type === type);
-    const leaf = byType.filter((cat) => cat.parentId);
-    return leaf.length ? leaf : byType;
+  const categoryParents = useMemo(() => {
+    return categories
+      .filter((cat) => cat.type === type && !cat.parentId)
+      .sort((a, b) => a.order - b.order);
   }, [categories, type]);
+  const categoryChildrenByParent = useMemo(() => {
+    const map = new Map<string, typeof categories>();
+    categories
+      .filter((cat) => cat.type === type && cat.parentId)
+      .forEach((child) => {
+        const bucket = map.get(child.parentId ?? "") ?? [];
+        bucket.push(child);
+        map.set(child.parentId ?? "", bucket);
+      });
+    map.forEach((list) => list.sort((a, b) => a.order - b.order));
+    return map;
+  }, [categories, type]);
+  const categoryOptions = useMemo(() => {
+    const children = categories.filter((cat) => cat.type === type && cat.parentId);
+    return children.length ? children : categoryParents;
+  }, [categories, type, categoryParents]);
+
+  useEffect(() => {
+    if (categoryParents.length === 0) {
+      setExpandedCategoryParentIds(new Set());
+      return;
+    }
+    setExpandedCategoryParentIds(new Set(categoryParents.map((parent) => parent.id)));
+  }, [categoryParents]);
 
   const selectedCategoryName = useMemo(() => {
     return categories.find((category) => category.id === categoryId)?.name ?? "";
   }, [categories, categoryId]);
+  const categoryNameMap = useMemo(() => {
+    return new Map(categories.map((category) => [category.id, category.name]));
+  }, [categories]);
 
   const subjectOptions = useMemo(() => {
     const list = subjects.map((item) => item.name);
@@ -143,6 +182,15 @@ export default function EditTransactionPage() {
         setSubject(data.subject);
         setDate(toDateKey(data.date.toDate()));
         setNote(data.note ?? "");
+        setOriginalTransaction({
+          type: data.type,
+          amount: data.amount,
+          categoryId: data.categoryId,
+          paymentMethod: data.paymentMethod,
+          subject: data.subject,
+          date: toDateKey(data.date.toDate()),
+          note: data.note ?? "",
+        });
       })
       .catch(() => setError("거래 내역을 불러오지 못했습니다."))
       .finally(() => setLoading(false));
@@ -211,6 +259,19 @@ export default function EditTransactionPage() {
     }
   }, [paymentGrouped, paymentMethod, paymentOwner]);
 
+  useEffect(() => {
+    if (categoryOptions.length === 0) {
+      return;
+    }
+    if (!categoryId) {
+      setCategoryId(categoryOptions[0].id);
+      return;
+    }
+    if (!categoryOptions.some((cat) => cat.id === categoryId)) {
+      setCategoryId(categoryOptions[0].id);
+    }
+  }, [categoryId, categoryOptions]);
+
   async function handleSave() {
     if (!householdId || !transactionId) {
       return;
@@ -218,20 +279,58 @@ export default function EditTransactionPage() {
     setSaving(true);
     setError(null);
     try {
+      const nextAmount = parseAmountValue(amount);
+      const memoText = note.trim() || "메모 없음";
       await updateTransaction({
         householdId,
         transactionId,
         type,
-        amount: parseAmountValue(amount),
+        amount: nextAmount,
         categoryId,
         paymentMethod,
         subject,
         date: new Date(date),
         note: note || undefined,
       });
+      const changes: string[] = [];
+      if (originalTransaction) {
+        if (originalTransaction.type !== type) {
+          changes.push(
+            `유형 ${typeLabelMap[originalTransaction.type]}→${typeLabelMap[type]}`
+          );
+        }
+        if (originalTransaction.amount !== nextAmount) {
+          changes.push(
+            `금액 ${formatKrw(originalTransaction.amount)}→${formatKrw(nextAmount)}`
+          );
+        }
+        if (originalTransaction.categoryId !== categoryId) {
+          const beforeName =
+            categoryNameMap.get(originalTransaction.categoryId) ?? "미분류";
+          const afterName = categoryNameMap.get(categoryId) ?? "미분류";
+          changes.push(`카테고리 ${beforeName}→${afterName}`);
+        }
+        if (originalTransaction.paymentMethod !== paymentMethod) {
+          changes.push(
+            `결제수단 ${originalTransaction.paymentMethod}→${paymentMethod}`
+          );
+        }
+        if (originalTransaction.subject !== subject) {
+          changes.push(`주체 ${originalTransaction.subject}→${subject}`);
+        }
+        if (originalTransaction.date !== date) {
+          changes.push(`날짜 ${originalTransaction.date}→${date}`);
+        }
+        if ((originalTransaction.note ?? "") !== note) {
+          changes.push("메모 수정");
+        }
+      }
+      const changeSummary = changes.length
+        ? `수정: ${changes.join(", ")}`
+        : "수정: 변경 없음";
       await addNotification(householdId, {
         title: "내역 수정",
-        message: `${typeLabelMap[type]} ${formatKrw(parseAmountValue(amount))} · ${date}`,
+        message: `${typeLabelMap[type]} · ${memoText} · ${date} (${changeSummary})`,
         level: "info",
         type: "transaction.update",
       });
@@ -474,24 +573,81 @@ export default function EditTransactionPage() {
           />
           <div className="absolute bottom-0 left-0 right-0 max-h-[70vh] rounded-t-3xl bg-white p-6">
             <h2 className="text-sm font-semibold">카테고리 선택</h2>
-            <div className="mt-4 max-h-[55vh] grid gap-2 overflow-y-auto pr-1">
-              {filteredCategories.map((category) => (
-                <button
-                  key={category.id}
-                  type="button"
-                  className={`rounded-xl border px-4 py-3 text-left text-sm ${
-                    categoryId === category.id
-                      ? "border-[var(--accent)] bg-[color:rgba(145,102,82,0.12)]"
-                      : "border-[var(--border)] bg-white"
-                  }`}
-                  onClick={() => {
-                    setCategoryId(category.id);
-                    setIsCategorySheetOpen(false);
-                  }}
-                >
-                  {category.name}
-                </button>
-              ))}
+            <div className="mt-4 max-h-[55vh] space-y-3 overflow-y-auto pr-1">
+              {categoryParents.map((parent) => {
+                const children = categoryChildrenByParent.get(parent.id) ?? [];
+                const isExpanded = expandedCategoryParentIds.has(parent.id);
+                if (children.length === 0) {
+                  return (
+                    <button
+                      key={parent.id}
+                      type="button"
+                      className={`w-full rounded-xl border px-4 py-3 text-left text-sm ${
+                        categoryId === parent.id
+                          ? "border-[var(--accent)] bg-[color:rgba(145,102,82,0.12)]"
+                          : "border-[var(--border)] bg-white"
+                      }`}
+                      onClick={() => {
+                        setCategoryId(parent.id);
+                        setIsCategorySheetOpen(false);
+                      }}
+                    >
+                      {parent.name}
+                    </button>
+                  );
+                }
+                return (
+                  <div
+                    key={parent.id}
+                    className="rounded-2xl border border-[var(--border)] px-4 py-3 text-sm"
+                  >
+                    <button
+                      type="button"
+                      className="flex w-full items-center justify-between text-left"
+                      onClick={() => {
+                        setExpandedCategoryParentIds((prev) => {
+                          const next = new Set(prev);
+                          if (next.has(parent.id)) {
+                            next.delete(parent.id);
+                          } else {
+                            next.add(parent.id);
+                          }
+                          return next;
+                        });
+                      }}
+                    >
+                      <span className="font-medium">{parent.name}</span>
+                      <span className="text-xs text-[color:rgba(45,38,34,0.6)]">
+                        소분류 {children.length}개{" "}
+                        <span className="ml-2 text-sm">
+                          {isExpanded ? "-" : "+"}
+                        </span>
+                      </span>
+                    </button>
+                    {isExpanded ? (
+                      <div className="mt-3 space-y-2">
+                        {children.map((child) => (
+                          <button
+                            key={child.id}
+                            type="button"
+                            className={`w-full rounded-xl border px-3 py-2 text-left text-xs ${
+                              categoryId === child.id
+                                ? "border-[var(--accent)] bg-[color:rgba(145,102,82,0.12)]"
+                                : "border-[var(--border)] bg-white"
+                            }`}
+                            onClick={() => {
+                              setCategoryId(child.id);
+                              setIsCategorySheetOpen(false);
+                            }}
+                          >
+                            {child.name}
+                          </button>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+                );
+              })}
             </div>
           </div>
         </div>

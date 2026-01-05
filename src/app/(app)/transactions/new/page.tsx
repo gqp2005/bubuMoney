@@ -39,6 +39,9 @@ export default function NewTransactionPage() {
   const [isSubjectSheetOpen, setIsSubjectSheetOpen] = useState(false);
   const [isCategorySheetOpen, setIsCategorySheetOpen] = useState(false);
   const [isPaymentSheetOpen, setIsPaymentSheetOpen] = useState(false);
+  const [expandedCategoryParentIds, setExpandedCategoryParentIds] = useState<
+    Set<string>
+  >(() => new Set());
   const [expandedPaymentParentId, setExpandedPaymentParentId] = useState<
     string | null
   >(null);
@@ -81,11 +84,35 @@ export default function NewTransactionPage() {
   const wifeLabel =
     spouseRole === "wife" ? spouseName || "아내" : partnerTrimmed || "아내";
 
-  const filteredCategories = useMemo(() => {
-    const byType = categories.filter((cat) => cat.type === type);
-    const leaf = byType.filter((cat) => cat.parentId);
-    return leaf.length ? leaf : byType;
+  const categoryParents = useMemo(() => {
+    return categories
+      .filter((cat) => cat.type === type && !cat.parentId)
+      .sort((a, b) => a.order - b.order);
   }, [categories, type]);
+  const categoryChildrenByParent = useMemo(() => {
+    const map = new Map<string, typeof categories>();
+    categories
+      .filter((cat) => cat.type === type && cat.parentId)
+      .forEach((child) => {
+        const bucket = map.get(child.parentId ?? "") ?? [];
+        bucket.push(child);
+        map.set(child.parentId ?? "", bucket);
+      });
+    map.forEach((list) => list.sort((a, b) => a.order - b.order));
+    return map;
+  }, [categories, type]);
+  const categoryOptions = useMemo(() => {
+    const children = categories.filter((cat) => cat.type === type && cat.parentId);
+    return children.length ? children : categoryParents;
+  }, [categories, type, categoryParents]);
+
+  useEffect(() => {
+    if (categoryParents.length === 0) {
+      setExpandedCategoryParentIds(new Set());
+      return;
+    }
+    setExpandedCategoryParentIds(new Set(categoryParents.map((parent) => parent.id)));
+  }, [categoryParents]);
 
   const paymentGrouped = useMemo(() => {
     const byOwner: Record<
@@ -158,17 +185,17 @@ export default function NewTransactionPage() {
   }, [paymentGrouped, paymentMethod, paymentOwner]);
 
   useEffect(() => {
-    if (filteredCategories.length === 0) {
+    if (categoryOptions.length === 0) {
       return;
     }
     if (!categoryId) {
-      setCategoryId(filteredCategories[0].id);
+      setCategoryId(categoryOptions[0].id);
       return;
     }
-    if (!filteredCategories.some((cat) => cat.id === categoryId)) {
-      setCategoryId(filteredCategories[0].id);
+    if (!categoryOptions.some((cat) => cat.id === categoryId)) {
+      setCategoryId(categoryOptions[0].id);
     }
-  }, [categoryId, filteredCategories]);
+  }, [categoryId, categoryOptions]);
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -200,9 +227,10 @@ export default function NewTransactionPage() {
         note: note.length ? note : undefined,
         createdBy: user.uid,
       });
+      const memoText = note.trim() || "메모 없음";
       await addNotification(householdId, {
         title: "내역 추가",
-        message: `${typeLabelMap[type]} ${formatKrw(amount)} · ${date}`,
+        message: `${typeLabelMap[type]} · ${memoText} · ${date}`,
         level: "success",
         type: "transaction.create",
       });
@@ -382,24 +410,81 @@ export default function NewTransactionPage() {
           />
           <div className="absolute bottom-0 left-0 right-0 max-h-[70vh] rounded-t-3xl bg-white p-6">
             <h2 className="text-sm font-semibold">카테고리 선택</h2>
-            <div className="mt-4 max-h-[55vh] grid gap-2 overflow-y-auto pr-1">
-              {filteredCategories.map((category) => (
-                <button
-                  key={category.id}
-                  type="button"
-                  className={`rounded-xl border px-4 py-3 text-left text-sm ${
-                    categoryId === category.id
-                      ? "border-[var(--accent)] bg-[color:rgba(145,102,82,0.12)]"
-                      : "border-[var(--border)] bg-white"
-                  }`}
-                  onClick={() => {
-                    setCategoryId(category.id);
-                    setIsCategorySheetOpen(false);
-                  }}
-                >
-                  {category.name}
-                </button>
-              ))}
+            <div className="mt-4 max-h-[55vh] space-y-3 overflow-y-auto pr-1">
+              {categoryParents.map((parent) => {
+                const children = categoryChildrenByParent.get(parent.id) ?? [];
+                const isExpanded = expandedCategoryParentIds.has(parent.id);
+                if (children.length === 0) {
+                  return (
+                    <button
+                      key={parent.id}
+                      type="button"
+                      className={`w-full rounded-xl border px-4 py-3 text-left text-sm ${
+                        categoryId === parent.id
+                          ? "border-[var(--accent)] bg-[color:rgba(145,102,82,0.12)]"
+                          : "border-[var(--border)] bg-white"
+                      }`}
+                      onClick={() => {
+                        setCategoryId(parent.id);
+                        setIsCategorySheetOpen(false);
+                      }}
+                    >
+                      {parent.name}
+                    </button>
+                  );
+                }
+                return (
+                  <div
+                    key={parent.id}
+                    className="rounded-2xl border border-[var(--border)] px-4 py-3 text-sm"
+                  >
+                    <button
+                      type="button"
+                      className="flex w-full items-center justify-between text-left"
+                      onClick={() => {
+                        setExpandedCategoryParentIds((prev) => {
+                          const next = new Set(prev);
+                          if (next.has(parent.id)) {
+                            next.delete(parent.id);
+                          } else {
+                            next.add(parent.id);
+                          }
+                          return next;
+                        });
+                      }}
+                    >
+                      <span className="font-medium">{parent.name}</span>
+                      <span className="text-xs text-[color:rgba(45,38,34,0.6)]">
+                        소분류 {children.length}개{" "}
+                        <span className="ml-2 text-sm">
+                          {isExpanded ? "-" : "+"}
+                        </span>
+                      </span>
+                    </button>
+                    {isExpanded ? (
+                      <div className="mt-3 space-y-2">
+                        {children.map((child) => (
+                          <button
+                            key={child.id}
+                            type="button"
+                            className={`w-full rounded-xl border px-3 py-2 text-left text-xs ${
+                              categoryId === child.id
+                                ? "border-[var(--accent)] bg-[color:rgba(145,102,82,0.12)]"
+                                : "border-[var(--border)] bg-white"
+                            }`}
+                            onClick={() => {
+                              setCategoryId(child.id);
+                              setIsCategorySheetOpen(false);
+                            }}
+                          >
+                            {child.name}
+                          </button>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+                );
+              })}
             </div>
           </div>
         </div>

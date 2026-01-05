@@ -1,5 +1,21 @@
 # Patch Notes
 
+## v1.4
+
+- Stats: show active filter summary under filter chips, store filters without effect warnings, and increase swipe threshold to 150px.
+- Notifications: add “more/less” toggle for long messages and log invite create/expire/accept events.
+- Transactions: add list sort toggle (input/alpha/category) and show category selection grouped by parent/child with default expanded state.
+- Dashboard: recent transactions sorted newest-first using created time when available.
+- Date parsing: custom range/URL date parsing uses local timezone via date-fns `parse`.
+
+### v1.4 (한국어)
+
+- 통계: 필터 칩 아래에 선택 요약 표시, 필터 저장/로드 경고 제거, 스와이프 임계값 150px로 상향.
+- 알림: 긴 메시지 더보기/접기 추가, 초대 코드 생성/만료/참여 알림 기록.
+- 내역: 정렬 토글(입력순/가나다순/카테고리순) 추가, 카테고리 선택을 대분류/소분류 그룹(기본 펼침)으로 개선.
+- 대시보드: 최근 내역을 최신 우선으로 정렬(입력 시간 기준 우선).
+- 날짜 파싱: 커스텀 범위/URL 날짜를 로컬 타임존 기준으로 해석.
+
 ## v1.3
 
 - Amount inputs show comma separators while typing on new/edit transaction forms.

@@ -13,6 +13,7 @@ import {
   joinHousehold,
 } from "@/lib/household";
 import { useAuth } from "@/components/auth-provider";
+import { addNotification } from "@/lib/notifications";
 
 export default function SignupClient() {
   const router = useRouter();
@@ -76,6 +77,12 @@ export default function SignupClient() {
           nicknameValue,
           resolvedRole
         );
+        await addNotification(invite.householdId, {
+          title: "초대 참여 완료",
+          message: "초대코드로 가계부에 참여했습니다.",
+          level: "success",
+          type: "invite.accepted",
+        });
         router.replace("/dashboard");
         return;
       }

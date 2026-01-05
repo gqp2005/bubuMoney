@@ -1,7 +1,7 @@
 "use client";
 
 import { format } from "date-fns";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useAuth } from "@/components/auth-provider";
 import { useHousehold } from "@/components/household-provider";
 import {
@@ -25,6 +25,7 @@ export default function NotificationsPage() {
   const { user } = useAuth();
   const uid = user?.uid ?? null;
   const { notifications, loading } = useNotifications(householdId, uid);
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(() => new Set());
   const hasUnread =
     uid && notifications.some((item) => !item.readBy?.[uid]);
 
@@ -57,6 +58,11 @@ export default function NotificationsPage() {
                   item.level
                 )}`}
               >
+                {(() => {
+                  const isExpanded = expandedIds.has(item.id);
+                  const shouldClamp = item.message.length > 50;
+                  return (
+                    <>
                 <div className="flex items-center justify-between gap-3">
                   <div className="flex items-center gap-2">
                     <span
@@ -98,7 +104,36 @@ export default function NotificationsPage() {
                     ) : null}
                   </div>
                 </div>
-                <p className="mt-1 text-xs">{item.message}</p>
+                <p
+                  className={`mt-1 text-xs ${
+                    isExpanded ? "whitespace-pre-line" : "truncate"
+                  }`}
+                  title={item.message}
+                >
+                  {item.message}
+                </p>
+                {shouldClamp ? (
+                  <button
+                    type="button"
+                    className="mt-1 text-[11px] text-[color:rgba(45,38,34,0.6)]"
+                    onClick={() => {
+                      setExpandedIds((prev) => {
+                        const next = new Set(prev);
+                        if (next.has(item.id)) {
+                          next.delete(item.id);
+                        } else {
+                          next.add(item.id);
+                        }
+                        return next;
+                      });
+                    }}
+                  >
+                    {isExpanded ? "접기" : "더보기"}
+                  </button>
+                ) : null}
+                    </>
+                  );
+                })()}
               </div>
             ))}
           </div>

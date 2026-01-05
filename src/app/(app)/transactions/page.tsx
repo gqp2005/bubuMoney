@@ -12,6 +12,7 @@ import {
   format,
   isSameDay,
   isSameMonth,
+  parse,
   startOfDay,
   startOfMonth,
   startOfWeek,
@@ -70,17 +71,27 @@ export default function TransactionsPage() {
   const [touchEndX, setTouchEndX] = useState<number | null>(null);
   const searchStartRef = useRef<HTMLInputElement | null>(null);
   const searchEndRef = useRef<HTMLInputElement | null>(null);
+  const [listSortMode, setListSortMode] = useState<
+    "input" | "alpha" | "category"
+  >("input");
   const router = useRouter();
 
-  function parseDateParam(value: string) {
-    const parsed = new Date(`${value}T00:00:00`);
+  function parseLocalDate(value: string) {
+    const parsed = parse(value, "yyyy-MM-dd", new Date());
     return Number.isNaN(parsed.getTime()) ? null : parsed;
+  }
+
+  function parseDateParam(value: string) {
+    return parseLocalDate(value);
   }
 
   const categoryMap = useMemo(
     () => new Map(categories.map((category) => [category.id, category.name])),
     [categories]
   );
+  const categoryOrderMap = useMemo(() => {
+    return new Map(categories.map((category) => [category.id, category.order]));
+  }, [categories]);
 
   const dateParam = searchParams.get("date");
 
@@ -130,6 +141,26 @@ export default function TransactionsPage() {
   const selectedDateParam = format(selectedDate, "yyyy-MM-dd");
   const selectedDaily = dailyMap.get(selectedKey);
   const selectedItems = selectedDaily?.items ?? [];
+  const sortedSelectedItems = useMemo(() => {
+    const getSortTime = (tx: typeof selectedItems[number]) =>
+      tx.createdAt?.toMillis?.() ?? tx.date.toMillis();
+    const normalizedName = (tx: typeof selectedItems[number]) =>
+      stripRecorderPrefix(tx.note).toLowerCase();
+    return [...selectedItems].sort((a, b) => {
+      if (listSortMode === "alpha") {
+        return normalizedName(a).localeCompare(normalizedName(b));
+      }
+      if (listSortMode === "category") {
+        const aOrder = categoryOrderMap.get(a.categoryId) ?? 9999;
+        const bOrder = categoryOrderMap.get(b.categoryId) ?? 9999;
+        if (aOrder !== bOrder) {
+          return aOrder - bOrder;
+        }
+        return normalizedName(a).localeCompare(normalizedName(b));
+      }
+      return getSortTime(a) - getSortTime(b);
+    });
+  }, [selectedItems, listSortMode, categoryOrderMap]);
 
   function handleTouchStart(event: React.TouchEvent<HTMLDivElement>) {
     setTouchEndX(null);
@@ -140,7 +171,7 @@ export default function TransactionsPage() {
     setTouchEndX(event.touches[0]?.clientX ?? null);
   }
 
-  const swipeThreshold = 120;
+  const swipeThreshold = 150;
 
   function handleTouchEnd() {
     if (touchStartX === null || touchEndX === null) {
@@ -188,10 +219,14 @@ export default function TransactionsPage() {
       setSearchStart(null);
       return;
     }
-    const nextStart = startOfDay(new Date(value));
+    const parsed = parseLocalDate(value);
+    if (!parsed) {
+      return;
+    }
+    const nextStart = startOfDay(parsed);
     setSearchStart(nextStart);
     if (!searchEnd) {
-      setSearchEnd(endOfDay(new Date(value)));
+      setSearchEnd(endOfDay(parsed));
     }
     setTimeout(() => {
       searchEndRef.current?.focus();
@@ -203,7 +238,11 @@ export default function TransactionsPage() {
       setSearchEnd(null);
       return;
     }
-    setSearchEnd(endOfDay(new Date(value)));
+    const parsed = parseLocalDate(value);
+    if (!parsed) {
+      return;
+    }
+    setSearchEnd(endOfDay(parsed));
   }
 
   function applySearchRange(months: number) {
@@ -591,7 +630,28 @@ export default function TransactionsPage() {
           <div className="mt-2" />
         ) : (
           <div className="mt-2 space-y-1">
-            {selectedItems.map((tx) => (
+            <div className="flex items-center justify-end">
+              <button
+                type="button"
+                className="rounded-full border border-[var(--border)] px-3 py-1 text-[11px] text-[color:rgba(45,38,34,0.7)]"
+                onClick={() =>
+                  setListSortMode((prev) =>
+                    prev === "input"
+                      ? "alpha"
+                      : prev === "alpha"
+                      ? "category"
+                      : "input"
+                  )
+                }
+              >
+                {listSortMode === "input"
+                  ? "입력순"
+                  : listSortMode === "alpha"
+                  ? "가나다순"
+                  : "카테고리순"}
+              </button>
+            </div>
+            {sortedSelectedItems.map((tx) => (
               <div
                 key={tx.id}
                 className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-4 rounded-2xl border border-[var(--border)] px-4 py-3"

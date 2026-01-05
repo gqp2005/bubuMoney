@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Timestamp, doc, getDoc, getDocs, query, updateDoc, where } from "firebase/firestore";
 import { useAuth } from "@/components/auth-provider";
 import { useHousehold } from "@/components/household-provider";
@@ -36,6 +36,7 @@ export default function SettingsPage() {
   const [inviteExpiresAt, setInviteExpiresAt] = useState<{
     toMillis: () => number;
   } | null>(null);
+  const lastInviteExpiredCodeRef = useRef<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [savingName, setSavingName] = useState(false);
@@ -189,6 +190,25 @@ export default function SettingsPage() {
     return () => clearInterval(timer);
   }, []);
 
+  useEffect(() => {
+    if (!householdId || !inviteCode || !inviteExpiresAt) {
+      return;
+    }
+    if (inviteExpiresAt.toMillis() > nowTick) {
+      return;
+    }
+    if (lastInviteExpiredCodeRef.current === inviteCode) {
+      return;
+    }
+    lastInviteExpiredCodeRef.current = inviteCode;
+    addNotification(householdId, {
+      title: "초대 코드 만료",
+      message: `초대 코드 ${inviteCode}가 만료되었습니다.`,
+      level: "info",
+      type: "invite.expired",
+    });
+  }, [householdId, inviteCode, inviteExpiresAt, nowTick]);
+
   async function handleInvite() {
     if (!user || !householdId) {
       return;
@@ -204,6 +224,12 @@ export default function SettingsPage() {
       const invite = await createInvite(householdId, user.uid);
       setInviteCode(invite.code);
       setInviteExpiresAt(invite.expiresAt);
+      await addNotification(householdId, {
+        title: "초대 코드 생성",
+        message: `초대 코드 ${invite.code}를 생성했습니다.`,
+        level: "success",
+        type: "invite.created",
+      });
     } catch (err) {
       setError("초대 코드 생성에 실패했습니다.");
     } finally {

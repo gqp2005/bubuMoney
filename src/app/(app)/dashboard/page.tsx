@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { format } from "date-fns";
 import { useHousehold } from "@/components/household-provider";
 import { formatKrw } from "@/lib/format";
@@ -18,6 +18,14 @@ export default function DashboardPage() {
   const [memoLoading, setMemoLoading] = useState(false);
   const [memoError, setMemoError] = useState<string | null>(null);
   const monthKey = toMonthKey(new Date());
+  const recentTransactions = useMemo(() => {
+    const getSortTime = (tx: typeof transactions[number]) =>
+      tx.createdAt?.toMillis?.() ?? tx.date.toMillis();
+    const sorted = [...transactions].sort(
+      (a, b) => getSortTime(b) - getSortTime(a)
+    );
+    return sorted.slice(0, 5);
+  }, [transactions]);
 
   useEffect(() => {
     if (!householdId) {
@@ -131,7 +139,7 @@ export default function DashboardPage() {
           </div>
         ) : (
           <div className="mt-4 space-y-3 text-sm text-[color:rgba(45,38,34,0.7)]">
-            {transactions.slice(0, 5).map((tx) => (
+            {recentTransactions.map((tx) => (
               <div
                 key={tx.id}
                 className="flex items-center justify-between rounded-xl border border-[var(--border)] bg-white px-4 py-3"
