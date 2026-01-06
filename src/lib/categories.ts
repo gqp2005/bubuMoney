@@ -24,8 +24,9 @@ export async function updateCategory(
   householdId: string,
   categoryId: string,
   data: {
-    name: string;
-    type: "income" | "expense" | "transfer";
+    name?: string;
+    type?: "income" | "expense" | "transfer";
+    order?: number;
     parentId?: string | null;
     imported?: boolean;
     budgetEnabled?: boolean;
