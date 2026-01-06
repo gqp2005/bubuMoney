@@ -18,7 +18,8 @@ export async function updatePaymentMethod(
   householdId: string,
   paymentMethodId: string,
   data: {
-    name: string;
+    name?: string;
+    order?: number;
     owner?: "husband" | "wife" | "our";
     parentId?: string | null;
     imported?: boolean;
