@@ -26,6 +26,7 @@ import {
   useSortable,
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
+import type { DraggableAttributes } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
 import { getDoc } from "firebase/firestore";
 import { useHousehold } from "@/components/household-provider";
@@ -123,7 +124,7 @@ function SortableCard({
 }
 
 const DragHandleContext = createContext<{
-  attributes: Record<string, unknown>;
+  attributes: DraggableAttributes;
   listeners: Record<string, unknown> | undefined;
   setActivatorNodeRef: (element: HTMLElement | null) => void;
 } | null>(null);
