@@ -1,5 +1,17 @@
 # Patch Notes
 
+## v1.5
+
+- Stats/Budget: add budget category tabs (common + budget categories with overflow sheet).
+- Stats/Budget: budget-enabled categories are excluded from the common tab and shown only in their category tabs.
+- Budget: budgetApplied=true is treated as income within budget category tabs; removed “budget load complete” notifications.
+
+### v1.5 (한국어)
+
+- 통계/예산: 예산 카테고리 탭(공용 + 예산 카테고리, 더보기 시트) 추가.
+- 통계/예산: 예산 카테고리는 공용 탭에서 제외하고 해당 카테고리 탭에서만 표시.
+- 예산: budgetApplied=true는 카테고리 탭에서 수입으로 집계, “예산 불러오기 완료” 알림 제거.
+
 ## v1.4
 
 - Stats: show active filter summary under filter chips, store filters without effect warnings, and increase swipe threshold to 150px.

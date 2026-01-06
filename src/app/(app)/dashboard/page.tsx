@@ -6,26 +6,58 @@ import { format } from "date-fns";
 import { useHousehold } from "@/components/household-provider";
 import { formatKrw } from "@/lib/format";
 import { formatDate, toMonthKey } from "@/lib/time";
+import { useCategories } from "@/hooks/use-categories";
 import { useMonthlyTransactions } from "@/hooks/use-transactions";
 import { getMonthlyMemoEntries } from "@/lib/memos";
 
 export default function DashboardPage() {
   const { householdId } = useHousehold();
-  const { transactions, summary, loading } = useMonthlyTransactions(householdId);
+  const { categories } = useCategories(householdId);
+  const { transactions, loading } = useMonthlyTransactions(householdId);
   const [memoEntries, setMemoEntries] = useState<
     { id: string; text: string; createdAt?: Date | null }[]
   >([]);
   const [memoLoading, setMemoLoading] = useState(false);
   const [memoError, setMemoError] = useState<string | null>(null);
   const monthKey = toMonthKey(new Date());
+  const budgetCategoryIdSet = useMemo(() => {
+    return new Set(
+      categories
+        .filter((category) => category.type === "expense" && category.budgetEnabled)
+        .map((category) => category.id)
+    );
+  }, [categories]);
+  const visibleTransactions = useMemo(() => {
+    return transactions.filter((tx) => {
+      if (tx.type !== "expense") {
+        return true;
+      }
+      if (!budgetCategoryIdSet.has(tx.categoryId)) {
+        return true;
+      }
+      return Boolean(tx.budgetApplied);
+    });
+  }, [transactions, budgetCategoryIdSet]);
+  const summary = useMemo(() => {
+    let income = 0;
+    let expense = 0;
+    visibleTransactions.forEach((tx) => {
+      if (tx.type === "income") {
+        income += tx.amount;
+      } else if (tx.type === "expense") {
+        expense += tx.amount;
+      }
+    });
+    return { income, expense, balance: income - expense };
+  }, [visibleTransactions]);
   const recentTransactions = useMemo(() => {
     const getSortTime = (tx: typeof transactions[number]) =>
       tx.createdAt?.toMillis?.() ?? tx.date.toMillis();
-    const sorted = [...transactions].sort(
+    const sorted = [...visibleTransactions].sort(
       (a, b) => getSortTime(b) - getSortTime(a)
     );
     return sorted.slice(0, 5);
-  }, [transactions]);
+  }, [visibleTransactions]);
 
   useEffect(() => {
     if (!householdId) {
@@ -133,7 +165,7 @@ export default function DashboardPage() {
           <div className="mt-4 text-sm text-[color:rgba(45,38,34,0.7)]">
             불러오는 중...
           </div>
-        ) : transactions.length === 0 ? (
+        ) : visibleTransactions.length === 0 ? (
           <div className="mt-4 text-sm text-[color:rgba(45,38,34,0.7)]">
             아직 입력된 내역이 없습니다.
           </div>

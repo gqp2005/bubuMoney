@@ -264,6 +264,8 @@ export default function StatsPage() {
       : "our"
   );
   const [showResetConfirm, setShowResetConfirm] = useState(false);
+  const [budgetScope, setBudgetScope] = useState<"common" | string>("common");
+  const [isBudgetSheetOpen, setIsBudgetSheetOpen] = useState(false);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -297,10 +299,66 @@ export default function StatsPage() {
     () => new Map(categories.map((cat) => [cat.id, cat.name])),
     [categories]
   );
+  const categoryById = useMemo(
+    () => new Map(categories.map((cat) => [cat.id, cat])),
+    [categories]
+  );
+  const budgetCategoryIdSet = useMemo(() => {
+    return new Set(
+      categories
+        .filter((category) => category.type === "expense" && category.budgetEnabled)
+        .map((category) => category.id)
+    );
+  }, [categories]);
+  const budgetCategories = useMemo(() => {
+    return categories
+      .filter((category) => category.type === "expense" && category.budgetEnabled)
+      .sort((a, b) => a.order - b.order || a.name.localeCompare(b.name));
+  }, [categories]);
+  const maxBudgetTabs = budgetCategories.length > 3 ? 2 : 3;
+  const budgetTabs = budgetCategories.slice(0, maxBudgetTabs);
+  const hasMoreBudgetTabs = budgetCategories.length > maxBudgetTabs;
+  useEffect(() => {
+    if (budgetScope === "common") {
+      return;
+    }
+    if (!budgetCategoryIdSet.has(budgetScope)) {
+      setBudgetScope("common");
+    }
+  }, [budgetScope, budgetCategoryIdSet]);
+  const visibleTransactions = useMemo(() => {
+    return activeTransactions.filter((tx) => {
+      if (budgetScope === "common") {
+        if (tx.type !== "expense") {
+          return true;
+        }
+        if (!budgetCategoryIdSet.has(tx.categoryId)) {
+          return true;
+        }
+        return Boolean(tx.budgetApplied);
+      }
+      if (tx.type !== "expense") {
+        return false;
+      }
+      const category = categoryById.get(tx.categoryId);
+      if (!category) {
+        return false;
+      }
+      return category.id === budgetScope || category.parentId === budgetScope;
+    });
+  }, [activeTransactions, budgetScope, budgetCategoryIdSet, categoryById]);
+
+  const getEffectiveType = (tx: (typeof visibleTransactions)[number]) => {
+    if (budgetScope !== "common" && tx.budgetApplied) {
+      return "income";
+    }
+    return tx.type;
+  };
 
   const filtered = useMemo(
-    () => activeTransactions.filter((tx) => tx.type === viewType),
-    [activeTransactions, viewType]
+    () =>
+      visibleTransactions.filter((tx) => getEffectiveType(tx) === viewType),
+    [visibleTransactions, viewType, budgetScope]
   );
 
   const filteredByApplied = useMemo(() => {
@@ -323,14 +381,15 @@ export default function StatsPage() {
     let income = 0;
     let expense = 0;
     filteredByApplied.forEach((tx) => {
-      if (tx.type === "income") {
+      const effectiveType = getEffectiveType(tx);
+      if (effectiveType === "income") {
         income += tx.amount;
-      } else if (tx.type === "expense") {
+      } else if (effectiveType === "expense") {
         expense += tx.amount;
       }
     });
     return { income, expense, balance: income - expense };
-  }, [filteredByApplied]);
+  }, [filteredByApplied, budgetScope]);
 
   const categoryBreakdown = useMemo(() => {
     const byCategory: Record<string, number> = {};
@@ -657,6 +716,48 @@ export default function StatsPage() {
       </div>
 
       <section className="rounded-3xl border border-[var(--border)] bg-white p-6">
+        <div className="mb-4 flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            className={`rounded-full border px-4 py-2 text-sm ${
+              budgetScope === "common"
+                ? "border-[var(--text)] bg-[var(--text)] text-white"
+                : "border-[var(--border)] text-[color:rgba(45,38,34,0.7)]"
+            }`}
+            onClick={() => setBudgetScope("common")}
+          >
+            공용
+          </button>
+          {budgetTabs.map((category) => (
+            <button
+              key={category.id}
+              type="button"
+              className={`rounded-full border px-4 py-2 text-sm ${
+                budgetScope === category.id
+                  ? "border-[var(--text)] bg-[var(--text)] text-white"
+                  : "border-[var(--border)] text-[color:rgba(45,38,34,0.7)]"
+              }`}
+              onClick={() => setBudgetScope(category.id)}
+            >
+              {category.name}
+            </button>
+          ))}
+          {hasMoreBudgetTabs ? (
+            <button
+              type="button"
+              className={`rounded-full border px-4 py-2 text-sm ${
+                budgetScope !== "common" &&
+                !budgetTabs.some((tab) => tab.id === budgetScope)
+                  ? "border-[var(--text)] bg-[var(--text)] text-white"
+                  : "border-[var(--border)] text-[color:rgba(45,38,34,0.7)]"
+              }`}
+              onClick={() => setIsBudgetSheetOpen(true)}
+              aria-label="예산 카테고리 더보기"
+            >
+              ...
+            </button>
+          ) : null}
+        </div>
         {activeLoading ? (
           <p className="text-sm text-[color:rgba(45,38,34,0.7)]">
             불러오는 중...
@@ -1078,6 +1179,51 @@ export default function StatsPage() {
               >
                 완료
               </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {isBudgetSheetOpen ? (
+        <div className="fixed inset-0 z-50">
+          <button
+            type="button"
+            className="absolute inset-0 bg-black/40"
+            onClick={() => setIsBudgetSheetOpen(false)}
+            aria-label="닫기"
+          />
+          <div className="absolute bottom-0 left-0 right-0 flex max-h-[70vh] flex-col rounded-t-3xl bg-white">
+            <div className="flex-1 overflow-y-auto p-6">
+              <div className="mx-auto mb-6 h-1.5 w-12 rounded-full bg-[color:rgba(45,38,34,0.15)]" />
+              <div className="flex items-center justify-between">
+                <div className="text-base font-semibold">카테고리 선택</div>
+                <button
+                  type="button"
+                  className="text-sm text-[color:rgba(45,38,34,0.6)]"
+                  onClick={() => setIsBudgetSheetOpen(false)}
+                >
+                  닫기
+                </button>
+              </div>
+              <div className="mt-4 space-y-2">
+                {budgetCategories.map((category) => (
+                  <button
+                    key={category.id}
+                    type="button"
+                    className={`w-full rounded-2xl border px-4 py-3 text-left text-sm ${
+                      budgetScope === category.id
+                        ? "border-[var(--text)] bg-[color:rgba(45,38,34,0.06)] font-semibold"
+                        : "border-[var(--border)] text-[color:rgba(45,38,34,0.7)]"
+                    }`}
+                    onClick={() => {
+                      setBudgetScope(category.id);
+                      setIsBudgetSheetOpen(false);
+                    }}
+                  >
+                    {category.name}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
         </div>

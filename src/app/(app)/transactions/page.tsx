@@ -46,6 +46,17 @@ function stripRecorderPrefix(note?: string) {
   return note.replace(/^입력자:[^\s]+\s*/u, "").trim() || "메모 없음";
 }
 
+const BUDGET_HIGHLIGHT_CLASSES = [
+  "border-slate-200 bg-slate-50",
+  "border-stone-200 bg-stone-50",
+  "border-neutral-200 bg-neutral-50",
+  "border-zinc-200 bg-zinc-50",
+  "border-gray-200 bg-gray-50",
+  "border-slate-100 bg-slate-50/70",
+  "border-stone-100 bg-stone-50/70",
+  "border-neutral-100 bg-neutral-50/70",
+];
+
 export default function TransactionsPage() {
   const searchParams = useSearchParams();
   const { householdId } = useHousehold();
@@ -73,8 +84,24 @@ export default function TransactionsPage() {
   const searchEndRef = useRef<HTMLInputElement | null>(null);
   const [listSortMode, setListSortMode] = useState<
     "input" | "alpha" | "category"
-  >("input");
+  >(() => {
+    if (typeof window === "undefined") {
+      return "input";
+    }
+    const stored = window.localStorage.getItem("transactions:listSortMode");
+    if (stored === "input" || stored === "alpha" || stored === "category") {
+      return stored;
+    }
+    return "input";
+  });
   const router = useRouter();
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    window.localStorage.setItem("transactions:listSortMode", listSortMode);
+  }, [listSortMode]);
 
   function parseLocalDate(value: string) {
     const parsed = parse(value, "yyyy-MM-dd", new Date());
@@ -89,8 +116,32 @@ export default function TransactionsPage() {
     () => new Map(categories.map((category) => [category.id, category.name])),
     [categories]
   );
+  const budgetCategoryIdSet = useMemo(() => {
+    return new Set(
+      categories
+        .filter((category) => category.type === "expense" && category.budgetEnabled)
+        .map((category) => category.id)
+    );
+  }, [categories]);
   const categoryOrderMap = useMemo(() => {
     return new Map(categories.map((category) => [category.id, category.order]));
+  }, [categories]);
+
+  const budgetHighlightByCategory = useMemo(() => {
+    const map = new Map<string, string>();
+    const source = [...categories].sort((a, b) => {
+      if (a.order !== b.order) {
+        return a.order - b.order;
+      }
+      return a.name.localeCompare(b.name);
+    });
+    source.forEach((category, index) => {
+      map.set(
+        category.id,
+        BUDGET_HIGHLIGHT_CLASSES[index % BUDGET_HIGHLIGHT_CLASSES.length]
+      );
+    });
+    return map;
   }, [categories]);
 
   const dateParam = searchParams.get("date");
@@ -107,8 +158,10 @@ export default function TransactionsPage() {
 
   const { transactions: searchTransactions, loading: searchLoading } =
     useTransactionsRange(householdId, searchStart, searchEnd);
+  const visibleSearchTransactions = searchTransactions;
+  const visibleTransactions = transactions;
 
-  const { days, dailyMap } = useMemo(() => {
+  const { days, calendarDailyMap } = useMemo(() => {
     const monthStart = startOfMonth(selectedDate);
     const monthEnd = endOfMonth(selectedDate);
     const calendarStart = startOfWeek(monthStart, { weekStartsOn: 0 });
@@ -123,7 +176,14 @@ export default function TransactionsPage() {
       string,
       { income: number; expense: number; items: typeof transactions }
     >();
-    transactions.forEach((tx) => {
+    visibleTransactions.forEach((tx) => {
+      if (
+        tx.type === "expense" &&
+        budgetCategoryIdSet.has(tx.categoryId) &&
+        !tx.budgetApplied
+      ) {
+        return;
+      }
       const key = toDateKey(tx.date.toDate());
       const entry = map.get(key) ?? { income: 0, expense: 0, items: [] };
       entry.items.push(tx);
@@ -134,13 +194,19 @@ export default function TransactionsPage() {
       }
       map.set(key, entry);
     });
-    return { days: daysList, dailyMap: map };
-  }, [selectedDate, transactions]);
+    return { days: daysList, calendarDailyMap: map };
+  }, [selectedDate, visibleTransactions, budgetCategoryIdSet]);
 
   const selectedKey = toDateKey(selectedDate);
   const selectedDateParam = format(selectedDate, "yyyy-MM-dd");
-  const selectedDaily = dailyMap.get(selectedKey);
-  const selectedItems = selectedDaily?.items ?? [];
+  const selectedDaily = calendarDailyMap.get(selectedKey);
+  const selectedItems = useMemo(
+    () =>
+      visibleTransactions.filter(
+        (tx) => toDateKey(tx.date.toDate()) === selectedKey
+      ),
+    [visibleTransactions, selectedKey]
+  );
   const sortedSelectedItems = useMemo(() => {
     const getSortTime = (tx: typeof selectedItems[number]) =>
       tx.createdAt?.toMillis?.() ?? tx.date.toMillis();
@@ -273,7 +339,7 @@ export default function TransactionsPage() {
 
   const filteredSearchItems = useMemo(() => {
     const normalizedQuery = searchQuery.trim();
-    return searchTransactions.filter((tx) => {
+    return visibleSearchTransactions.filter((tx) => {
       if (searchType !== "all" && tx.type !== searchType) {
         return false;
       }
@@ -292,7 +358,7 @@ export default function TransactionsPage() {
         .toLowerCase();
       return haystack.includes(normalizedQuery.toLowerCase());
     });
-  }, [searchTransactions, searchType, searchQuery, categoryMap]);
+  }, [visibleSearchTransactions, searchType, searchQuery, categoryMap]);
 
   const searchTotal = useMemo(
     () => filteredSearchItems.reduce((sum, tx) => sum + tx.amount, 0),
@@ -305,7 +371,7 @@ export default function TransactionsPage() {
         <div>
           <h1 className="text-2xl font-semibold">내역</h1>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center justify-end gap-2">
           <button
             type="button"
             className="flex h-10 w-10 items-center justify-center rounded-full border border-[var(--border)] bg-white text-sm"
@@ -376,7 +442,7 @@ export default function TransactionsPage() {
         <div className="mt-0.5 grid grid-cols-7 gap-0 px-0">
           {days.map((day) => {
             const key = toDateKey(day);
-            const data = dailyMap.get(key);
+            const data = calendarDailyMap.get(key);
             const isActive = isSameDay(day, selectedDate);
             return (
               <button
@@ -654,7 +720,14 @@ export default function TransactionsPage() {
             {sortedSelectedItems.map((tx) => (
               <div
                 key={tx.id}
-                className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-4 rounded-2xl border border-[var(--border)] px-4 py-3"
+                className={`grid grid-cols-[minmax(0,1fr)_auto] items-start gap-4 rounded-2xl border px-4 py-3 ${
+                  tx.type === "expense" &&
+                  budgetCategoryIdSet.has(tx.categoryId) &&
+                  !tx.budgetApplied
+                    ? budgetHighlightByCategory.get(tx.categoryId) ??
+                      "border-violet-200 bg-violet-50"
+                    : "border-[var(--border)]"
+                }`}
                 role="button"
                 tabIndex={0}
                 onClick={() => router.push(`/transactions/${tx.id}`)}

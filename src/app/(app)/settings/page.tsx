@@ -50,6 +50,7 @@ export default function SettingsPage() {
   const [resetOpen, setResetOpen] = useState(false);
   const [resetLoading, setResetLoading] = useState(false);
   const [resetStatus, setResetStatus] = useState<string | null>(null);
+  const [resetErrorDetail, setResetErrorDetail] = useState<string | null>(null);
   const [resetOptions, setResetOptions] = useState({
     transactions: false,
     memos: false,
@@ -478,6 +479,7 @@ export default function SettingsPage() {
     }
     setResetLoading(true);
     setResetStatus(null);
+    setResetErrorDetail(null);
     try {
       await resetHouseholdData(householdId, resetOptions);
       setResetStatus("데이터 초기화 완료");
@@ -492,9 +494,16 @@ export default function SettingsPage() {
       setResetOpen(false);
     } catch (err) {
       setResetStatus("데이터 초기화 실패");
+      const detail =
+        err instanceof Error
+          ? err.message
+          : typeof err === "string"
+          ? err
+          : "알 수 없는 오류";
+      setResetErrorDetail(detail);
       await addNotification(householdId, {
         title: "데이터 초기화 실패",
-        message: "데이터 초기화 중 오류가 발생했습니다.",
+        message: `데이터 초기화 중 오류가 발생했습니다. (${detail})`,
         level: "error",
         type: "data.reset",
       });
@@ -813,23 +822,6 @@ export default function SettingsPage() {
         </a>
       </section>
       <section className="rounded-3xl border border-[var(--border)] bg-white p-6">
-        <h2 className="text-sm font-semibold">결제수단 편집</h2>
-        <p className="mt-2 text-xs text-[color:rgba(45,38,34,0.7)]">
-          결제수단을 분류별로 편집합니다.
-        </p>
-        <a
-          className="mt-4 inline-flex items-center rounded-full border border-[var(--border)] px-4 py-2 text-sm"
-          href="/settings/payment-methods"
-        >
-          결제수단 편집 열기
-        </a>
-        {paymentMethods.length === 0 ? (
-          <p className="mt-3 text-xs text-[color:rgba(45,38,34,0.6)]">
-            등록된 결제수단이 없습니다.
-          </p>
-        ) : null}
-      </section>
-      <section className="rounded-3xl border border-[var(--border)] bg-white p-6">
         <h2 className="text-sm font-semibold">데이터 초기화</h2>
         <p className="mt-2 text-xs text-[color:rgba(45,38,34,0.7)]">
           선택한 항목만 초기화하거나 전체 가계부 삭제를 진행할 수 있습니다.
@@ -844,6 +836,9 @@ export default function SettingsPage() {
           <p className="mt-2 text-xs text-[color:rgba(45,38,34,0.7)]">
             {resetStatus}
           </p>
+        ) : null}
+        {resetErrorDetail ? (
+          <p className="mt-1 text-xs text-red-600">{resetErrorDetail}</p>
         ) : null}
       </section>
       {resetOpen ? (

@@ -1,7 +1,7 @@
 "use client";
 
 import { useParams, useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { doc, getDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import { useHousehold } from "@/components/household-provider";
@@ -41,6 +41,7 @@ export default function EditTransactionPage() {
   const [expandedPaymentParentId, setExpandedPaymentParentId] = useState<
     string | null
   >(null);
+  const lastDerivedOwnerRef = useRef<PaymentOwner | null>(null);
 
   const [type, setType] = useState<TransactionType>("expense");
   const [amount, setAmount] = useState("");
@@ -49,6 +50,7 @@ export default function EditTransactionPage() {
   const [subject, setSubject] = useState("");
   const [date, setDate] = useState(toDateKey(new Date()));
   const [note, setNote] = useState("");
+  const [budgetApplied, setBudgetApplied] = useState(false);
   const [originalTransaction, setOriginalTransaction] = useState<{
     type: TransactionType;
     amount: number;
@@ -57,6 +59,7 @@ export default function EditTransactionPage() {
     subject: string;
     date: string;
     note?: string;
+    budgetApplied?: boolean;
   } | null>(null);
   const typeLabelMap: Record<TransactionType, string> = {
     expense: "지출",
@@ -111,9 +114,13 @@ export default function EditTransactionPage() {
     setExpandedCategoryParentIds(new Set(categoryParents.map((parent) => parent.id)));
   }, [categoryParents]);
 
-  const selectedCategoryName = useMemo(() => {
-    return categories.find((category) => category.id === categoryId)?.name ?? "";
+  const selectedCategory = useMemo(() => {
+    return categories.find((category) => category.id === categoryId) ?? null;
   }, [categories, categoryId]);
+  const selectedCategoryName = selectedCategory?.name ?? "";
+  const selectedCategoryBudgetEnabled = Boolean(
+    selectedCategory?.type === "expense" && selectedCategory?.budgetEnabled
+  );
   const categoryNameMap = useMemo(() => {
     return new Map(categories.map((category) => [category.id, category.name]));
   }, [categories]);
@@ -174,6 +181,7 @@ export default function EditTransactionPage() {
           subject: string;
           date: { toDate: () => Date };
           note?: string;
+          budgetApplied?: boolean;
         };
         setType(data.type);
         setAmount(formatAmountValue(String(data.amount)));
@@ -182,6 +190,7 @@ export default function EditTransactionPage() {
         setSubject(data.subject);
         setDate(toDateKey(data.date.toDate()));
         setNote(data.note ?? "");
+        setBudgetApplied(Boolean(data.budgetApplied));
         setOriginalTransaction({
           type: data.type,
           amount: data.amount,
@@ -190,6 +199,7 @@ export default function EditTransactionPage() {
           subject: data.subject,
           date: toDateKey(data.date.toDate()),
           note: data.note ?? "",
+          budgetApplied: data.budgetApplied,
         });
       })
       .catch(() => setError("거래 내역을 불러오지 못했습니다."))
@@ -241,10 +251,19 @@ export default function EditTransactionPage() {
       preferredMatch ??
       candidates.find((method) => method.owner) ??
       candidates[0];
-    if (ownerMatch?.owner) {
-      setPaymentOwner(ownerMatch.owner);
+    if (!ownerMatch?.owner) {
+      return;
     }
-  }, [paymentMethod, paymentMethods, spouseRole]);
+    if (ownerMatch.owner === paymentOwner) {
+      lastDerivedOwnerRef.current = ownerMatch.owner;
+      return;
+    }
+    if (lastDerivedOwnerRef.current === ownerMatch.owner) {
+      return;
+    }
+    lastDerivedOwnerRef.current = ownerMatch.owner;
+    setPaymentOwner(ownerMatch.owner);
+  }, [paymentMethod, paymentMethods, spouseRole, paymentOwner]);
 
   useEffect(() => {
     const ownerMethods = [
@@ -272,6 +291,12 @@ export default function EditTransactionPage() {
     }
   }, [categoryId, categoryOptions]);
 
+  useEffect(() => {
+    if (!selectedCategoryBudgetEnabled) {
+      setBudgetApplied(false);
+    }
+  }, [selectedCategoryBudgetEnabled]);
+
   async function handleSave() {
     if (!householdId || !transactionId) {
       return;
@@ -291,6 +316,7 @@ export default function EditTransactionPage() {
         subject,
         date: new Date(date),
         note: note || undefined,
+        budgetApplied,
       });
       const changes: string[] = [];
       if (originalTransaction) {
@@ -381,7 +407,7 @@ export default function EditTransactionPage() {
           handleSave();
         }}
       >
-        <div className="grid gap-4 md:grid-cols-2">
+        <div className="grid gap-4">
           <label className="text-sm font-medium">
             날짜
             <input
@@ -392,28 +418,32 @@ export default function EditTransactionPage() {
               onChange={(event) => setDate(event.target.value)}
             />
           </label>
-          <label className="text-sm font-medium">
-            유형
-            <button
-              type="button"
-              className="mt-2 w-full rounded-xl border border-[var(--border)] bg-white px-4 py-3 text-left"
-              onClick={() => setIsTypeSheetOpen(true)}
-            >
-              {typeLabelMap[type]}
-            </button>
-          </label>
-          <label className="text-sm font-medium">
-            금액
-            <input
-              type="text"
-              inputMode="numeric"
-              autoComplete="off"
-              name="amount"
-              className="mt-2 w-full rounded-xl border border-[var(--border)] bg-white px-4 py-3"
-              value={amount}
-              onChange={(event) => setAmount(formatAmountValue(event.target.value))}
-            />
-          </label>
+          <div className="grid grid-cols-[0.3fr_0.7fr] gap-3">
+            <label className="text-sm font-medium">
+              유형
+              <button
+                type="button"
+                className="mt-2 w-full rounded-xl border border-[var(--border)] bg-white px-4 py-3 text-left"
+                onClick={() => setIsTypeSheetOpen(true)}
+              >
+                {typeLabelMap[type]}
+              </button>
+            </label>
+            <label className="text-sm font-medium">
+              금액
+              <input
+                type="text"
+                inputMode="numeric"
+                autoComplete="off"
+                name="amount"
+                className="mt-2 w-full rounded-xl border border-[var(--border)] bg-white px-4 py-3"
+                value={amount}
+                onChange={(event) =>
+                  setAmount(formatAmountValue(event.target.value))
+                }
+              />
+            </label>
+          </div>
           <label className="text-sm font-medium">
             주체
             <button
@@ -435,6 +465,17 @@ export default function EditTransactionPage() {
               {selectedCategoryName || "선택"}
             </button>
           </label>
+          {selectedCategoryBudgetEnabled && type === "expense" ? (
+            <label className="flex items-center gap-2 text-sm text-[color:rgba(45,38,34,0.8)]">
+              <input
+                type="checkbox"
+                className="h-4 w-4 rounded border-[var(--border)]"
+                checked={budgetApplied}
+                onChange={(event) => setBudgetApplied(event.target.checked)}
+              />
+              예산으로 처리
+            </label>
+          ) : null}
           <label className="text-sm font-medium">
             결제수단
             <button

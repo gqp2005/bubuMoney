@@ -29,6 +29,7 @@ export interface Category {
   order: number;
   parentId?: string | null;
   imported?: boolean;
+  budgetEnabled?: boolean;
 }
 
 export interface Transaction {
@@ -40,6 +41,7 @@ export interface Transaction {
   date: Timestamp;
   monthKey: string;
   note?: string;
+  budgetApplied?: boolean;
   createdBy: string;
   createdAt: Timestamp;
 }

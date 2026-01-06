@@ -35,6 +35,7 @@ export default function NewTransactionPage() {
   const hasSetInitialOwner = useRef(false);
   const [partnerName, setPartnerName] = useState("");
   const [categoryId, setCategoryId] = useState("");
+  const [budgetApplied, setBudgetApplied] = useState(false);
   const [isTypeSheetOpen, setIsTypeSheetOpen] = useState(false);
   const [isSubjectSheetOpen, setIsSubjectSheetOpen] = useState(false);
   const [isCategorySheetOpen, setIsCategorySheetOpen] = useState(false);
@@ -71,9 +72,13 @@ export default function NewTransactionPage() {
     return Number(value.replace(/,/g, ""));
   }
 
-  const selectedCategoryName = useMemo(() => {
-    return categories.find((category) => category.id === categoryId)?.name ?? "";
+  const selectedCategory = useMemo(() => {
+    return categories.find((category) => category.id === categoryId) ?? null;
   }, [categories, categoryId]);
+  const selectedCategoryName = selectedCategory?.name ?? "";
+  const selectedCategoryBudgetEnabled = Boolean(
+    selectedCategory?.type === "expense" && selectedCategory?.budgetEnabled
+  );
 
   const spouseName = displayName?.trim() || "";
   const partnerTrimmed = partnerName.trim();
@@ -197,6 +202,12 @@ export default function NewTransactionPage() {
     }
   }, [categoryId, categoryOptions]);
 
+  useEffect(() => {
+    if (!selectedCategoryBudgetEnabled) {
+      setBudgetApplied(false);
+    }
+  }, [selectedCategoryBudgetEnabled]);
+
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!user || !householdId) {
@@ -225,12 +236,13 @@ export default function NewTransactionPage() {
         subject: subjectValue,
         date: new Date(date),
         note: note.length ? note : undefined,
+        budgetApplied,
         createdBy: user.uid,
       });
       const memoText = note.trim() || "메모 없음";
       await addNotification(householdId, {
         title: "내역 추가",
-        message: `${typeLabelMap[type]} · ${memoText} · ${date}`,
+        message: `${typeLabelMap[type]} ${formatKrw(amount)} · ${memoText} · ${date}`,
         level: "success",
         type: "transaction.create",
       });
@@ -248,7 +260,7 @@ export default function NewTransactionPage() {
         className="rounded-3xl border border-[var(--border)] bg-white p-6"
         onSubmit={handleSubmit}
       >
-        <div className="grid gap-4 md:grid-cols-2">
+        <div className="grid gap-4">
           <label className="text-sm font-medium">
             날짜
             <input
@@ -258,28 +270,32 @@ export default function NewTransactionPage() {
               defaultValue={defaultDate}
             />
           </label>
-          <label className="text-sm font-medium">
-            유형
-            <button
-              type="button"
-              className="mt-2 w-full rounded-xl border border-[var(--border)] bg-white px-4 py-3 text-left"
-              onClick={() => setIsTypeSheetOpen(true)}
-            >
-              {typeLabelMap[type]}
-            </button>
-          </label>
-          <label className="text-sm font-medium">
-            금액
-            <input
-              type="text"
-              inputMode="numeric"
-              autoComplete="off"
-              className="mt-2 w-full rounded-xl border border-[var(--border)] bg-white px-4 py-3"
-              placeholder="0"
-              value={amountInput}
-              onChange={(event) => setAmountInput(formatAmountValue(event.target.value))}
-            />
-          </label>
+          <div className="grid grid-cols-[0.3fr_0.7fr] gap-3">
+            <label className="text-sm font-medium">
+              유형
+              <button
+                type="button"
+                className="mt-2 w-full rounded-xl border border-[var(--border)] bg-white px-4 py-3 text-left"
+                onClick={() => setIsTypeSheetOpen(true)}
+              >
+                {typeLabelMap[type]}
+              </button>
+            </label>
+            <label className="text-sm font-medium">
+              금액
+              <input
+                type="text"
+                inputMode="numeric"
+                autoComplete="off"
+                className="mt-2 w-full rounded-xl border border-[var(--border)] bg-white px-4 py-3"
+                placeholder="0"
+                value={amountInput}
+                onChange={(event) =>
+                  setAmountInput(formatAmountValue(event.target.value))
+                }
+              />
+            </label>
+          </div>
           <label className="text-sm font-medium">
             주체
             <button
@@ -307,6 +323,17 @@ export default function NewTransactionPage() {
               </span>
             ) : null}
           </label>
+          {selectedCategoryBudgetEnabled && type === "expense" ? (
+            <label className="flex items-center gap-2 text-sm text-[color:rgba(45,38,34,0.8)]">
+              <input
+                type="checkbox"
+                className="h-4 w-4 rounded border-[var(--border)]"
+                checked={budgetApplied}
+                onChange={(event) => setBudgetApplied(event.target.checked)}
+              />
+              예산으로 처리
+            </label>
+          ) : null}
           <label className="text-sm font-medium">
             결제수단
             <button

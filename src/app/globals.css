@@ -3,6 +3,7 @@
 :root {
   --background: #fdf7f1;
   --foreground: #2d2622;
+  --text: var(--foreground);
   --card: #ffffff;
   --border: #efe2d7;
   --accent: #3b2f2f;

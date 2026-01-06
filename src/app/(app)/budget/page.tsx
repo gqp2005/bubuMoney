@@ -57,7 +57,10 @@ function monthKeyToDate(monthKey: string) {
 function buildMonthPoints(
   endMonth: Date,
   range: RangeOption,
-  transactions: (Transaction & { id: string })[]
+  transactions: (Transaction & { id: string })[],
+  budgetCategoryIdSet: Set<string>,
+  budgetScope: "common" | string,
+  categoryById: Map<string, { id: string; parentId?: string | null }>
 ): MonthPoint[] {
   const months: MonthPoint[] = [];
   for (let i = range - 1; i >= 0; i -= 1) {
@@ -80,8 +83,26 @@ function buildMonthPoints(
       target.income += tx.amount;
       target.net += tx.amount;
     } else if (tx.type === "expense") {
-      target.expense += tx.amount;
-      target.net -= tx.amount;
+      if (budgetScope === "common") {
+        if (budgetCategoryIdSet.has(tx.categoryId)) {
+          return;
+        }
+      } else {
+        const category = categoryById.get(tx.categoryId);
+        if (!category) {
+          return;
+        }
+        if (category.id !== budgetScope && category.parentId !== budgetScope) {
+          return;
+        }
+      }
+      if (budgetScope !== "common" && tx.budgetApplied) {
+        target.income += tx.amount;
+        target.net += tx.amount;
+      } else {
+        target.expense += tx.amount;
+        target.net -= tx.amount;
+      }
     }
   });
 
@@ -116,6 +137,8 @@ export default function BudgetPage() {
   const [saving, setSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const [showAllTopCategories, setShowAllTopCategories] = useState(false);
+  const [budgetScope, setBudgetScope] = useState<"common" | string>("common");
+  const [isBudgetSheetOpen, setIsBudgetSheetOpen] = useState(false);
   const lastNotifiedLoadKey = useRef<string | null>(null);
 
   const endMonth = startOfMonth(new Date());
@@ -126,10 +149,66 @@ export default function BudgetPage() {
     rangeStart,
     rangeEnd
   );
+  const budgetCategoryIdSet = useMemo(() => {
+    return new Set(
+      categories
+        .filter((category) => category.type === "expense" && category.budgetEnabled)
+        .map((category) => category.id)
+    );
+  }, [categories]);
+  const categoryById = useMemo(
+    () => new Map(categories.map((category) => [category.id, category])),
+    [categories]
+  );
+  const budgetCategories = useMemo(() => {
+    return categories
+      .filter((category) => category.type === "expense" && category.budgetEnabled)
+      .sort((a, b) => a.order - b.order || a.name.localeCompare(b.name));
+  }, [categories]);
+  const maxBudgetTabs = budgetCategories.length > 3 ? 2 : 3;
+  const budgetTabs = budgetCategories.slice(0, maxBudgetTabs);
+  const hasMoreBudgetTabs = budgetCategories.length > maxBudgetTabs;
+  useEffect(() => {
+    if (budgetScope === "common") {
+      return;
+    }
+    if (!budgetCategoryIdSet.has(budgetScope)) {
+      setBudgetScope("common");
+    }
+  }, [budgetScope, budgetCategoryIdSet]);
+  const visibleTransactions = useMemo(() => {
+    return transactions.filter((tx) => {
+      if (budgetScope === "common") {
+        if (tx.type !== "expense") {
+          return true;
+        }
+        if (!budgetCategoryIdSet.has(tx.categoryId)) {
+          return true;
+        }
+        return Boolean(tx.budgetApplied);
+      }
+      if (tx.type !== "expense") {
+        return false;
+      }
+      const category = categoryById.get(tx.categoryId);
+      if (!category) {
+        return false;
+      }
+      return category.id === budgetScope || category.parentId === budgetScope;
+    });
+  }, [transactions, budgetScope, budgetCategoryIdSet, categoryById]);
 
   const monthPoints = useMemo(
-    () => buildMonthPoints(endMonth, range, transactions),
-    [endMonth, range, transactions]
+    () =>
+      buildMonthPoints(
+        endMonth,
+        range,
+        visibleTransactions,
+        budgetCategoryIdSet,
+        budgetScope,
+        categoryById
+      ),
+    [endMonth, range, visibleTransactions, budgetCategoryIdSet, budgetScope, categoryById]
   );
 
   const [selectedMonthKey, setSelectedMonthKey] = useState(
@@ -170,14 +249,30 @@ export default function BudgetPage() {
     if (!selectedMonthKey) {
       return [];
     }
-    return transactions.filter((tx) => {
+    return visibleTransactions.filter((tx) => {
       if (tx.type !== "expense") {
         return false;
+      }
+      if (budgetScope !== "common" && tx.budgetApplied) {
+        return false;
+      }
+      if (budgetScope === "common") {
+        if (budgetCategoryIdSet.has(tx.categoryId) && !tx.budgetApplied) {
+          return false;
+        }
+      } else {
+        const category = categoryById.get(tx.categoryId);
+        if (!category) {
+          return false;
+        }
+        if (category.id !== budgetScope && category.parentId !== budgetScope) {
+          return false;
+        }
       }
       const key = format(tx.date.toDate(), "yyyy-MM");
       return key === selectedMonthKey;
     });
-  }, [selectedMonthKey, transactions]);
+  }, [selectedMonthKey, visibleTransactions, budgetCategoryIdSet, budgetScope, categoryById]);
 
   const topCategorySpend = useMemo(() => {
     const totals: Record<string, number> = {};
@@ -222,12 +317,6 @@ export default function BudgetPage() {
         setCategoryBudgets(mapped);
         if (user && lastNotifiedLoadKey.current !== selectedMonthKey) {
           lastNotifiedLoadKey.current = selectedMonthKey;
-          addNotification(householdId, {
-            title: "예산 불러오기 완료",
-            message: `${format(monthKeyToDate(selectedMonthKey), "yyyy년 M월")} 예산을 불러왔습니다.`,
-            level: "success",
-            type: "budget",
-          });
         }
       } else {
         setMonthlyBudget("");
@@ -326,6 +415,49 @@ export default function BudgetPage() {
               </button>
             ))}
           </div>
+        </div>
+
+        <div className="mt-4 flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            className={`rounded-full border px-4 py-2 text-sm ${
+              budgetScope === "common"
+                ? "border-[var(--text)] bg-[var(--text)] text-white"
+                : "border-[var(--border)] text-[color:rgba(45,38,34,0.7)]"
+            }`}
+            onClick={() => setBudgetScope("common")}
+          >
+            공용
+          </button>
+          {budgetTabs.map((category) => (
+            <button
+              key={category.id}
+              type="button"
+              className={`rounded-full border px-4 py-2 text-sm ${
+                budgetScope === category.id
+                  ? "border-[var(--text)] bg-[var(--text)] text-white"
+                  : "border-[var(--border)] text-[color:rgba(45,38,34,0.7)]"
+              }`}
+              onClick={() => setBudgetScope(category.id)}
+            >
+              {category.name}
+            </button>
+          ))}
+          {hasMoreBudgetTabs ? (
+            <button
+              type="button"
+              className={`rounded-full border px-4 py-2 text-sm ${
+                budgetScope !== "common" &&
+                !budgetTabs.some((tab) => tab.id === budgetScope)
+                  ? "border-[var(--text)] bg-[var(--text)] text-white"
+                  : "border-[var(--border)] text-[color:rgba(45,38,34,0.7)]"
+              }`}
+              onClick={() => setIsBudgetSheetOpen(true)}
+              aria-label="예산 카테고리 더보기"
+            >
+              ...
+            </button>
+          ) : null}
         </div>
 
         <div className="mt-4 rounded-2xl border border-[var(--border)] bg-[color:rgba(45,38,34,0.03)] p-4">
@@ -647,6 +779,51 @@ export default function BudgetPage() {
             </div>
           )}
         </div>
+
+        {isBudgetSheetOpen ? (
+          <div className="fixed inset-0 z-50">
+            <button
+              type="button"
+              className="absolute inset-0 bg-black/40"
+              onClick={() => setIsBudgetSheetOpen(false)}
+              aria-label="닫기"
+            />
+            <div className="absolute bottom-0 left-0 right-0 flex max-h-[70vh] flex-col rounded-t-3xl bg-white">
+              <div className="flex-1 overflow-y-auto p-6">
+                <div className="mx-auto mb-6 h-1.5 w-12 rounded-full bg-[color:rgba(45,38,34,0.15)]" />
+                <div className="flex items-center justify-between">
+                  <div className="text-base font-semibold">카테고리 선택</div>
+                  <button
+                    type="button"
+                    className="text-sm text-[color:rgba(45,38,34,0.6)]"
+                    onClick={() => setIsBudgetSheetOpen(false)}
+                  >
+                    닫기
+                  </button>
+                </div>
+                <div className="mt-4 space-y-2">
+                  {budgetCategories.map((category) => (
+                    <button
+                      key={category.id}
+                      type="button"
+                      className={`w-full rounded-2xl border px-4 py-3 text-left text-sm ${
+                        budgetScope === category.id
+                          ? "border-[var(--text)] bg-[color:rgba(45,38,34,0.06)] font-semibold"
+                          : "border-[var(--border)] text-[color:rgba(45,38,34,0.7)]"
+                      }`}
+                      onClick={() => {
+                        setBudgetScope(category.id);
+                        setIsBudgetSheetOpen(false);
+                      }}
+                    >
+                      {category.name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : null}
       </section>
     </div>
   );
