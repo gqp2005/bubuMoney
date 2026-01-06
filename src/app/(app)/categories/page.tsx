@@ -1,6 +1,8 @@
 ﻿"use client";
 
 import {
+  createContext,
+  useContext,
   useEffect,
   useMemo,
   useRef,
@@ -91,8 +93,15 @@ function SortableCard({
   children: ReactNode;
   onClick?: (event: MouseEvent<HTMLDivElement>) => void;
 }) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
-    useSortable({ id });
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    setActivatorNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id });
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
@@ -103,11 +112,42 @@ function SortableCard({
       style={style}
       className={`${className} ${isDragging ? "opacity-70" : ""}`}
       onClick={onClick}
-      {...attributes}
-      {...listeners}
     >
-      {children}
+      <DragHandleContext.Provider
+        value={{ attributes, listeners, setActivatorNodeRef }}
+      >
+        {children}
+      </DragHandleContext.Provider>
     </div>
+  );
+}
+
+const DragHandleContext = createContext<{
+  attributes: Record<string, unknown>;
+  listeners: Record<string, unknown> | undefined;
+  setActivatorNodeRef: (element: HTMLElement | null) => void;
+} | null>(null);
+
+function DragHandle({
+  className,
+  label = "drag",
+}: {
+  className?: string;
+  label?: string;
+}) {
+  const ctx = useContext(DragHandleContext);
+  if (!ctx) {
+    return null;
+  }
+  return (
+    <span
+      ref={ctx.setActivatorNodeRef}
+      {...ctx.attributes}
+      {...ctx.listeners}
+      className={`cursor-grab touch-none select-none ${className ?? ""}`}
+    >
+      {label}
+    </span>
   );
 }
 
@@ -852,9 +892,7 @@ export default function CategoriesPage() {
                             className="flex items-center gap-2"
                             onClick={(event) => event.stopPropagation()}
                           >
-                            <span className="cursor-grab text-xs text-[color:rgba(45,38,34,0.45)]">
-                              drag
-                            </span>
+                            <DragHandle className="text-xs text-[color:rgba(45,38,34,0.45)]" />
                             <button
                               className="text-xs text-[color:rgba(45,38,34,0.6)]"
                               onClick={() =>
@@ -956,9 +994,7 @@ export default function CategoriesPage() {
                                       <>
                                         <span className="font-medium">{child.name}</span>
                                         <div className="flex items-center gap-2">
-                                          <span className="cursor-grab text-[10px] text-[color:rgba(45,38,34,0.45)]">
-                                            drag
-                                          </span>
+                                          <DragHandle className="text-[10px] text-[color:rgba(45,38,34,0.45)]" />
                                           <button
                                             className="text-[10px] text-[color:rgba(45,38,34,0.6)]"
                                             onClick={() =>
@@ -1097,9 +1133,7 @@ export default function CategoriesPage() {
                             className="flex items-center gap-2"
                             onClick={(event) => event.stopPropagation()}
                           >
-                            <span className="cursor-grab text-xs text-[color:rgba(45,38,34,0.45)]">
-                              drag
-                            </span>
+                            <DragHandle className="text-xs text-[color:rgba(45,38,34,0.45)]" />
                             <button
                               className="text-xs text-[color:rgba(45,38,34,0.6)]"
                               onClick={() =>
@@ -1187,9 +1221,7 @@ export default function CategoriesPage() {
                                       <>
                                         <span className="font-medium">{child.name}</span>
                                         <div className="flex items-center gap-2">
-                                          <span className="cursor-grab text-[10px] text-[color:rgba(45,38,34,0.45)]">
-                                            drag
-                                          </span>
+                                          <DragHandle className="text-[10px] text-[color:rgba(45,38,34,0.45)]" />
                                           <button
                                             className="text-[10px] text-[color:rgba(45,38,34,0.6)]"
                                             onClick={() =>
@@ -1277,9 +1309,7 @@ export default function CategoriesPage() {
                     <>
                       <span className="font-medium">{item.name}</span>
                       <div className="flex items-center gap-2">
-                        <span className="cursor-grab text-xs text-[color:rgba(45,38,34,0.45)]">
-                          drag
-                        </span>
+                        <DragHandle className="text-xs text-[color:rgba(45,38,34,0.45)]" />
                         <button
                           className="text-xs text-[color:rgba(45,38,34,0.6)]"
                           onClick={() => startEdit(item.id, item.name)}
