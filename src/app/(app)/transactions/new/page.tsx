@@ -240,12 +240,16 @@ export default function NewTransactionPage() {
         createdBy: user.uid,
       });
       const memoText = note.trim() || "메모 없음";
-      await addNotification(householdId, {
-        title: "내역 추가",
-        message: `${typeLabelMap[type]} ${formatKrw(amount)} · ${memoText} · ${date}`,
-        level: "success",
-        type: "transaction.create",
-      });
+      if (!selectedCategory?.personalOnly) {
+        await addNotification(householdId, {
+          title: "내역 추가",
+          message: `${typeLabelMap[type]} ${formatKrw(amount)} • ${
+            selectedCategoryName || "미분류"
+          } • ${memoText} • ${date}`,
+          level: "success",
+          type: "transaction.create",
+        });
+      }
       router.replace(`/transactions?date=${date}`);
     } catch (err) {
       setError("저장에 실패했습니다. 입력값을 확인해주세요.");

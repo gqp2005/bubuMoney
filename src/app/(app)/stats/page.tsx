@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   addDays,
@@ -16,6 +16,7 @@ import {
   startOfMonth,
   startOfWeek,
 } from "date-fns";
+import { useAuth } from "@/components/auth-provider";
 import { useHousehold } from "@/components/household-provider";
 import { formatKrw } from "@/lib/format";
 import { toMonthKey } from "@/lib/time";
@@ -148,12 +149,775 @@ function parseLocalDate(value: string) {
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
+function formatSelectionSummary(names: string[]) {
+  if (names.length === 0) {
+    return "전체";
+  }
+  if (names.length > 3) {
+    return `${names.slice(0, 3).join(", ")} 외 ${names.length - 3}개`;
+  }
+  return names.join(", ");
+}
+
+type RangeMode = "monthly" | "custom";
+
+type RangeSheetProps = {
+  open: boolean;
+  onClose: () => void;
+  rangeMode: RangeMode;
+  setRangeMode: (mode: RangeMode) => void;
+  customStart: string;
+  customEnd: string;
+  updateCustomStart: (value: string) => void;
+  setCustomEnd: (value: string) => void;
+  customMonthDate: Date;
+  setCustomMonthDate: (value: Date) => void;
+  monthDate: Date;
+  customCalendarDays: Date[];
+  customStartDate: Date | null;
+  customEndDate: Date | null;
+  yearOptions: number[];
+  selectedYear: number;
+  selectedMonth: number;
+  setSelectedYear: (value: number) => void;
+  setSelectedMonth: (value: number) => void;
+  onConfirm: () => void;
+};
+
+const RangeSheet = memo(function RangeSheet({
+  open,
+  onClose,
+  rangeMode,
+  setRangeMode,
+  customStart,
+  customEnd,
+  updateCustomStart,
+  setCustomEnd,
+  customMonthDate,
+  setCustomMonthDate,
+  monthDate,
+  customCalendarDays,
+  customStartDate,
+  customEndDate,
+  yearOptions,
+  selectedYear,
+  selectedMonth,
+  setSelectedYear,
+  setSelectedMonth,
+  onConfirm,
+}: RangeSheetProps) {
+  if (!open) {
+    return null;
+  }
+
+  return (
+    <div className="fixed inset-0 z-50">
+      <button
+        type="button"
+        className="absolute inset-0 bg-black/40"
+        onClick={onClose}
+        aria-label="닫기"
+      />
+      <div className="absolute bottom-0 left-0 right-0 flex max-h-[80vh] flex-col rounded-t-3xl bg-white">
+        <div className="flex-1 overflow-y-auto p-6">
+          <div className="mx-auto mb-6 h-1.5 w-12 rounded-full bg-[color:rgba(45,38,34,0.15)]" />
+          <div className="flex items-center justify-between">
+            <h2 className="text-base font-semibold">조회 기간 선택</h2>
+            <div className="flex rounded-full border border-[var(--border)] bg-[color:rgba(45,38,34,0.06)] p-1">
+              <button
+                type="button"
+                className={`rounded-full px-4 py-2 text-sm ${
+                  rangeMode === "monthly"
+                    ? "bg-white text-[var(--text)] shadow"
+                    : "text-[color:rgba(45,38,34,0.5)]"
+                }`}
+                onClick={() => setRangeMode("monthly")}
+              >
+                월간
+              </button>
+              <button
+                type="button"
+                className={`rounded-full px-4 py-2 text-sm ${
+                  rangeMode === "custom"
+                    ? "bg-white text-[var(--text)] shadow"
+                    : "text-[color:rgba(45,38,34,0.5)]"
+                }`}
+                onClick={() => setRangeMode("custom")}
+              >
+                직접 입력
+              </button>
+            </div>
+          </div>
+
+          {rangeMode === "custom" ? (
+            <div className="mt-6 space-y-4">
+              <div className="grid grid-cols-2 gap-3">
+                <label className="rounded-2xl bg-[color:rgba(45,38,34,0.08)] px-4 py-3 text-center text-sm font-medium text-[color:rgba(45,38,34,0.6)]">
+                  <input
+                    type="date"
+                    className="sr-only"
+                    value={customStart}
+                    onChange={(event) => updateCustomStart(event.target.value)}
+                  />
+                  {customStart
+                    ? format(new Date(customStart), "yyyy.MM.dd") + " 부터"
+                    : "시작일 선택"}
+                </label>
+                <label className="rounded-2xl bg-[color:rgba(45,38,34,0.08)] px-4 py-3 text-center text-sm font-medium text-[color:rgba(45,38,34,0.6)]">
+                  <input
+                    type="date"
+                    className="sr-only"
+                    value={customEnd}
+                    onChange={(event) => setCustomEnd(event.target.value)}
+                  />
+                  {customEnd
+                    ? format(new Date(customEnd), "yyyy.MM.dd") + " 까지"
+                    : "종료일 선택"}
+                </label>
+              </div>
+              <div className="grid grid-cols-3 gap-3">
+                {[3, 6, 12].map((months) => (
+                  <button
+                    key={months}
+                    type="button"
+                    className="rounded-2xl bg-[color:rgba(45,38,34,0.06)] px-4 py-2 text-sm text-[color:rgba(45,38,34,0.7)]"
+                    onClick={() => {
+                      const end = endOfMonth(monthDate);
+                      const start = startOfMonth(addMonths(end, -(months - 1)));
+                      updateCustomStart(format(start, "yyyy-MM-dd"));
+                      setCustomEnd(format(end, "yyyy-MM-dd"));
+                      setCustomMonthDate(startOfMonth(end));
+                    }}
+                  >
+                    {months}개월
+                  </button>
+                ))}
+              </div>
+              <div className="rounded-3xl border border-[var(--border)] p-4">
+                <div className="flex items-center justify-between text-base font-semibold">
+                  {format(customMonthDate, "yyyy년 M월")}
+                  <span className="text-xs text-[color:rgba(45,38,34,0.5)]">
+                    ▼
+                  </span>
+                </div>
+                <div className="mt-4 grid grid-cols-7 gap-2 text-center text-xs text-[color:rgba(45,38,34,0.4)]">
+                  {["일", "월", "화", "수", "목", "금", "토"].map((day) => (
+                    <div key={day}>{day}</div>
+                  ))}
+                </div>
+                <div className="mt-2 grid grid-cols-7 gap-2">
+                  {customCalendarDays.map((day) => {
+                    const isCurrentMonth = isSameMonth(day, customMonthDate);
+                    const isStart =
+                      customStartDate && isSameDay(day, customStartDate);
+                    const isEnd =
+                      customEndDate && isSameDay(day, customEndDate);
+                    const inRange =
+                      customStartDate &&
+                      customEndDate &&
+                      day >= customStartDate &&
+                      day <= customEndDate;
+                    return (
+                      <button
+                        key={day.toISOString()}
+                        type="button"
+                        className={`h-9 rounded-full text-sm ${
+                          isStart || isEnd
+                            ? "bg-[color:rgba(59,186,186,0.35)] text-[color:rgba(20,90,90,1)]"
+                            : inRange
+                            ? "bg-[color:rgba(59,186,186,0.15)] text-[color:rgba(45,38,34,0.9)]"
+                            : "bg-transparent"
+                        } ${
+                          isCurrentMonth
+                            ? ""
+                            : "text-[color:rgba(45,38,34,0.3)]"
+                        }`}
+                        onClick={() => {
+                          if (
+                            !customStartDate ||
+                            (customStartDate && customEndDate)
+                          ) {
+                            updateCustomStart(format(day, "yyyy-MM-dd"));
+                            setCustomEnd("");
+                            return;
+                          }
+                          if (day < customStartDate) {
+                            updateCustomStart(format(day, "yyyy-MM-dd"));
+                            setCustomEnd("");
+                          } else {
+                            setCustomEnd(format(day, "yyyy-MM-dd"));
+                          }
+                        }}
+                      >
+                        {format(day, "d")}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="mt-6 space-y-4">
+              <div className="rounded-3xl border border-[var(--border)] bg-white p-4 shadow-sm">
+                <div className="text-base font-semibold">
+                  {format(new Date(selectedYear, selectedMonth, 1), "yyyy년 M월")}
+                </div>
+                <div className="mt-4 grid grid-cols-2 gap-3">
+                  <select
+                    className="appearance-none rounded-2xl border border-[var(--border)] bg-[color:rgba(45,38,34,0.06)] px-3 py-2 text-center text-sm font-medium"
+                    value={selectedYear}
+                    onChange={(event) =>
+                      setSelectedYear(Number(event.target.value))
+                    }
+                  >
+                    {yearOptions.map((year) => (
+                      <option key={year} value={year}>
+                        {year}년
+                      </option>
+                    ))}
+                  </select>
+                  <select
+                    className="appearance-none rounded-2xl border border-[var(--border)] bg-[color:rgba(45,38,34,0.06)] px-3 py-2 text-center text-sm font-medium"
+                    value={selectedMonth}
+                    onChange={(event) =>
+                      setSelectedMonth(Number(event.target.value))
+                    }
+                  >
+                    {Array.from({ length: 12 }, (_, idx) => idx).map(
+                      (month) => (
+                        <option key={month} value={month}>
+                          {month + 1}월
+                        </option>
+                      )
+                    )}
+                  </select>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+        <div className="border-t border-[var(--border)] bg-white p-4">
+          <button
+            type="button"
+            className="w-full rounded-2xl bg-[var(--text)] px-4 py-3 text-sm text-black"
+            onClick={onConfirm}
+          >
+            완료
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+});
+
+type BudgetCategory = { id: string; name: string };
+
+type BudgetSheetProps = {
+  open: boolean;
+  onClose: () => void;
+  budgetCategories: BudgetCategory[];
+  budgetScope: "common" | string;
+  onSelect: (categoryId: string) => void;
+};
+
+const BudgetSheet = memo(function BudgetSheet({
+  open,
+  onClose,
+  budgetCategories,
+  budgetScope,
+  onSelect,
+}: BudgetSheetProps) {
+  if (!open) {
+    return null;
+  }
+
+  return (
+    <div className="fixed inset-0 z-50">
+      <button
+        type="button"
+        className="absolute inset-0 bg-black/40"
+        onClick={onClose}
+        aria-label="닫기"
+      />
+      <div className="absolute bottom-0 left-0 right-0 flex max-h-[70vh] flex-col rounded-t-3xl bg-white">
+        <div className="flex-1 overflow-y-auto p-6">
+          <div className="mx-auto mb-6 h-1.5 w-12 rounded-full bg-[color:rgba(45,38,34,0.15)]" />
+          <div className="flex items-center justify-between">
+            <div className="text-base font-semibold">카테고리 선택</div>
+            <button
+              type="button"
+              className="text-sm text-[color:rgba(45,38,34,0.6)]"
+              onClick={onClose}
+            >
+              닫기
+            </button>
+          </div>
+          <div className="mt-4 space-y-2">
+            {budgetCategories.map((category) => (
+              <button
+                key={category.id}
+                type="button"
+                className={`w-full rounded-2xl border px-4 py-3 text-left text-sm ${
+                  budgetScope === category.id
+                    ? "border-[var(--text)] bg-[color:rgba(45,38,34,0.06)] font-semibold"
+                    : "border-[var(--border)] text-[color:rgba(45,38,34,0.7)]"
+                }`}
+                onClick={() => onSelect(category.id)}
+              >
+                {category.name}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+});
+
+type CategoryItem = {
+  id: string;
+  name: string;
+  parentId?: string | null;
+  order: number;
+  type: ViewType | "income" | "expense" | "transfer";
+};
+
+type SubjectItem = {
+  id: string;
+  name: string;
+};
+
+type PaymentMethodItem = {
+  id: string;
+  name: string;
+  parentId?: string | null;
+  order: number;
+  owner?: "husband" | "wife" | "our";
+};
+
+type FilterSheetProps = {
+  open: boolean;
+  onClose: () => void;
+  filterTab: "category" | "subject" | "payment";
+  setFilterTab: (tab: "category" | "subject" | "payment") => void;
+  categoryParents: CategoryItem[];
+  categoryChildrenByParent: Map<string, CategoryItem[]>;
+  draftCategoryIds: Set<string>;
+  setDraftCategoryIds: (next: Set<string>) => void;
+  expandedCategoryParents: Set<string>;
+  setExpandedCategoryParents: (next: Set<string>) => void;
+  subjects: SubjectItem[];
+  draftSubjects: Set<string>;
+  setDraftSubjects: (next: Set<string>) => void;
+  paymentOwnerLabels: { husbandLabel: string; wifeLabel: string };
+  paymentOwnerFilter: "husband" | "wife" | "our";
+  setPaymentOwnerFilter: (owner: "husband" | "wife" | "our") => void;
+  paymentParents: PaymentMethodItem[];
+  paymentChildrenByParent: Map<string, PaymentMethodItem[]>;
+  draftPayments: Set<string>;
+  setDraftPayments: (next: Set<string>) => void;
+  expandedPaymentParents: Set<string>;
+  setExpandedPaymentParents: (next: Set<string>) => void;
+  resetFilters: () => void;
+  applyFilters: () => void;
+};
+
+const FilterSheet = memo(function FilterSheet({
+  open,
+  onClose,
+  filterTab,
+  setFilterTab,
+  categoryParents,
+  categoryChildrenByParent,
+  draftCategoryIds,
+  setDraftCategoryIds,
+  expandedCategoryParents,
+  setExpandedCategoryParents,
+  subjects,
+  draftSubjects,
+  setDraftSubjects,
+  paymentOwnerLabels,
+  paymentOwnerFilter,
+  setPaymentOwnerFilter,
+  paymentParents,
+  paymentChildrenByParent,
+  draftPayments,
+  setDraftPayments,
+  expandedPaymentParents,
+  setExpandedPaymentParents,
+  resetFilters,
+  applyFilters,
+}: FilterSheetProps) {
+  if (!open) {
+    return null;
+  }
+
+  return (
+    <div className="fixed inset-0 z-50">
+      <button
+        type="button"
+        className="absolute inset-0 bg-black/40"
+        onClick={onClose}
+        aria-label="닫기"
+      />
+      <div className="absolute bottom-0 left-0 right-0 flex max-h-[80vh] flex-col rounded-t-3xl bg-white">
+        <div className="flex-1 overflow-y-auto p-6">
+          <div className="mx-auto mb-6 h-1.5 w-12 rounded-full bg-[color:rgba(45,38,34,0.15)]" />
+          <div className="flex items-center justify-between">
+            <div className="text-base font-semibold">필터 선택</div>
+            <button
+              type="button"
+              className="text-sm text-[color:rgba(45,38,34,0.6)]"
+              onClick={onClose}
+            >
+              취소
+            </button>
+          </div>
+          <div className="mt-6 flex gap-6 text-sm">
+            {[
+              { key: "category", label: "카테고리" },
+              { key: "subject", label: "구성원" },
+              { key: "payment", label: "자산" },
+            ].map((tab) => (
+              <button
+                key={tab.key}
+                type="button"
+                className={`pb-2 ${
+                  filterTab === tab.key
+                    ? "text-[var(--text)]"
+                    : "text-[color:rgba(45,38,34,0.4)]"
+                }`}
+                onClick={() =>
+                  setFilterTab(tab.key as "category" | "subject" | "payment")
+                }
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+
+          {filterTab === "category" ? (
+            <div className="mt-6 space-y-3">
+              {categoryParents.map((parent) => {
+                const children = categoryChildrenByParent.get(parent.id) ?? [];
+                const childIds = children.map((child) => child.id);
+                const isParentSelected =
+                  childIds.length > 0
+                    ? childIds.every((id) => draftCategoryIds.has(id))
+                    : draftCategoryIds.has(parent.id);
+                const isExpanded = expandedCategoryParents.has(parent.id);
+                return (
+                  <div
+                    key={parent.id}
+                    className={`rounded-2xl border px-4 py-3 ${
+                      isParentSelected
+                        ? "border-[var(--text)] bg-[color:rgba(45,38,34,0.06)]"
+                        : "border-[var(--border)] bg-white"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <button
+                        type="button"
+                        className="text-left"
+                        onClick={() => {
+                          const next = new Set(draftCategoryIds);
+                          if (childIds.length === 0) {
+                            if (next.has(parent.id)) {
+                              next.delete(parent.id);
+                            } else {
+                              next.add(parent.id);
+                            }
+                          } else if (isParentSelected) {
+                            childIds.forEach((id) => next.delete(id));
+                          } else {
+                            childIds.forEach((id) => next.add(id));
+                          }
+                          setDraftCategoryIds(next);
+                        }}
+                      >
+                        <p
+                          className={`text-sm ${
+                            isParentSelected ? "font-semibold" : "font-medium"
+                          }`}
+                        >
+                          {parent.name}
+                        </p>
+                        <p className="text-xs text-[color:rgba(45,38,34,0.5)]">
+                          소분류 {children.length}개
+                        </p>
+                      </button>
+                      <button
+                        type="button"
+                        className="text-xl text-[color:rgba(45,38,34,0.4)]"
+                        onClick={() => {
+                          const next = new Set(expandedCategoryParents);
+                          if (next.has(parent.id)) {
+                            next.delete(parent.id);
+                          } else {
+                            next.add(parent.id);
+                          }
+                          setExpandedCategoryParents(next);
+                        }}
+                      >
+                        +
+                      </button>
+                    </div>
+                    {isExpanded ? (
+                      <div className="mt-3 space-y-2">
+                        {children.map((child) => (
+                          <button
+                            key={child.id}
+                            type="button"
+                            className={`w-full rounded-xl border px-3 py-2 text-left text-sm ${
+                              draftCategoryIds.has(child.id)
+                                ? "border-[var(--text)] bg-[color:rgba(45,38,34,0.08)] font-semibold"
+                                : "border-[var(--border)] text-[color:rgba(45,38,34,0.7)]"
+                            }`}
+                            onClick={() => {
+                              const next = new Set(draftCategoryIds);
+                              if (next.has(child.id)) {
+                                next.delete(child.id);
+                              } else {
+                                next.add(child.id);
+                              }
+                              setDraftCategoryIds(next);
+                            }}
+                          >
+                            {child.name}
+                          </button>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>
+          ) : null}
+
+          {filterTab === "subject" ? (
+            <div className="mt-6 space-y-2">
+              {subjects.map((subject) => (
+                <button
+                  key={subject.id}
+                  type="button"
+                  className={`w-full rounded-2xl border px-4 py-3 text-left text-sm ${
+                    draftSubjects.has(subject.name)
+                      ? "border-[var(--text)] bg-[color:rgba(45,38,34,0.08)] font-semibold"
+                      : "border-[var(--border)] text-[color:rgba(45,38,34,0.7)]"
+                  }`}
+                  onClick={() => {
+                    const next = new Set(draftSubjects);
+                    if (next.has(subject.name)) {
+                      next.delete(subject.name);
+                    } else {
+                      next.add(subject.name);
+                    }
+                    setDraftSubjects(next);
+                  }}
+                >
+                  {subject.name}
+                </button>
+              ))}
+            </div>
+          ) : null}
+
+          {filterTab === "payment" ? (
+            <div className="mt-6 space-y-3">
+              <div className="flex items-center gap-2">
+                {[
+                  { key: "husband", label: paymentOwnerLabels.husbandLabel },
+                  { key: "wife", label: paymentOwnerLabels.wifeLabel },
+                  { key: "our", label: "우리" },
+                ].map((tab) => (
+                  <button
+                    key={tab.key}
+                    type="button"
+                    className={`rounded-full border px-4 py-2 text-sm ${
+                      paymentOwnerFilter === tab.key
+                        ? "border-[var(--accent)] bg-[color:rgba(145,102,82,0.12)] font-semibold text-[var(--text)]"
+                        : "border-[var(--border)] text-[color:rgba(45,38,34,0.6)]"
+                    }`}
+                    onClick={() =>
+                      setPaymentOwnerFilter(
+                        tab.key as "husband" | "wife" | "our"
+                      )
+                    }
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+              {paymentParents.map((parent) => {
+                const children = paymentChildrenByParent.get(parent.id) ?? [];
+                const childNames = children.map((child) => child.name);
+                const isParentSelected =
+                  childNames.length > 0
+                    ? childNames.every((name) => draftPayments.has(name))
+                    : draftPayments.has(parent.name);
+                const isExpanded = expandedPaymentParents.has(parent.id);
+                return (
+                  <div
+                    key={parent.id}
+                    className={`rounded-2xl border px-4 py-3 ${
+                      isParentSelected
+                        ? "border-[var(--text)] bg-[color:rgba(45,38,34,0.06)]"
+                        : "border-[var(--border)] bg-white"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <button
+                        type="button"
+                        className="text-left"
+                        onClick={() => {
+                          const next = new Set(draftPayments);
+                          if (childNames.length === 0) {
+                            if (next.has(parent.name)) {
+                              next.delete(parent.name);
+                            } else {
+                              next.add(parent.name);
+                            }
+                          } else if (isParentSelected) {
+                            childNames.forEach((name) => next.delete(name));
+                          } else {
+                            childNames.forEach((name) => next.add(name));
+                          }
+                          setDraftPayments(next);
+                        }}
+                      >
+                        <p
+                          className={`text-sm ${
+                            isParentSelected ? "font-semibold" : "font-medium"
+                          }`}
+                        >
+                          {parent.name}
+                        </p>
+                        <p className="text-xs text-[color:rgba(45,38,34,0.5)]">
+                          소분류 {children.length}개
+                        </p>
+                      </button>
+                      <button
+                        type="button"
+                        className="text-xl text-[color:rgba(45,38,34,0.4)]"
+                        onClick={() => {
+                          const next = new Set(expandedPaymentParents);
+                          if (next.has(parent.id)) {
+                            next.delete(parent.id);
+                          } else {
+                            next.add(parent.id);
+                          }
+                          setExpandedPaymentParents(next);
+                        }}
+                      >
+                        +
+                      </button>
+                    </div>
+                    {isExpanded ? (
+                      <div className="mt-3 space-y-2">
+                        {children.map((child) => (
+                          <button
+                            key={child.id}
+                            type="button"
+                            className={`w-full rounded-xl border px-3 py-2 text-left text-sm ${
+                              draftPayments.has(child.name)
+                                ? "border-[var(--text)] bg-[color:rgba(45,38,34,0.08)] font-semibold"
+                                : "border-[var(--border)] text-[color:rgba(45,38,34,0.7)]"
+                            }`}
+                            onClick={() => {
+                              const next = new Set(draftPayments);
+                              if (next.has(child.name)) {
+                                next.delete(child.name);
+                              } else {
+                                next.add(child.name);
+                              }
+                              setDraftPayments(next);
+                            }}
+                          >
+                            {child.name}
+                          </button>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>
+          ) : null}
+        </div>
+        <div className="border-t border-[var(--border)] bg-white p-4 pb-6">
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              className="flex-1 rounded-2xl border border-[var(--border)] px-4 py-3 text-sm text-[color:rgba(45,38,34,0.7)]"
+              onClick={resetFilters}
+            >
+              초기화
+            </button>
+            <button
+              type="button"
+              className="flex-[2] rounded-2xl bg-[var(--accent)] px-4 py-3 text-sm text-white"
+              onClick={applyFilters}
+            >
+              필터 적용 완료
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+});
+
+type ResetConfirmProps = {
+  open: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+};
+
+const ResetConfirm = memo(function ResetConfirm({
+  open,
+  onCancel,
+  onConfirm,
+}: ResetConfirmProps) {
+  if (!open) {
+    return null;
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
+      <div className="w-full max-w-xs rounded-2xl border border-[var(--border)] bg-white p-6">
+        <p className="text-sm">필터를 초기화하시겠습니까?</p>
+        <div className="mt-4 flex justify-end gap-2">
+          <button
+            className="rounded-xl border border-[var(--border)] px-4 py-2 text-sm"
+            onClick={onCancel}
+          >
+            아니오
+          </button>
+          <button
+            className="rounded-xl bg-[var(--accent)] px-4 py-2 text-sm text-white"
+            onClick={onConfirm}
+          >
+            예
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+});
+
 export default function StatsPage() {
   const router = useRouter();
+  const { user } = useAuth();
   const { householdId, displayName, spouseRole } = useHousehold();
   const { categories } = useCategories(householdId);
   const { subjects } = useSubjects(householdId);
   const { paymentMethods } = usePaymentMethods(householdId);
+  const personalCategoryIdSet = useMemo(() => {
+    return new Set(
+      categories
+        .filter((category) => category.personalOnly)
+        .map((category) => category.id)
+    );
+  }, [categories]);
   const [storedFilters] = useState<StoredStatsFilters | null>(() =>
     loadStoredStatsFilters()
   );
@@ -222,6 +986,17 @@ export default function StatsPage() {
     appliedRangeMode === "custom" && shouldUseRange
       ? rangeTransactions
       : monthlyTransactions;
+  const scopedTransactions = useMemo(() => {
+    const currentUserId = user?.uid ?? null;
+    if (!currentUserId || personalCategoryIdSet.size === 0) {
+      return activeTransactions;
+    }
+    return activeTransactions.filter(
+      (tx) =>
+        !personalCategoryIdSet.has(tx.categoryId) ||
+        tx.createdBy === currentUserId
+    );
+  }, [activeTransactions, personalCategoryIdSet, user]);
   const activeLoading =
     appliedRangeMode === "custom" ? rangeLoading : monthlyLoading;
   const [touchStartX, setTouchStartX] = useState<number | null>(null);
@@ -266,6 +1041,13 @@ export default function StatsPage() {
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [budgetScope, setBudgetScope] = useState<"common" | string>("common");
   const [isBudgetSheetOpen, setIsBudgetSheetOpen] = useState(false);
+  const closeRangeSheet = useCallback(() => setIsRangeSheetOpen(false), []);
+  const closeBudgetSheet = useCallback(() => setIsBudgetSheetOpen(false), []);
+  const closeFilterSheet = useCallback(() => setIsFilterSheetOpen(false), []);
+  const handleBudgetSelect = useCallback((categoryId: string) => {
+    setBudgetScope(categoryId);
+    setIsBudgetSheetOpen(false);
+  }, []);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -318,17 +1100,12 @@ export default function StatsPage() {
   const maxBudgetTabs = budgetCategories.length > 3 ? 2 : 3;
   const budgetTabs = budgetCategories.slice(0, maxBudgetTabs);
   const hasMoreBudgetTabs = budgetCategories.length > maxBudgetTabs;
-  useEffect(() => {
-    if (budgetScope === "common") {
-      return;
-    }
-    if (!budgetCategoryIdSet.has(budgetScope)) {
-      setBudgetScope("common");
-    }
-  }, [budgetScope, budgetCategoryIdSet]);
+  const effectiveBudgetScope = budgetCategoryIdSet.has(budgetScope)
+    ? budgetScope
+    : "common";
   const visibleTransactions = useMemo(() => {
-    return activeTransactions.filter((tx) => {
-      if (budgetScope === "common") {
+    return scopedTransactions.filter((tx) => {
+      if (effectiveBudgetScope === "common") {
         if (tx.type !== "expense") {
           return true;
         }
@@ -344,135 +1121,144 @@ export default function StatsPage() {
       if (!category) {
         return false;
       }
-      return category.id === budgetScope || category.parentId === budgetScope;
+      return (
+        category.id === effectiveBudgetScope ||
+        category.parentId === effectiveBudgetScope
+      );
     });
-  }, [activeTransactions, budgetScope, budgetCategoryIdSet, categoryById]);
+  }, [
+    scopedTransactions,
+    effectiveBudgetScope,
+    budgetCategoryIdSet,
+    categoryById,
+  ]);
 
-  const getEffectiveType = (tx: (typeof visibleTransactions)[number]) => {
-    if (budgetScope !== "common" && tx.budgetApplied) {
-      return "income";
-    }
-    return tx.type;
-  };
-
-  const filtered = useMemo(
-    () =>
-      visibleTransactions.filter((tx) => getEffectiveType(tx) === viewType),
-    [visibleTransactions, viewType, budgetScope]
-  );
-
-  const filteredByApplied = useMemo(() => {
-    return filtered.filter((tx) => {
-      const categoryOk =
-        appliedCategoryIds.size === 0 || appliedCategoryIds.has(tx.categoryId);
-      const subjectOk =
-        appliedSubjects.size === 0 ||
-        appliedSubjects.has(tx.subject ?? "");
-      const paymentOk =
-        appliedPayments.size === 0 ||
-        appliedPayments.has(tx.paymentMethod ?? "");
-      return categoryOk && subjectOk && paymentOk;
-    });
-  }, [filtered, appliedCategoryIds, appliedSubjects, appliedPayments]);
-
-  const totalAmount = filteredByApplied.reduce((acc, tx) => acc + tx.amount, 0);
-
-  const activeSummary = useMemo(() => {
+  const statsData = useMemo(() => {
+    const categoryTotals = new Map<string, number>();
+    const subjectTotals = new Map<string, number>();
+    const paymentTotals = new Map<string, number>();
+    let totalAmount = 0;
     let income = 0;
     let expense = 0;
-    filteredByApplied.forEach((tx) => {
-      const effectiveType = getEffectiveType(tx);
+
+    for (const tx of visibleTransactions) {
+      const effectiveType =
+        effectiveBudgetScope !== "common" && tx.budgetApplied ? "income" : tx.type;
+      if (effectiveType !== viewType) {
+        continue;
+      }
+      if (appliedCategoryIds.size > 0 && !appliedCategoryIds.has(tx.categoryId)) {
+        continue;
+      }
+      const subjectKey = tx.subject ?? "";
+      if (appliedSubjects.size > 0 && !appliedSubjects.has(subjectKey)) {
+        continue;
+      }
+      const paymentKey = tx.paymentMethod ?? "";
+      if (appliedPayments.size > 0 && !appliedPayments.has(paymentKey)) {
+        continue;
+      }
+
+      totalAmount += tx.amount;
       if (effectiveType === "income") {
         income += tx.amount;
       } else if (effectiveType === "expense") {
         expense += tx.amount;
       }
-    });
-    return { income, expense, balance: income - expense };
-  }, [filteredByApplied, budgetScope]);
+      categoryTotals.set(
+        tx.categoryId,
+        (categoryTotals.get(tx.categoryId) ?? 0) + tx.amount
+      );
+      const subjectLabel = tx.subject || "미지정";
+      subjectTotals.set(
+        subjectLabel,
+        (subjectTotals.get(subjectLabel) ?? 0) + tx.amount
+      );
+      const paymentLabel = tx.paymentMethod || "미지정";
+      paymentTotals.set(
+        paymentLabel,
+        (paymentTotals.get(paymentLabel) ?? 0) + tx.amount
+      );
+    }
 
-  const categoryBreakdown = useMemo(() => {
-    const byCategory: Record<string, number> = {};
-    filteredByApplied.forEach((tx) => {
-      byCategory[tx.categoryId] = (byCategory[tx.categoryId] ?? 0) + tx.amount;
-    });
-    return buildBreakdown(
-      Object.entries(byCategory).map(([categoryId, amount]) => ({
+    const categoryBreakdown = buildBreakdown(
+      Array.from(categoryTotals.entries()).map(([categoryId, amount]) => ({
         id: categoryId,
         name: categoryMap.get(categoryId) ?? "미분류",
         amount,
       })),
       totalAmount
     );
-  }, [filteredByApplied, categoryMap, totalAmount]);
-
-  const subjectBreakdown = useMemo(() => {
-    const bySubject: Record<string, number> = {};
-    filteredByApplied.forEach((tx) => {
-      const key = tx.subject || "미지정";
-      bySubject[key] = (bySubject[key] ?? 0) + tx.amount;
-    });
-    return buildBreakdown(
-      Object.entries(bySubject).map(([name, amount]) => ({
+    const subjectBreakdown = buildBreakdown(
+      Array.from(subjectTotals.entries()).map(([name, amount]) => ({
         id: name,
         name,
         amount,
       })),
       totalAmount
     );
-  }, [filteredByApplied, totalAmount]);
-
-  const paymentBreakdown = useMemo(() => {
-    const byPayment: Record<string, number> = {};
-    filteredByApplied.forEach((tx) => {
-      const key = tx.paymentMethod || "미지정";
-      byPayment[key] = (byPayment[key] ?? 0) + tx.amount;
-    });
-    return buildBreakdown(
-      Object.entries(byPayment).map(([name, amount]) => ({
+    const paymentBreakdown = buildBreakdown(
+      Array.from(paymentTotals.entries()).map(([name, amount]) => ({
         id: name,
         name,
         amount,
       })),
       totalAmount
     );
-  }, [filteredByApplied, totalAmount]);
+
+    return {
+      totalAmount,
+      summary: { income, expense, balance: income - expense },
+      categoryBreakdown,
+      subjectBreakdown,
+      paymentBreakdown,
+    };
+  }, [
+    visibleTransactions,
+    effectiveBudgetScope,
+    viewType,
+    appliedCategoryIds,
+    appliedSubjects,
+    appliedPayments,
+    categoryMap,
+  ]);
+
+  const {
+    totalAmount,
+    summary: activeSummary,
+    categoryBreakdown,
+    subjectBreakdown,
+    paymentBreakdown,
+  } = statsData;
 
   const shownCategoryItems = expanded
     ? categoryBreakdown
     : categoryBreakdown.slice(0, 4);
-  const activeCategoryNames = useMemo(() => {
-    if (appliedCategoryIds.size === 0) {
-      return "전체";
-    }
-    const names = Array.from(appliedCategoryIds)
+  const appliedCategoryNameList = useMemo(() => {
+    return Array.from(appliedCategoryIds)
       .map((id) => categoryMap.get(id) ?? "미분류")
       .filter(Boolean);
-    if (names.length > 3) {
-      return `${names.slice(0, 3).join(", ")} 외 ${names.length - 3}개`;
-    }
-    return names.join(", ");
   }, [appliedCategoryIds, categoryMap]);
-  const activeSubjectNames = useMemo(() => {
-    if (appliedSubjects.size === 0) {
-      return "전체";
-    }
-    const names = Array.from(appliedSubjects);
-    if (names.length > 3) {
-      return `${names.slice(0, 3).join(", ")} 외 ${names.length - 3}개`;
-    }
-    return names.join(", ");
-  }, [appliedSubjects]);
-  const activePaymentNames = useMemo(() => {
-    if (appliedPayments.size === 0) {
-      return "전체";
-    }
-    const names = Array.from(appliedPayments);
-    if (names.length > 3) {
-      return `${names.slice(0, 3).join(", ")} 외 ${names.length - 3}개`;
-    }
-    return names.join(", ");
-  }, [appliedPayments]);
+  const appliedSubjectNameList = useMemo(
+    () => Array.from(appliedSubjects),
+    [appliedSubjects]
+  );
+  const appliedPaymentNameList = useMemo(
+    () => Array.from(appliedPayments),
+    [appliedPayments]
+  );
+  const activeCategoryNames = useMemo(
+    () => formatSelectionSummary(appliedCategoryNameList),
+    [appliedCategoryNameList]
+  );
+  const activeSubjectNames = useMemo(
+    () => formatSelectionSummary(appliedSubjectNameList),
+    [appliedSubjectNameList]
+  );
+  const activePaymentNames = useMemo(
+    () => formatSelectionSummary(appliedPaymentNameList),
+    [appliedPaymentNameList]
+  );
 
   const yearOptions = useMemo(() => {
     const currentYear = new Date().getFullYear();
@@ -529,7 +1315,7 @@ export default function StatsPage() {
     return { husbandLabel, wifeLabel };
   }, [displayName, spouseRole, subjects]);
 
-  function updateCustomStart(value: string) {
+  const updateCustomStart = useCallback((value: string) => {
     setCustomStart(value);
     if (!value) {
       return;
@@ -538,9 +1324,9 @@ export default function StatsPage() {
     if (parsed) {
       setCustomMonthDate(startOfMonth(parsed));
     }
-  }
+  }, []);
 
-  function openRangeSheet() {
+  const openRangeSheet = useCallback(() => {
     if (appliedRangeMode === "custom" && appliedStart && appliedEnd) {
       const appliedStartDate = parseLocalDate(appliedStart);
       updateCustomStart(appliedStart);
@@ -558,9 +1344,20 @@ export default function StatsPage() {
       setCustomMonthDate(startOfMonth(appliedMonthDate));
     }
     setIsRangeSheetOpen(true);
-  }
+  }, [
+    appliedEnd,
+    appliedMonthDate,
+    appliedRangeMode,
+    appliedStart,
+    setCustomEnd,
+    setCustomMonthDate,
+    setRangeMode,
+    setSelectedMonth,
+    setSelectedYear,
+    updateCustomStart,
+  ]);
 
-  function handleRangeConfirm() {
+  const handleRangeConfirm = useCallback(() => {
     if (rangeMode === "custom" && customStart) {
       const parsedStart = parseLocalDate(customStart);
       const fallbackEnd = customEnd || customStart;
@@ -582,28 +1379,44 @@ export default function StatsPage() {
       setMonthDate(nextMonth);
     }
     setIsRangeSheetOpen(false);
-  }
+  }, [
+    customEnd,
+    customStart,
+    rangeMode,
+    selectedMonth,
+    selectedYear,
+    setAppliedEnd,
+    setAppliedMonthDate,
+    setAppliedRangeMode,
+    setAppliedStart,
+    setIsRangeSheetOpen,
+    setMonthDate,
+  ]);
 
-  const headerLabel =
-    appliedRangeMode === "custom" && appliedStart && appliedEnd
-      ? `${format(
-          parseLocalDate(appliedStart) ?? new Date(),
-          "yy.MM.dd"
-        )}~${format(
-          parseLocalDate(appliedEnd) ?? new Date(),
-          "yy.MM.dd"
-        )}`
-      : format(appliedMonthDate, "M월");
+  const headerLabel = useMemo(() => {
+    if (appliedRangeMode === "custom" && appliedStart && appliedEnd) {
+      const startLabel = format(
+        parseLocalDate(appliedStart) ?? new Date(),
+        "yy.MM.dd"
+      );
+      const endLabel = format(
+        parseLocalDate(appliedEnd) ?? new Date(),
+        "yy.MM.dd"
+      );
+      return `${startLabel}~${endLabel}`;
+    }
+    return format(appliedMonthDate, "M월");
+  }, [appliedEnd, appliedMonthDate, appliedRangeMode, appliedStart]);
 
-  function openFilterSheet(tab: "category" | "subject" | "payment") {
+  const openFilterSheet = useCallback((tab: "category" | "subject" | "payment") => {
     setFilterTab(tab);
     setDraftCategoryIds(new Set(appliedCategoryIds));
     setDraftSubjects(new Set(appliedSubjects));
     setDraftPayments(new Set(appliedPayments));
     setIsFilterSheetOpen(true);
-  }
+  }, [appliedCategoryIds, appliedPayments, appliedSubjects]);
 
-  function resetFilters() {
+  const resetFilters = useCallback(() => {
     setDraftCategoryIds(new Set());
     setDraftSubjects(new Set());
     setDraftPayments(new Set());
@@ -613,9 +1426,9 @@ export default function StatsPage() {
     setExpandedCategoryParents(new Set());
     setExpandedPaymentParents(new Set());
     setIsFilterSheetOpen(false);
-  }
+  }, []);
 
-  function resetAppliedFilters() {
+  const resetAppliedFilters = useCallback(() => {
     setAppliedCategoryIds(new Set());
     setAppliedSubjects(new Set());
     setAppliedPayments(new Set());
@@ -624,14 +1437,19 @@ export default function StatsPage() {
     setDraftPayments(new Set());
     setExpandedCategoryParents(new Set());
     setExpandedPaymentParents(new Set());
-  }
+  }, []);
 
-  function applyFilters() {
+  const handleResetConfirm = useCallback(() => {
+    resetAppliedFilters();
+    setShowResetConfirm(false);
+  }, [resetAppliedFilters]);
+
+  const applyFilters = useCallback(() => {
     setAppliedCategoryIds(new Set(draftCategoryIds));
     setAppliedSubjects(new Set(draftSubjects));
     setAppliedPayments(new Set(draftPayments));
     setIsFilterSheetOpen(false);
-  }
+  }, [draftCategoryIds, draftPayments, draftSubjects]);
 
   const customCalendarDays = useMemo(() => {
     const monthStart = startOfMonth(customMonthDate);
@@ -647,10 +1465,16 @@ export default function StatsPage() {
     return days;
   }, [customMonthDate]);
 
-  const customStartDate = customStart ? parseLocalDate(customStart) : null;
-  const customEndDate = customEnd ? parseLocalDate(customEnd) : null;
+  const customStartDate = useMemo(
+    () => (customStart ? parseLocalDate(customStart) : null),
+    [customStart]
+  );
+  const customEndDate = useMemo(
+    () => (customEnd ? parseLocalDate(customEnd) : null),
+    [customEnd]
+  );
 
-  function moveMonth(direction: "prev" | "next") {
+  const moveMonth = useCallback((direction: "prev" | "next") => {
     const delta = direction === "prev" ? -1 : 1;
     const nextMonth = addMonths(monthDate, delta);
     setMonthDate(nextMonth);
@@ -658,20 +1482,32 @@ export default function StatsPage() {
     setAppliedStart(null);
     setAppliedEnd(null);
     setAppliedMonthDate(startOfMonth(nextMonth));
-  }
+  }, [
+    monthDate,
+    setAppliedEnd,
+    setAppliedMonthDate,
+    setAppliedRangeMode,
+    setAppliedStart,
+  ]);
 
-  function handleTouchStart(event: React.TouchEvent<HTMLDivElement>) {
+  const handleTouchStart = useCallback(
+    (event: React.TouchEvent<HTMLDivElement>) => {
     setTouchEndX(null);
     setTouchStartX(event.touches[0]?.clientX ?? null);
-  }
+    },
+    []
+  );
 
-  function handleTouchMove(event: React.TouchEvent<HTMLDivElement>) {
-    setTouchEndX(event.touches[0]?.clientX ?? null);
-  }
+  const handleTouchMove = useCallback(
+    (event: React.TouchEvent<HTMLDivElement>) => {
+      setTouchEndX(event.touches[0]?.clientX ?? null);
+    },
+    []
+  );
 
   const swipeThreshold = 150;
 
-  function handleTouchEnd() {
+  const handleTouchEnd = useCallback(() => {
     if (touchStartX === null || touchEndX === null) {
       return;
     }
@@ -684,7 +1520,126 @@ export default function StatsPage() {
     } else {
       moveMonth("prev");
     }
-  }
+  }, [moveMonth, touchEndX, touchStartX]);
+
+  const rangeSheetProps = useMemo(
+    () => ({
+      open: isRangeSheetOpen,
+      onClose: closeRangeSheet,
+      rangeMode,
+      setRangeMode,
+      customStart,
+      customEnd,
+      updateCustomStart,
+      setCustomEnd,
+      customMonthDate,
+      setCustomMonthDate,
+      monthDate,
+      customCalendarDays,
+      customStartDate,
+      customEndDate,
+      yearOptions,
+      selectedYear,
+      selectedMonth,
+      setSelectedYear,
+      setSelectedMonth,
+      onConfirm: handleRangeConfirm,
+    }),
+    [
+      closeRangeSheet,
+      customCalendarDays,
+      customEnd,
+      customEndDate,
+      customMonthDate,
+      customStart,
+      customStartDate,
+      handleRangeConfirm,
+      isRangeSheetOpen,
+      monthDate,
+      rangeMode,
+      selectedMonth,
+      selectedYear,
+      setCustomEnd,
+      setCustomMonthDate,
+      setRangeMode,
+      setSelectedMonth,
+      setSelectedYear,
+      updateCustomStart,
+      yearOptions,
+    ]
+  );
+
+  const budgetSheetProps = useMemo(
+    () => ({
+      open: isBudgetSheetOpen,
+      onClose: closeBudgetSheet,
+      budgetCategories,
+      budgetScope: effectiveBudgetScope,
+      onSelect: handleBudgetSelect,
+    }),
+    [
+      budgetCategories,
+      closeBudgetSheet,
+      effectiveBudgetScope,
+      handleBudgetSelect,
+      isBudgetSheetOpen,
+    ]
+  );
+
+  const filterSheetProps = useMemo(
+    () => ({
+      open: isFilterSheetOpen,
+      onClose: closeFilterSheet,
+      filterTab,
+      setFilterTab,
+      categoryParents,
+      categoryChildrenByParent,
+      draftCategoryIds,
+      setDraftCategoryIds,
+      expandedCategoryParents,
+      setExpandedCategoryParents,
+      subjects,
+      draftSubjects,
+      setDraftSubjects,
+      paymentOwnerLabels,
+      paymentOwnerFilter,
+      setPaymentOwnerFilter,
+      paymentParents,
+      paymentChildrenByParent,
+      draftPayments,
+      setDraftPayments,
+      expandedPaymentParents,
+      setExpandedPaymentParents,
+      resetFilters,
+      applyFilters,
+    }),
+    [
+      applyFilters,
+      categoryChildrenByParent,
+      categoryParents,
+      closeFilterSheet,
+      draftCategoryIds,
+      draftPayments,
+      draftSubjects,
+      expandedCategoryParents,
+      expandedPaymentParents,
+      filterTab,
+      isFilterSheetOpen,
+      paymentChildrenByParent,
+      paymentOwnerFilter,
+      paymentOwnerLabels,
+      paymentParents,
+      resetFilters,
+      setDraftCategoryIds,
+      setDraftPayments,
+      setDraftSubjects,
+      setExpandedCategoryParents,
+      setExpandedPaymentParents,
+      setFilterTab,
+      setPaymentOwnerFilter,
+      subjects,
+    ]
+  );
 
   return (
     <div className="flex flex-col gap-6" onTouchStart={handleTouchStart} onTouchMove={handleTouchMove} onTouchEnd={handleTouchEnd}>
@@ -720,7 +1675,7 @@ export default function StatsPage() {
           <button
             type="button"
             className={`rounded-full border px-4 py-2 text-sm ${
-              budgetScope === "common"
+              effectiveBudgetScope === "common"
                 ? "border-[var(--text)] bg-[var(--text)] text-white"
                 : "border-[var(--border)] text-[color:rgba(45,38,34,0.7)]"
             }`}
@@ -733,7 +1688,7 @@ export default function StatsPage() {
               key={category.id}
               type="button"
               className={`rounded-full border px-4 py-2 text-sm ${
-                budgetScope === category.id
+                effectiveBudgetScope === category.id
                   ? "border-[var(--text)] bg-[var(--text)] text-white"
                   : "border-[var(--border)] text-[color:rgba(45,38,34,0.7)]"
               }`}
@@ -746,8 +1701,8 @@ export default function StatsPage() {
             <button
               type="button"
               className={`rounded-full border px-4 py-2 text-sm ${
-                budgetScope !== "common" &&
-                !budgetTabs.some((tab) => tab.id === budgetScope)
+                effectiveBudgetScope !== "common" &&
+                !budgetTabs.some((tab) => tab.id === effectiveBudgetScope)
                   ? "border-[var(--text)] bg-[var(--text)] text-white"
                   : "border-[var(--border)] text-[color:rgba(45,38,34,0.7)]"
               }`}
@@ -977,592 +1932,16 @@ export default function StatsPage() {
         )}
       </section>
 
-      {isRangeSheetOpen ? (
-        <div className="fixed inset-0 z-50">
-          <button
-            type="button"
-            className="absolute inset-0 bg-black/40"
-            onClick={() => setIsRangeSheetOpen(false)}
-            aria-label="닫기"
-          />
-          <div className="absolute bottom-0 left-0 right-0 flex max-h-[80vh] flex-col rounded-t-3xl bg-white">
-            <div className="flex-1 overflow-y-auto p-6">
-              <div className="mx-auto mb-6 h-1.5 w-12 rounded-full bg-[color:rgba(45,38,34,0.15)]" />
-              <div className="flex items-center justify-between">
-                <h2 className="text-base font-semibold">조회 기간 선택</h2>
-                <div className="flex rounded-full border border-[var(--border)] bg-[color:rgba(45,38,34,0.06)] p-1">
-                <button
-                  type="button"
-                  className={`rounded-full px-4 py-2 text-sm ${
-                    rangeMode === "monthly"
-                      ? "bg-white text-[var(--text)] shadow"
-                      : "text-[color:rgba(45,38,34,0.5)]"
-                  }`}
-                  onClick={() => setRangeMode("monthly")}
-                >
-                  월간
-                </button>
-                <button
-                  type="button"
-                  className={`rounded-full px-4 py-2 text-sm ${
-                    rangeMode === "custom"
-                      ? "bg-white text-[var(--text)] shadow"
-                      : "text-[color:rgba(45,38,34,0.5)]"
-                  }`}
-                  onClick={() => setRangeMode("custom")}
-                >
-                  직접 입력
-                </button>
-              </div>
-            </div>
+      <RangeSheet {...rangeSheetProps} />
 
-            {rangeMode === "custom" ? (
-              <div className="mt-6 space-y-4">
-                <div className="grid grid-cols-2 gap-3">
-                  <label className="rounded-2xl bg-[color:rgba(45,38,34,0.08)] px-4 py-3 text-center text-sm font-medium text-[color:rgba(45,38,34,0.6)]">
-                    <input
-                      type="date"
-                      className="sr-only"
-                      value={customStart}
-                      onChange={(event) => updateCustomStart(event.target.value)}
-                    />
-                    {customStart
-                      ? format(new Date(customStart), "yyyy.MM.dd") + " 부터"
-                      : "시작일 선택"}
-                  </label>
-                  <label className="rounded-2xl bg-[color:rgba(45,38,34,0.08)] px-4 py-3 text-center text-sm font-medium text-[color:rgba(45,38,34,0.6)]">
-                    <input
-                      type="date"
-                      className="sr-only"
-                      value={customEnd}
-                      onChange={(event) => setCustomEnd(event.target.value)}
-                    />
-                    {customEnd
-                      ? format(new Date(customEnd), "yyyy.MM.dd") + " 까지"
-                      : "종료일 선택"}
-                  </label>
-                </div>
-                <div className="grid grid-cols-3 gap-3">
-                  {[3, 6, 12].map((months) => (
-                    <button
-                      key={months}
-                      type="button"
-                      className="rounded-2xl bg-[color:rgba(45,38,34,0.06)] px-4 py-2 text-sm text-[color:rgba(45,38,34,0.7)]"
-                      onClick={() => {
-                        const end = endOfMonth(monthDate);
-                        const start = startOfMonth(addMonths(end, -(months - 1)));
-                        updateCustomStart(format(start, "yyyy-MM-dd"));
-                        setCustomEnd(format(end, "yyyy-MM-dd"));
-                        setCustomMonthDate(startOfMonth(end));
-                      }}
-                    >
-                      {months}개월
-                    </button>
-                  ))}
-                </div>
-                <div className="rounded-3xl border border-[var(--border)] p-4">
-                  <div className="flex items-center justify-between text-base font-semibold">
-                    {format(customMonthDate, "yyyy년 M월")}
-                    <span className="text-xs text-[color:rgba(45,38,34,0.5)]">▼</span>
-                  </div>
-                  <div className="mt-4 grid grid-cols-7 gap-2 text-center text-xs text-[color:rgba(45,38,34,0.4)]">
-                    {["일", "월", "화", "수", "목", "금", "토"].map((day) => (
-                      <div key={day}>{day}</div>
-                    ))}
-                  </div>
-                  <div className="mt-2 grid grid-cols-7 gap-2">
-                    {customCalendarDays.map((day) => {
-                      const isCurrentMonth = isSameMonth(day, customMonthDate);
-                      const isStart =
-                        customStartDate && isSameDay(day, customStartDate);
-                      const isEnd = customEndDate && isSameDay(day, customEndDate);
-                      const inRange =
-                        customStartDate &&
-                        customEndDate &&
-                        day >= customStartDate &&
-                        day <= customEndDate;
-                      return (
-                        <button
-                          key={day.toISOString()}
-                          type="button"
-                          className={`h-9 rounded-full text-sm ${
-                            isStart || isEnd
-                              ? "bg-[color:rgba(59,186,186,0.35)] text-[color:rgba(20,90,90,1)]"
-                              : inRange
-                              ? "bg-[color:rgba(59,186,186,0.15)] text-[color:rgba(45,38,34,0.9)]"
-                              : "bg-transparent"
-                          } ${isCurrentMonth ? "" : "text-[color:rgba(45,38,34,0.3)]"}`}
-                          onClick={() => {
-                            if (!customStartDate || (customStartDate && customEndDate)) {
-                              updateCustomStart(format(day, "yyyy-MM-dd"));
-                              setCustomEnd("");
-                              return;
-                            }
-                            if (day < customStartDate) {
-                              updateCustomStart(format(day, "yyyy-MM-dd"));
-                              setCustomEnd("");
-                            } else {
-                              setCustomEnd(format(day, "yyyy-MM-dd"));
-                            }
-                          }}
-                        >
-                          {format(day, "d")}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              </div>
-            ) : (
-                <div className="mt-6 space-y-4">
-                  <div className="grid grid-cols-2 gap-3">
-                  {(() => {
-                    const start = startOfMonth(
-                      new Date(selectedYear, selectedMonth, 1)
-                    );
-                    const end = endOfMonth(start);
-                    return (
-                      <>
-                        <div className="rounded-2xl bg-[color:rgba(45,38,34,0.12)] px-4 py-3 text-center text-sm font-medium text-[color:rgba(45,38,34,0.5)]">
-                          {format(start, "yyyy.MM.dd")} 부터
-                        </div>
-                        <div className="rounded-2xl bg-[color:rgba(45,38,34,0.12)] px-4 py-3 text-center text-sm font-medium text-[color:rgba(45,38,34,0.5)]">
-                          {format(end, "yyyy.MM.dd")} 까지
-                        </div>
-                      </>
-                    );
-                  })()}
-                  </div>
-                  <div className="rounded-3xl border border-[var(--border)] bg-white p-4 shadow-sm">
-                  <div className="text-base font-semibold">
-                    {format(new Date(selectedYear, selectedMonth, 1), "yyyy년 M월")}
-                  </div>
-                  <div className="mt-4 grid grid-cols-2 gap-3">
-                    <select
-                      className="appearance-none rounded-2xl border border-[var(--border)] bg-[color:rgba(45,38,34,0.06)] px-3 py-2 text-center text-sm font-medium"
-                      value={selectedYear}
-                      onChange={(event) =>
-                        setSelectedYear(Number(event.target.value))
-                      }
-                    >
-                      {yearOptions.map((year) => (
-                        <option key={year} value={year}>
-                          {year}년
-                        </option>
-                      ))}
-                    </select>
-                    <select
-                      className="appearance-none rounded-2xl border border-[var(--border)] bg-[color:rgba(45,38,34,0.06)] px-3 py-2 text-center text-sm font-medium"
-                      value={selectedMonth}
-                      onChange={(event) =>
-                        setSelectedMonth(Number(event.target.value))
-                      }
-                    >
-                      {Array.from({ length: 12 }, (_, idx) => idx).map(
-                        (month) => (
-                          <option key={month} value={month}>
-                            {month + 1}월
-                          </option>
-                        )
-                      )}
-                    </select>
-                  </div>
-                  </div>
-                </div>
-              )}
-            </div>
-            <div className="border-t border-[var(--border)] bg-white p-4">
-              <button
-                type="button"
-                className="w-full rounded-2xl bg-[var(--text)] px-4 py-3 text-sm text-black"
-                onClick={handleRangeConfirm}
-              >
-                완료
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
+      <BudgetSheet {...budgetSheetProps} />
 
-      {isBudgetSheetOpen ? (
-        <div className="fixed inset-0 z-50">
-          <button
-            type="button"
-            className="absolute inset-0 bg-black/40"
-            onClick={() => setIsBudgetSheetOpen(false)}
-            aria-label="닫기"
-          />
-          <div className="absolute bottom-0 left-0 right-0 flex max-h-[70vh] flex-col rounded-t-3xl bg-white">
-            <div className="flex-1 overflow-y-auto p-6">
-              <div className="mx-auto mb-6 h-1.5 w-12 rounded-full bg-[color:rgba(45,38,34,0.15)]" />
-              <div className="flex items-center justify-between">
-                <div className="text-base font-semibold">카테고리 선택</div>
-                <button
-                  type="button"
-                  className="text-sm text-[color:rgba(45,38,34,0.6)]"
-                  onClick={() => setIsBudgetSheetOpen(false)}
-                >
-                  닫기
-                </button>
-              </div>
-              <div className="mt-4 space-y-2">
-                {budgetCategories.map((category) => (
-                  <button
-                    key={category.id}
-                    type="button"
-                    className={`w-full rounded-2xl border px-4 py-3 text-left text-sm ${
-                      budgetScope === category.id
-                        ? "border-[var(--text)] bg-[color:rgba(45,38,34,0.06)] font-semibold"
-                        : "border-[var(--border)] text-[color:rgba(45,38,34,0.7)]"
-                    }`}
-                    onClick={() => {
-                      setBudgetScope(category.id);
-                      setIsBudgetSheetOpen(false);
-                    }}
-                  >
-                    {category.name}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-        </div>
-      ) : null}
-
-      {isFilterSheetOpen ? (
-        <div className="fixed inset-0 z-50">
-          <button
-            type="button"
-            className="absolute inset-0 bg-black/40"
-            onClick={() => setIsFilterSheetOpen(false)}
-            aria-label="닫기"
-          />
-          <div className="absolute bottom-0 left-0 right-0 flex max-h-[80vh] flex-col rounded-t-3xl bg-white">
-            <div className="flex-1 overflow-y-auto p-6">
-              <div className="mx-auto mb-6 h-1.5 w-12 rounded-full bg-[color:rgba(45,38,34,0.15)]" />
-              <div className="flex items-center justify-between">
-                <div className="text-base font-semibold">필터 선택</div>
-                <button
-                  type="button"
-                  className="text-sm text-[color:rgba(45,38,34,0.6)]"
-                  onClick={() => setIsFilterSheetOpen(false)}
-                >
-                  취소
-                </button>
-              </div>
-              <div className="mt-6 flex gap-6 text-sm">
-                {[
-                  { key: "category", label: "카테고리" },
-                  { key: "subject", label: "구성원" },
-                  { key: "payment", label: "자산" },
-                ].map((tab) => (
-                  <button
-                    key={tab.key}
-                    type="button"
-                    className={`pb-2 ${
-                      filterTab === tab.key
-                        ? "text-[var(--text)]"
-                        : "text-[color:rgba(45,38,34,0.4)]"
-                    }`}
-                    onClick={() =>
-                      setFilterTab(tab.key as "category" | "subject" | "payment")
-                    }
-                  >
-                    {tab.label}
-                  </button>
-                ))}
-              </div>
-
-              {filterTab === "category" ? (
-                <div className="mt-6 space-y-3">
-                  {categoryParents.map((parent) => {
-                    const children = categoryChildrenByParent.get(parent.id) ?? [];
-                    const childIds = children.map((child) => child.id);
-                    const isParentSelected =
-                      childIds.length > 0
-                        ? childIds.every((id) => draftCategoryIds.has(id))
-                        : draftCategoryIds.has(parent.id);
-                    const isExpanded = expandedCategoryParents.has(parent.id);
-                    return (
-                      <div
-                        key={parent.id}
-                        className={`rounded-2xl border px-4 py-3 ${
-                          isParentSelected
-                            ? "border-[var(--text)] bg-[color:rgba(45,38,34,0.06)]"
-                            : "border-[var(--border)] bg-white"
-                        }`}
-                      >
-                        <div className="flex items-center justify-between">
-                          <button
-                            type="button"
-                            className="text-left"
-                            onClick={() => {
-                              const next = new Set(draftCategoryIds);
-                              if (childIds.length === 0) {
-                                if (next.has(parent.id)) {
-                                  next.delete(parent.id);
-                                } else {
-                                  next.add(parent.id);
-                                }
-                              } else if (isParentSelected) {
-                                childIds.forEach((id) => next.delete(id));
-                              } else {
-                                childIds.forEach((id) => next.add(id));
-                              }
-                              setDraftCategoryIds(next);
-                            }}
-                          >
-                            <p
-                              className={`text-sm ${
-                                isParentSelected ? "font-semibold" : "font-medium"
-                              }`}
-                            >
-                              {parent.name}
-                            </p>
-                            <p className="text-xs text-[color:rgba(45,38,34,0.5)]">
-                              소분류 {children.length}개
-                            </p>
-                          </button>
-                          <button
-                            type="button"
-                            className="text-xl text-[color:rgba(45,38,34,0.4)]"
-                            onClick={() => {
-                              const next = new Set(expandedCategoryParents);
-                              if (next.has(parent.id)) {
-                                next.delete(parent.id);
-                              } else {
-                                next.add(parent.id);
-                              }
-                              setExpandedCategoryParents(next);
-                            }}
-                          >
-                            +
-                          </button>
-                        </div>
-                        {isExpanded ? (
-                          <div className="mt-3 space-y-2">
-                            {children.map((child) => (
-                              <button
-                                key={child.id}
-                                type="button"
-                                className={`w-full rounded-xl border px-3 py-2 text-left text-sm ${
-                                  draftCategoryIds.has(child.id)
-                                    ? "border-[var(--text)] bg-[color:rgba(45,38,34,0.08)] font-semibold"
-                                    : "border-[var(--border)] text-[color:rgba(45,38,34,0.7)]"
-                                }`}
-                                onClick={() => {
-                                  const next = new Set(draftCategoryIds);
-                                  if (next.has(child.id)) {
-                                    next.delete(child.id);
-                                  } else {
-                                    next.add(child.id);
-                                  }
-                                  setDraftCategoryIds(next);
-                                }}
-                              >
-                                {child.name}
-                              </button>
-                            ))}
-                          </div>
-                        ) : null}
-                      </div>
-                    );
-                  })}
-                </div>
-              ) : null}
-
-              {filterTab === "subject" ? (
-                <div className="mt-6 space-y-2">
-                  {subjects.map((subject) => (
-                    <button
-                      key={subject.id}
-                      type="button"
-                      className={`w-full rounded-2xl border px-4 py-3 text-left text-sm ${
-                        draftSubjects.has(subject.name)
-                          ? "border-[var(--text)] bg-[color:rgba(45,38,34,0.08)] font-semibold"
-                          : "border-[var(--border)] text-[color:rgba(45,38,34,0.7)]"
-                      }`}
-                      onClick={() => {
-                        const next = new Set(draftSubjects);
-                        if (next.has(subject.name)) {
-                          next.delete(subject.name);
-                        } else {
-                          next.add(subject.name);
-                        }
-                        setDraftSubjects(next);
-                      }}
-                    >
-                      {subject.name}
-                    </button>
-                  ))}
-                </div>
-              ) : null}
-
-              {filterTab === "payment" ? (
-                <div className="mt-6 space-y-3">
-                  <div className="flex items-center gap-2">
-                    {[
-                      { key: "husband", label: paymentOwnerLabels.husbandLabel },
-                      { key: "wife", label: paymentOwnerLabels.wifeLabel },
-                      { key: "our", label: "우리" },
-                    ].map((tab) => (
-                      <button
-                        key={tab.key}
-                        type="button"
-                        className={`rounded-full border px-4 py-2 text-sm ${
-                          paymentOwnerFilter === tab.key
-                            ? "border-[var(--accent)] bg-[color:rgba(145,102,82,0.12)] font-semibold text-[var(--text)]"
-                            : "border-[var(--border)] text-[color:rgba(45,38,34,0.6)]"
-                        }`}
-                        onClick={() =>
-                          setPaymentOwnerFilter(tab.key as "husband" | "wife" | "our")
-                        }
-                      >
-                        {tab.label}
-                      </button>
-                    ))}
-                  </div>
-                  {paymentParents.map((parent) => {
-                    const children = paymentChildrenByParent.get(parent.id) ?? [];
-                    const childNames = children.map((child) => child.name);
-                    const isParentSelected =
-                      childNames.length > 0
-                        ? childNames.every((name) => draftPayments.has(name))
-                        : draftPayments.has(parent.name);
-                    const isExpanded = expandedPaymentParents.has(parent.id);
-                    return (
-                      <div
-                        key={parent.id}
-                        className={`rounded-2xl border px-4 py-3 ${
-                          isParentSelected
-                            ? "border-[var(--text)] bg-[color:rgba(45,38,34,0.06)]"
-                            : "border-[var(--border)] bg-white"
-                        }`}
-                      >
-                        <div className="flex items-center justify-between">
-                          <button
-                            type="button"
-                            className="text-left"
-                            onClick={() => {
-                              const next = new Set(draftPayments);
-                              if (childNames.length === 0) {
-                                if (next.has(parent.name)) {
-                                  next.delete(parent.name);
-                                } else {
-                                  next.add(parent.name);
-                                }
-                              } else if (isParentSelected) {
-                                childNames.forEach((name) => next.delete(name));
-                              } else {
-                                childNames.forEach((name) => next.add(name));
-                              }
-                              setDraftPayments(next);
-                            }}
-                          >
-                            <p
-                              className={`text-sm ${
-                                isParentSelected ? "font-semibold" : "font-medium"
-                              }`}
-                            >
-                              {parent.name}
-                            </p>
-                            <p className="text-xs text-[color:rgba(45,38,34,0.5)]">
-                              소분류 {children.length}개
-                            </p>
-                          </button>
-                          <button
-                            type="button"
-                            className="text-xl text-[color:rgba(45,38,34,0.4)]"
-                            onClick={() => {
-                              const next = new Set(expandedPaymentParents);
-                              if (next.has(parent.id)) {
-                                next.delete(parent.id);
-                              } else {
-                                next.add(parent.id);
-                              }
-                              setExpandedPaymentParents(next);
-                            }}
-                          >
-                            +
-                          </button>
-                        </div>
-                        {isExpanded ? (
-                          <div className="mt-3 space-y-2">
-                            {children.map((child) => (
-                              <button
-                                key={child.id}
-                                type="button"
-                                className={`w-full rounded-xl border px-3 py-2 text-left text-sm ${
-                                  draftPayments.has(child.name)
-                                    ? "border-[var(--text)] bg-[color:rgba(45,38,34,0.08)] font-semibold"
-                                    : "border-[var(--border)] text-[color:rgba(45,38,34,0.7)]"
-                                }`}
-                                onClick={() => {
-                                  const next = new Set(draftPayments);
-                                  if (next.has(child.name)) {
-                                    next.delete(child.name);
-                                  } else {
-                                    next.add(child.name);
-                                  }
-                                  setDraftPayments(next);
-                                }}
-                              >
-                                {child.name}
-                              </button>
-                            ))}
-                          </div>
-                        ) : null}
-                      </div>
-                    );
-                  })}
-                </div>
-              ) : null}
-            </div>
-            <div className="border-t border-[var(--border)] bg-white p-4 pb-6">
-              <div className="flex items-center gap-3">
-                <button
-                  type="button"
-                  className="flex-1 rounded-2xl border border-[var(--border)] px-4 py-3 text-sm text-[color:rgba(45,38,34,0.7)]"
-                  onClick={resetFilters}
-                >
-                  초기화
-                </button>
-                <button
-                  type="button"
-                  className="flex-[2] rounded-2xl bg-[var(--accent)] px-4 py-3 text-sm text-white"
-                  onClick={applyFilters}
-                >
-                  필터 적용 완료
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      ) : null}
-      {showResetConfirm ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
-          <div className="w-full max-w-xs rounded-2xl border border-[var(--border)] bg-white p-6">
-            <p className="text-sm">필터를 초기화하시겠습니까?</p>
-            <div className="mt-4 flex justify-end gap-2">
-              <button
-                className="rounded-xl border border-[var(--border)] px-4 py-2 text-sm"
-                onClick={() => setShowResetConfirm(false)}
-              >
-                아니오
-              </button>
-              <button
-                className="rounded-xl bg-[var(--accent)] px-4 py-2 text-sm text-white"
-                onClick={() => {
-                  resetAppliedFilters();
-                  setShowResetConfirm(false);
-                }}
-              >
-                예
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
+      <FilterSheet {...filterSheetProps} />
+      <ResetConfirm
+        open={showResetConfirm}
+        onCancel={() => setShowResetConfirm(false)}
+        onConfirm={handleResetConfirm}
+      />
     </div>
   );
 }

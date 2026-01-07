@@ -318,48 +318,16 @@ export default function EditTransactionPage() {
         note: note || undefined,
         budgetApplied,
       });
-      const changes: string[] = [];
-      if (originalTransaction) {
-        if (originalTransaction.type !== type) {
-          changes.push(
-            `유형 ${typeLabelMap[originalTransaction.type]}→${typeLabelMap[type]}`
-          );
-        }
-        if (originalTransaction.amount !== nextAmount) {
-          changes.push(
-            `금액 ${formatKrw(originalTransaction.amount)}→${formatKrw(nextAmount)}`
-          );
-        }
-        if (originalTransaction.categoryId !== categoryId) {
-          const beforeName =
-            categoryNameMap.get(originalTransaction.categoryId) ?? "미분류";
-          const afterName = categoryNameMap.get(categoryId) ?? "미분류";
-          changes.push(`카테고리 ${beforeName}→${afterName}`);
-        }
-        if (originalTransaction.paymentMethod !== paymentMethod) {
-          changes.push(
-            `결제수단 ${originalTransaction.paymentMethod}→${paymentMethod}`
-          );
-        }
-        if (originalTransaction.subject !== subject) {
-          changes.push(`주체 ${originalTransaction.subject}→${subject}`);
-        }
-        if (originalTransaction.date !== date) {
-          changes.push(`날짜 ${originalTransaction.date}→${date}`);
-        }
-        if ((originalTransaction.note ?? "") !== note) {
-          changes.push("메모 수정");
-        }
+      if (!selectedCategory?.personalOnly) {
+        await addNotification(householdId, {
+          title: "내역 수정",
+          message: `${typeLabelMap[type]} ${formatKrw(nextAmount)} • ${
+            categoryNameMap.get(categoryId) ?? "미분류"
+          } • ${memoText} • ${date}`,
+          level: "info",
+          type: "transaction.update",
+        });
       }
-      const changeSummary = changes.length
-        ? `수정: ${changes.join(", ")}`
-        : "수정: 변경 없음";
-      await addNotification(householdId, {
-        title: "내역 수정",
-        message: `${typeLabelMap[type]} · ${memoText} · ${date} (${changeSummary})`,
-        level: "info",
-        type: "transaction.update",
-      });
       router.replace(`/transactions?date=${date}`);
     } catch (err) {
       setError("수정에 실패했습니다.");
@@ -375,12 +343,16 @@ export default function EditTransactionPage() {
     setSaving(true);
     try {
       await deleteTransaction(householdId, transactionId);
-      await addNotification(householdId, {
-        title: "내역 삭제",
-        message: `${typeLabelMap[type]} ${formatKrw(parseAmountValue(amount))} · ${date}`,
-        level: "error",
-        type: "transaction.delete",
-      });
+      if (!selectedCategory?.personalOnly) {
+        await addNotification(householdId, {
+          title: "내역 삭제",
+          message: `${typeLabelMap[type]} ${formatKrw(parseAmountValue(amount))} • ${
+            categoryNameMap.get(categoryId) ?? "미분류"
+          } • ${note.trim() || "메모 없음"} • ${date}`,
+          level: "error",
+          type: "transaction.delete",
+        });
+      }
       router.replace("/transactions");
     } catch (err) {
       setError("삭제에 실패했습니다.");

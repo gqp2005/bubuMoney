@@ -15,6 +15,7 @@ export async function addCategory(
     parentId?: string | null;
     imported?: boolean;
     budgetEnabled?: boolean;
+    personalOnly?: boolean;
   }
 ) {
   return addDoc(categoriesCol(householdId), data);
@@ -30,6 +31,7 @@ export async function updateCategory(
     parentId?: string | null;
     imported?: boolean;
     budgetEnabled?: boolean;
+    personalOnly?: boolean;
   }
 ) {
   return updateDoc(doc(categoriesCol(householdId), categoryId), data);

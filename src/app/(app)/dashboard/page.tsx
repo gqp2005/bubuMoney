@@ -61,6 +61,7 @@ export default function DashboardPage() {
 
   useEffect(() => {
     if (!householdId) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- clear memo list when household changes
       setMemoEntries([]);
       return;
     }

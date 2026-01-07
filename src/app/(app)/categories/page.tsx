@@ -172,6 +172,7 @@ export default function CategoriesPage() {
   const [name, setName] = useState("");
   const [parentId, setParentId] = useState<string>("none");
   const [budgetEnabled, setBudgetEnabled] = useState(false);
+  const [personalOnly, setPersonalOnly] = useState(false);
   const [showAddForm, setShowAddForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState("");
@@ -179,6 +180,7 @@ export default function CategoriesPage() {
   const [editingType, setEditingType] = useState<CategoryType>("expense");
   const [editingParentId, setEditingParentId] = useState<string>("none");
   const [editingBudgetEnabled, setEditingBudgetEnabled] = useState(false);
+  const [editingPersonalOnly, setEditingPersonalOnly] = useState(false);
   const [editingOwner, setEditingOwner] = useState<PaymentOwner>("our");
   const [expandedParentId, setExpandedParentId] = useState<string | null>(null);
   const [expandedPaymentParentId, setExpandedPaymentParentId] = useState<
@@ -279,9 +281,11 @@ export default function CategoriesPage() {
     setName("");
     setParentId("none");
     setBudgetEnabled(false);
+    setPersonalOnly(false);
     setEditingId(null);
     setEditingOriginalName("");
     setEditingBudgetEnabled(false);
+    setEditingPersonalOnly(false);
     setEditingOwner("our");
     setExpandedParentId(null);
     setExpandedPaymentParentId(null);
@@ -338,11 +342,13 @@ export default function CategoriesPage() {
         order: categories.length + 1,
         parentId: parentId === "none" ? null : parentId,
         budgetEnabled: activeTab === "expense" ? budgetEnabled : false,
+        personalOnly: activeTab === "expense" ? personalOnly : false,
       });
     }
     setName("");
     setParentId("none");
     setBudgetEnabled(false);
+    setPersonalOnly(false);
     setShowAddForm(false);
   }
 
@@ -367,7 +373,8 @@ export default function CategoriesPage() {
     currentType?: CategoryType,
     currentParentId?: string | null,
     currentOwner?: PaymentOwner,
-    currentBudgetEnabled?: boolean
+    currentBudgetEnabled?: boolean,
+    currentPersonalOnly?: boolean
   ) {
     setEditingId(itemId);
     setEditingName(currentName);
@@ -385,6 +392,13 @@ export default function CategoriesPage() {
         : false
       : false;
     setEditingBudgetEnabled(Boolean(resolvedBudgetEnabled));
+    const resolvedPersonalOnly = currentType
+      ? currentType === "expense"
+        ? currentPersonalOnly ??
+          categories.find((category) => category.id === itemId)?.personalOnly
+        : false
+      : false;
+    setEditingPersonalOnly(Boolean(resolvedPersonalOnly));
     setEditingParentId(currentParentId ?? "none");
   }
 
@@ -422,6 +436,7 @@ export default function CategoriesPage() {
         parentId: editingParentId === "none" ? null : editingParentId,
         imported: false,
         budgetEnabled: editingType === "expense" ? editingBudgetEnabled : false,
+        personalOnly: editingType === "expense" ? editingPersonalOnly : false,
       });
     }
     setEditingId(null);
@@ -769,6 +784,17 @@ export default function CategoriesPage() {
                 예산
               </label>
             ) : null}
+            {isExpenseTab ? (
+              <label className="flex items-center gap-2 text-xs text-[color:rgba(45,38,34,0.8)]">
+                <input
+                  type="checkbox"
+                  className="h-4 w-4 rounded border-[var(--border)]"
+                  checked={personalOnly}
+                  onChange={(event) => setPersonalOnly(event.target.checked)}
+                />
+                내역 비공개(본인만 보기)
+              </label>
+            ) : null}
             <div className="flex items-center gap-2">
               <button
                 className="rounded-full bg-[var(--accent)] px-4 py-2 text-xs text-white"
@@ -865,6 +891,19 @@ export default function CategoriesPage() {
                             예산
                           </label>
                         ) : null}
+                        {editingType === "expense" ? (
+                          <label className="flex items-center gap-2 text-xs text-[color:rgba(45,38,34,0.8)]">
+                            <input
+                              type="checkbox"
+                              className="h-4 w-4 rounded border-[var(--border)]"
+                              checked={editingPersonalOnly}
+                              onChange={(event) =>
+                                setEditingPersonalOnly(event.target.checked)
+                              }
+                            />
+                            내역 비공개(본인만 보기)
+                          </label>
+                        ) : null}
                         <div className="flex items-center gap-2">
                           <button
                             className="rounded-full bg-[var(--accent)] px-3 py-1 text-xs text-white"
@@ -903,7 +942,8 @@ export default function CategoriesPage() {
                                   parent.type,
                                   parent.parentId,
                                   undefined,
-                                  parent.budgetEnabled
+                                  parent.budgetEnabled,
+                                  parent.personalOnly
                                 )
                               }
                             >
@@ -978,6 +1018,21 @@ export default function CategoriesPage() {
                                             예산
                                           </label>
                                         ) : null}
+                                        {editingType === "expense" ? (
+                                          <label className="flex items-center gap-2 text-[10px] text-[color:rgba(45,38,34,0.8)]">
+                                            <input
+                                              type="checkbox"
+                                              className="h-3 w-3 rounded border-[var(--border)]"
+                                              checked={editingPersonalOnly}
+                                              onChange={(event) =>
+                                                setEditingPersonalOnly(
+                                                  event.target.checked
+                                                )
+                                              }
+                                            />
+                                            내역 비공개
+                                          </label>
+                                        ) : null}
                                         <button
                                           className="rounded-full bg-[var(--accent)] px-2 py-1 text-[10px] text-white"
                                           onClick={handleUpdate}
@@ -1005,7 +1060,8 @@ export default function CategoriesPage() {
                                                 child.type,
                                                 child.parentId,
                                                 undefined,
-                                                child.budgetEnabled
+                                                child.budgetEnabled,
+                                                child.personalOnly
                                               )
                                             }
                                           >

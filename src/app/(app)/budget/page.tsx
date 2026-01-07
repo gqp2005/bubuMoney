@@ -149,6 +149,13 @@ export default function BudgetPage() {
     rangeStart,
     rangeEnd
   );
+  const personalCategoryIdSet = useMemo(() => {
+    return new Set(
+      categories
+        .filter((category) => category.personalOnly)
+        .map((category) => category.id)
+    );
+  }, [categories]);
   const budgetCategoryIdSet = useMemo(() => {
     return new Set(
       categories
@@ -168,17 +175,23 @@ export default function BudgetPage() {
   const maxBudgetTabs = budgetCategories.length > 3 ? 2 : 3;
   const budgetTabs = budgetCategories.slice(0, maxBudgetTabs);
   const hasMoreBudgetTabs = budgetCategories.length > maxBudgetTabs;
-  useEffect(() => {
-    if (budgetScope === "common") {
-      return;
+  const effectiveBudgetScope = budgetCategoryIdSet.has(budgetScope)
+    ? budgetScope
+    : "common";
+  const scopedTransactions = useMemo(() => {
+    const currentUserId = user?.uid ?? null;
+    if (!currentUserId || personalCategoryIdSet.size === 0) {
+      return transactions;
     }
-    if (!budgetCategoryIdSet.has(budgetScope)) {
-      setBudgetScope("common");
-    }
-  }, [budgetScope, budgetCategoryIdSet]);
+    return transactions.filter(
+      (tx) =>
+        !personalCategoryIdSet.has(tx.categoryId) ||
+        tx.createdBy === currentUserId
+    );
+  }, [personalCategoryIdSet, transactions, user]);
   const visibleTransactions = useMemo(() => {
-    return transactions.filter((tx) => {
-      if (budgetScope === "common") {
+    return scopedTransactions.filter((tx) => {
+      if (effectiveBudgetScope === "common") {
         if (tx.type !== "expense") {
           return true;
         }
@@ -194,9 +207,17 @@ export default function BudgetPage() {
       if (!category) {
         return false;
       }
-      return category.id === budgetScope || category.parentId === budgetScope;
+      return (
+        category.id === effectiveBudgetScope ||
+        category.parentId === effectiveBudgetScope
+      );
     });
-  }, [transactions, budgetScope, budgetCategoryIdSet, categoryById]);
+  }, [
+    scopedTransactions,
+    effectiveBudgetScope,
+    budgetCategoryIdSet,
+    categoryById,
+  ]);
 
   const monthPoints = useMemo(
     () =>
@@ -205,21 +226,31 @@ export default function BudgetPage() {
         range,
         visibleTransactions,
         budgetCategoryIdSet,
-        budgetScope,
+        effectiveBudgetScope,
         categoryById
       ),
-    [endMonth, range, visibleTransactions, budgetCategoryIdSet, budgetScope, categoryById]
+    [
+      endMonth,
+      range,
+      visibleTransactions,
+      budgetCategoryIdSet,
+      effectiveBudgetScope,
+      categoryById,
+    ]
   );
 
   const [selectedMonthKey, setSelectedMonthKey] = useState(
     format(endMonth, "yyyy-MM")
   );
-
-  useEffect(() => {
-    const keys = new Set(monthPoints.map((point) => format(point.month, "yyyy-MM")));
-    if (!keys.has(selectedMonthKey) && monthPoints.length > 0) {
-      setSelectedMonthKey(format(monthPoints[monthPoints.length - 1].month, "yyyy-MM"));
+  const effectiveSelectedMonthKey = useMemo(() => {
+    if (monthPoints.length === 0) {
+      return selectedMonthKey;
     }
+    const keys = new Set(monthPoints.map((point) => format(point.month, "yyyy-MM")));
+    if (keys.has(selectedMonthKey)) {
+      return selectedMonthKey;
+    }
+    return format(monthPoints[monthPoints.length - 1].month, "yyyy-MM");
   }, [monthPoints, selectedMonthKey]);
 
   const maxAbs = useMemo(
@@ -229,7 +260,9 @@ export default function BudgetPage() {
 
   const totalNet = monthPoints.reduce((acc, point) => acc + point.net, 0);
   const selectedPoint =
-    monthPoints.find((point) => format(point.month, "yyyy-MM") === selectedMonthKey) ??
+    monthPoints.find(
+      (point) => format(point.month, "yyyy-MM") === effectiveSelectedMonthKey
+    ) ??
     monthPoints[monthPoints.length - 1];
 
   const categoryMap = useMemo(
@@ -246,17 +279,17 @@ export default function BudgetPage() {
   );
 
   const selectedMonthExpenses = useMemo(() => {
-    if (!selectedMonthKey) {
+    if (!effectiveSelectedMonthKey) {
       return [];
     }
     return visibleTransactions.filter((tx) => {
       if (tx.type !== "expense") {
         return false;
       }
-      if (budgetScope !== "common" && tx.budgetApplied) {
+      if (effectiveBudgetScope !== "common" && tx.budgetApplied) {
         return false;
       }
-      if (budgetScope === "common") {
+      if (effectiveBudgetScope === "common") {
         if (budgetCategoryIdSet.has(tx.categoryId) && !tx.budgetApplied) {
           return false;
         }
@@ -265,14 +298,23 @@ export default function BudgetPage() {
         if (!category) {
           return false;
         }
-        if (category.id !== budgetScope && category.parentId !== budgetScope) {
+        if (
+          category.id !== effectiveBudgetScope &&
+          category.parentId !== effectiveBudgetScope
+        ) {
           return false;
         }
       }
       const key = format(tx.date.toDate(), "yyyy-MM");
-      return key === selectedMonthKey;
+      return key === effectiveSelectedMonthKey;
     });
-  }, [selectedMonthKey, visibleTransactions, budgetCategoryIdSet, budgetScope, categoryById]);
+  }, [
+    effectiveSelectedMonthKey,
+    visibleTransactions,
+    budgetCategoryIdSet,
+    effectiveBudgetScope,
+    categoryById,
+  ]);
 
   const topCategorySpend = useMemo(() => {
     const totals: Record<string, number> = {};
@@ -291,17 +333,19 @@ export default function BudgetPage() {
   }, [categoryMap, selectedMonthExpenses]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- reset UI state on month switch
     setSaveMessage(null);
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- reset UI state on month switch
     setShowAllTopCategories(false);
-  }, [selectedMonthKey]);
+  }, [effectiveSelectedMonthKey]);
 
   useEffect(() => {
-    if (!householdId || !selectedMonthKey) {
+    if (!householdId || !effectiveSelectedMonthKey) {
       return;
     }
     let active = true;
     const loadBudget = async () => {
-      const ref = doc(budgetsCol(householdId), selectedMonthKey);
+      const ref = doc(budgetsCol(householdId), effectiveSelectedMonthKey);
       const snapshot = await getDoc(ref);
       if (!active) {
         return;
@@ -315,8 +359,8 @@ export default function BudgetPage() {
           mapped[key] = formatNumberInput(String(value));
         });
         setCategoryBudgets(mapped);
-        if (user && lastNotifiedLoadKey.current !== selectedMonthKey) {
-          lastNotifiedLoadKey.current = selectedMonthKey;
+        if (user && lastNotifiedLoadKey.current !== effectiveSelectedMonthKey) {
+          lastNotifiedLoadKey.current = effectiveSelectedMonthKey;
         }
       } else {
         setMonthlyBudget("");
@@ -327,7 +371,7 @@ export default function BudgetPage() {
     return () => {
       active = false;
     };
-  }, [householdId, selectedMonthKey]);
+  }, [householdId, effectiveSelectedMonthKey, user]);
 
   const budgetValue = Number(normalizeNumberInput(monthlyBudget));
   const budgetProgress =
@@ -340,7 +384,7 @@ export default function BudgetPage() {
   };
 
   const handleSaveBudget = async () => {
-    if (!householdId || !selectedMonthKey) {
+    if (!householdId || !effectiveSelectedMonthKey) {
       return;
     }
     setSaving(true);
@@ -354,9 +398,9 @@ export default function BudgetPage() {
     });
     const total = Number(normalizeNumberInput(monthlyBudget));
     await setDoc(
-      doc(budgetsCol(householdId), selectedMonthKey),
+      doc(budgetsCol(householdId), effectiveSelectedMonthKey),
       {
-        monthKey: selectedMonthKey,
+        monthKey: effectiveSelectedMonthKey,
         total: Number.isNaN(total) ? 0 : total,
         byCategory,
         createdAt: serverTimestamp(),
@@ -368,7 +412,7 @@ export default function BudgetPage() {
     if (user) {
       addNotification(householdId, {
         title: "예산 저장 완료",
-        message: `${format(monthKeyToDate(selectedMonthKey), "yyyy년 M월")} 예산을 저장했습니다.`,
+        message: `${format(monthKeyToDate(effectiveSelectedMonthKey), "yyyy년 M월")} 예산을 저장했습니다.`,
         level: "success",
         type: "budget",
       });
@@ -421,7 +465,7 @@ export default function BudgetPage() {
           <button
             type="button"
             className={`rounded-full border px-4 py-2 text-sm ${
-              budgetScope === "common"
+              effectiveBudgetScope === "common"
                 ? "border-[var(--text)] bg-[var(--text)] text-white"
                 : "border-[var(--border)] text-[color:rgba(45,38,34,0.7)]"
             }`}
@@ -434,7 +478,7 @@ export default function BudgetPage() {
               key={category.id}
               type="button"
               className={`rounded-full border px-4 py-2 text-sm ${
-                budgetScope === category.id
+                effectiveBudgetScope === category.id
                   ? "border-[var(--text)] bg-[var(--text)] text-white"
                   : "border-[var(--border)] text-[color:rgba(45,38,34,0.7)]"
               }`}
@@ -447,8 +491,8 @@ export default function BudgetPage() {
             <button
               type="button"
               className={`rounded-full border px-4 py-2 text-sm ${
-                budgetScope !== "common" &&
-                !budgetTabs.some((tab) => tab.id === budgetScope)
+                effectiveBudgetScope !== "common" &&
+                !budgetTabs.some((tab) => tab.id === effectiveBudgetScope)
                   ? "border-[var(--text)] bg-[var(--text)] text-white"
                   : "border-[var(--border)] text-[color:rgba(45,38,34,0.7)]"
               }`}
@@ -723,7 +767,7 @@ export default function BudgetPage() {
                       </div>
                       <span
                         className={`mt-2 text-[10px] ${
-                          monthKey === selectedMonthKey
+                          monthKey === effectiveSelectedMonthKey
                             ? "font-semibold text-[var(--text)]"
                             : "text-[color:rgba(45,38,34,0.6)]"
                         }`}
@@ -766,7 +810,7 @@ export default function BudgetPage() {
                       type="button"
                       onClick={() => setSelectedMonthKey(monthKey)}
                       className={`flex-1 text-center text-[10px] ${
-                        monthKey === selectedMonthKey
+                        monthKey === effectiveSelectedMonthKey
                           ? "font-semibold text-[var(--text)]"
                           : "text-[color:rgba(45,38,34,0.6)]"
                       }`}
@@ -807,7 +851,7 @@ export default function BudgetPage() {
                       key={category.id}
                       type="button"
                       className={`w-full rounded-2xl border px-4 py-3 text-left text-sm ${
-                        budgetScope === category.id
+                        effectiveBudgetScope === category.id
                           ? "border-[var(--text)] bg-[color:rgba(45,38,34,0.06)] font-semibold"
                           : "border-[var(--border)] text-[color:rgba(45,38,34,0.7)]"
                       }`}

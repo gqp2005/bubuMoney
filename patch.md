@@ -12,6 +12,20 @@
 - 통계/예산: 예산 카테고리는 공용 탭에서 제외하고 해당 카테고리 탭에서만 표시.
 - 예산: budgetApplied=true는 카테고리 탭에서 수입으로 집계, “예산 불러오기 완료” 알림 제거.
 
+## v1.6
+
+- Categories: add “personal only” flag for expense categories and honor it across transactions, stats, and budget views.
+- Transactions: allow budgetApplied=true items from personal categories to show in list/calendar for both users.
+- Notifications: suppress personal-only transaction alerts; unify transaction create/update/delete message format.
+- Notifications: add timeline separators (today/yesterday/older).
+
+### v1.6 (한국어)
+
+- 카테고리: 지출 카테고리에 “내역 비공개(본인만 보기)” 플래그 추가, 내역/통계/예산 화면에 반영.
+- 내역: personalOnly 카테고리라도 budgetApplied=true 항목은 양쪽 리스트/달력에서 표시.
+- 알림: 개인 카테고리 내역 알림 제외, 내역 추가/수정/삭제 메시지 포맷 통일.
+- 알림: 타임라인 구분선(오늘/어제/이전) 추가.
+
 ## v1.4
 
 - Stats: show active filter summary under filter chips, store filters without effect warnings, and increase swipe threshold to 150px.

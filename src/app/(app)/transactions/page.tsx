@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   addDays,
   addMonths,
@@ -17,6 +17,7 @@ import {
   startOfMonth,
   startOfWeek,
 } from "date-fns";
+import { useAuth } from "@/components/auth-provider";
 import { useHousehold } from "@/components/household-provider";
 import { formatKrw } from "@/lib/format";
 import { toMonthKey } from "@/lib/time";
@@ -25,6 +26,15 @@ import { useCategories } from "@/hooks/use-categories";
 import { useMonthlyTransactions, useTransactionsRange } from "@/hooks/use-transactions";
 
 const DAY_LABELS = ["일", "월", "화", "수", "목", "금", "토"];
+
+function parseLocalDate(value: string) {
+  const parsed = parse(value, "yyyy-MM-dd", new Date());
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function parseDateParam(value: string) {
+  return parseLocalDate(value);
+}
 
 function formatPaymentMethod(value: string) {
   if (value === "cash") {
@@ -59,6 +69,7 @@ const BUDGET_HIGHLIGHT_CLASSES = [
 
 export default function TransactionsPage() {
   const searchParams = useSearchParams();
+  const { user } = useAuth();
   const { householdId } = useHousehold();
   const { categories } = useCategories(householdId);
   const [selectedDate, setSelectedDate] = useState(() => new Date());
@@ -103,19 +114,17 @@ export default function TransactionsPage() {
     window.localStorage.setItem("transactions:listSortMode", listSortMode);
   }, [listSortMode]);
 
-  function parseLocalDate(value: string) {
-    const parsed = parse(value, "yyyy-MM-dd", new Date());
-    return Number.isNaN(parsed.getTime()) ? null : parsed;
-  }
-
-  function parseDateParam(value: string) {
-    return parseLocalDate(value);
-  }
-
   const categoryMap = useMemo(
     () => new Map(categories.map((category) => [category.id, category.name])),
     [categories]
   );
+  const personalCategoryIdSet = useMemo(() => {
+    return new Set(
+      categories
+        .filter((category) => category.personalOnly)
+        .map((category) => category.id)
+    );
+  }, [categories]);
   const budgetCategoryIdSet = useMemo(() => {
     return new Set(
       categories
@@ -152,16 +161,46 @@ export default function TransactionsPage() {
     }
     const parsed = parseDateParam(dateParam);
     if (parsed && !isSameDay(parsed, selectedDate)) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- URL date sync
       setSelectedDate(parsed);
     }
   }, [dateParam, selectedDate]);
 
+  const shouldSearchRange = Boolean(showSearch && searchStart && searchEnd);
   const { transactions: searchTransactions, loading: searchLoading } =
-    useTransactionsRange(householdId, searchStart, searchEnd);
-  const visibleSearchTransactions = searchTransactions;
-  const visibleTransactions = transactions;
+    useTransactionsRange(
+      householdId,
+      shouldSearchRange ? searchStart : null,
+      shouldSearchRange ? searchEnd : null
+    );
+  const currentUserId = user?.uid ?? null;
+  const visibleSearchTransactions = useMemo(() => {
+    if (!shouldSearchRange) {
+      return [];
+    }
+    if (!currentUserId || personalCategoryIdSet.size === 0) {
+      return searchTransactions;
+    }
+    return searchTransactions.filter(
+      (tx) =>
+        !personalCategoryIdSet.has(tx.categoryId) ||
+        tx.createdBy === currentUserId ||
+        tx.budgetApplied === true
+    );
+  }, [currentUserId, personalCategoryIdSet, searchTransactions, shouldSearchRange]);
+  const visibleTransactions = useMemo(() => {
+    if (!currentUserId || personalCategoryIdSet.size === 0) {
+      return transactions;
+    }
+    return transactions.filter(
+      (tx) =>
+        !personalCategoryIdSet.has(tx.categoryId) ||
+        tx.createdBy === currentUserId ||
+        tx.budgetApplied === true
+    );
+  }, [currentUserId, personalCategoryIdSet, transactions]);
 
-  const { days, calendarDailyMap } = useMemo(() => {
+  const { days, calendarDisplayMap, dailyItemsMap } = useMemo(() => {
     const monthStart = startOfMonth(selectedDate);
     const monthEnd = endOfMonth(selectedDate);
     const calendarStart = startOfWeek(monthStart, { weekStartsOn: 0 });
@@ -172,11 +211,17 @@ export default function TransactionsPage() {
       daysList.push(day);
       day = addDays(day, 1);
     }
-    const map = new Map<
+    const calendarMap = new Map<
       string,
       { income: number; expense: number; items: typeof transactions }
     >();
+    const displayMap = new Map<string, { incomeText: string; expenseText: string }>();
+    const itemsMap = new Map<string, typeof transactions>();
     visibleTransactions.forEach((tx) => {
+      const key = toDateKey(tx.date.toDate());
+      const items = itemsMap.get(key) ?? [];
+      items.push(tx);
+      itemsMap.set(key, items);
       if (
         tx.type === "expense" &&
         budgetCategoryIdSet.has(tx.categoryId) &&
@@ -184,62 +229,105 @@ export default function TransactionsPage() {
       ) {
         return;
       }
-      const key = toDateKey(tx.date.toDate());
-      const entry = map.get(key) ?? { income: 0, expense: 0, items: [] };
+      const entry = calendarMap.get(key) ?? { income: 0, expense: 0, items: [] };
       entry.items.push(tx);
       if (tx.type === "income") {
         entry.income += tx.amount;
       } else if (tx.type === "expense") {
         entry.expense += tx.amount;
       }
-      map.set(key, entry);
+      calendarMap.set(key, entry);
     });
-    return { days: daysList, calendarDailyMap: map };
+    calendarMap.forEach((entry, key) => {
+      displayMap.set(key, {
+        incomeText: formatKrw(entry.income),
+        expenseText: formatKrw(entry.expense),
+      });
+    });
+    return {
+      days: daysList,
+      calendarDisplayMap: displayMap,
+      dailyItemsMap: itemsMap,
+    };
   }, [selectedDate, visibleTransactions, budgetCategoryIdSet]);
 
+  const zeroAmountText = useMemo(() => formatKrw(0), []);
   const selectedKey = toDateKey(selectedDate);
-  const selectedDateParam = format(selectedDate, "yyyy-MM-dd");
-  const selectedDaily = calendarDailyMap.get(selectedKey);
-  const selectedItems = useMemo(
-    () =>
-      visibleTransactions.filter(
-        (tx) => toDateKey(tx.date.toDate()) === selectedKey
-      ),
-    [visibleTransactions, selectedKey]
+  const selectedDateParam = useMemo(
+    () => format(selectedDate, "yyyy-MM-dd"),
+    [selectedDate]
   );
+  const selectedItems = useMemo(
+    () => dailyItemsMap.get(selectedKey) ?? [],
+    [dailyItemsMap, selectedKey]
+  );
+  const selectedItemNameMap = useMemo(() => {
+    const map = new Map<string, { display: string; normalized: string }>();
+    selectedItems.forEach((tx) => {
+      const display = stripRecorderPrefix(tx.note);
+      map.set(tx.id, { display, normalized: display.toLowerCase() });
+    });
+    return map;
+  }, [selectedItems]);
+  const selectedItemsSortLabel = useMemo(() => {
+    if (listSortMode === "alpha") {
+      return "가나다순";
+    }
+    if (listSortMode === "category") {
+      return "카테고리순";
+    }
+    return "입력순";
+  }, [listSortMode]);
+  const selectedSortMeta = useMemo(() => {
+    const meta = new Map<string, { time: number; categoryOrder: number }>();
+    selectedItems.forEach((tx) => {
+      meta.set(tx.id, {
+        time: tx.createdAt?.toMillis?.() ?? tx.date.toMillis(),
+        categoryOrder: categoryOrderMap.get(tx.categoryId) ?? 9999,
+      });
+    });
+    return meta;
+  }, [selectedItems, categoryOrderMap]);
   const sortedSelectedItems = useMemo(() => {
-    const getSortTime = (tx: typeof selectedItems[number]) =>
-      tx.createdAt?.toMillis?.() ?? tx.date.toMillis();
     const normalizedName = (tx: typeof selectedItems[number]) =>
+      selectedItemNameMap.get(tx.id)?.normalized ??
       stripRecorderPrefix(tx.note).toLowerCase();
     return [...selectedItems].sort((a, b) => {
       if (listSortMode === "alpha") {
         return normalizedName(a).localeCompare(normalizedName(b));
       }
       if (listSortMode === "category") {
-        const aOrder = categoryOrderMap.get(a.categoryId) ?? 9999;
-        const bOrder = categoryOrderMap.get(b.categoryId) ?? 9999;
+        const aOrder = selectedSortMeta.get(a.id)?.categoryOrder ?? 9999;
+        const bOrder = selectedSortMeta.get(b.id)?.categoryOrder ?? 9999;
         if (aOrder !== bOrder) {
           return aOrder - bOrder;
         }
         return normalizedName(a).localeCompare(normalizedName(b));
       }
-      return getSortTime(a) - getSortTime(b);
+      const aTime = selectedSortMeta.get(a.id)?.time ?? 0;
+      const bTime = selectedSortMeta.get(b.id)?.time ?? 0;
+      return aTime - bTime;
     });
-  }, [selectedItems, listSortMode, categoryOrderMap]);
-
-  function handleTouchStart(event: React.TouchEvent<HTMLDivElement>) {
-    setTouchEndX(null);
-    setTouchStartX(event.touches[0]?.clientX ?? null);
-  }
-
-  function handleTouchMove(event: React.TouchEvent<HTMLDivElement>) {
-    setTouchEndX(event.touches[0]?.clientX ?? null);
-  }
+  }, [selectedItems, listSortMode, selectedItemNameMap, selectedSortMeta]);
 
   const swipeThreshold = 150;
 
-  function handleTouchEnd() {
+  const handleTouchStart = useCallback(
+    (event: React.TouchEvent<HTMLDivElement>) => {
+      setTouchEndX(null);
+      setTouchStartX(event.touches[0]?.clientX ?? null);
+    },
+    []
+  );
+
+  const handleTouchMove = useCallback(
+    (event: React.TouchEvent<HTMLDivElement>) => {
+      setTouchEndX(event.touches[0]?.clientX ?? null);
+    },
+    []
+  );
+
+  const handleTouchEnd = useCallback(() => {
     if (touchStartX === null || touchEndX === null) {
       return;
     }
@@ -252,35 +340,36 @@ export default function TransactionsPage() {
     } else {
       setSelectedDate(addDays(startOfMonth(selectedDate), -1));
     }
-  }
+  }, [selectedDate, touchEndX, touchStartX]);
 
   const yearOptions = useMemo(() => {
     const currentYear = new Date().getFullYear();
     return Array.from({ length: 11 }, (_, idx) => currentYear - 5 + idx);
   }, []);
 
-  function openMonthPicker() {
+  const openMonthPicker = useCallback(() => {
     setYearValue(selectedDate.getFullYear());
     setMonthValue(selectedDate.getMonth());
     setShowPicker(true);
-  }
+  }, [selectedDate]);
 
-  function handlePickerConfirm() {
+  const handlePickerConfirm = useCallback(() => {
     setSelectedDate(new Date(yearValue, monthValue, 1));
     setShowPicker(false);
-  }
+  }, [monthValue, yearValue]);
 
-  function openSearchSheet() {
+  const openSearchSheet = useCallback(() => {
     setSearchStart(startOfDay(startOfMonth(selectedDate)));
     setSearchEnd(endOfDay(endOfMonth(selectedDate)));
     setShowSearch(true);
-  }
+  }, [selectedDate]);
 
   function toInputDate(value: Date | null) {
     return value ? format(value, "yyyy-MM-dd") : "";
   }
 
-  function handleSearchStart(value: string) {
+  const handleSearchStart = useCallback(
+    (value: string) => {
     if (!value) {
       setSearchStart(null);
       return;
@@ -297,9 +386,11 @@ export default function TransactionsPage() {
     setTimeout(() => {
       searchEndRef.current?.focus();
     }, 0);
-  }
+    },
+    [searchEnd]
+  );
 
-  function handleSearchEnd(value: string) {
+  const handleSearchEnd = useCallback((value: string) => {
     if (!value) {
       setSearchEnd(null);
       return;
@@ -309,16 +400,16 @@ export default function TransactionsPage() {
       return;
     }
     setSearchEnd(endOfDay(parsed));
-  }
+  }, []);
 
-  function applySearchRange(months: number) {
+  const applySearchRange = useCallback((months: number) => {
     const endDate = endOfDay(new Date());
     const startDate = startOfDay(addMonths(endDate, -months));
     setSearchStart(startDate);
     setSearchEnd(endDate);
-  }
+  }, []);
 
-  function applySearchPreset(preset: "week" | "month" | "custom") {
+  const applySearchPreset = useCallback((preset: "week" | "month" | "custom") => {
     const today = new Date();
     if (preset === "week") {
       setSearchStart(startOfDay(startOfWeek(today, { weekStartsOn: 0 })));
@@ -335,10 +426,13 @@ export default function TransactionsPage() {
     setTimeout(() => {
       searchStartRef.current?.focus();
     }, 0);
-  }
+  }, []);
 
   const filteredSearchItems = useMemo(() => {
-    const normalizedQuery = searchQuery.trim();
+    if (!showSearch) {
+      return [];
+    }
+    const normalizedQuery = searchQuery.trim().toLowerCase();
     return visibleSearchTransactions.filter((tx) => {
       if (searchType !== "all" && tx.type !== searchType) {
         return false;
@@ -356,14 +450,54 @@ export default function TransactionsPage() {
       ]
         .join(" ")
         .toLowerCase();
-      return haystack.includes(normalizedQuery.toLowerCase());
+      return haystack.includes(normalizedQuery);
     });
-  }, [visibleSearchTransactions, searchType, searchQuery, categoryMap]);
+  }, [
+    showSearch,
+    visibleSearchTransactions,
+    searchType,
+    searchQuery,
+    categoryMap,
+  ]);
 
   const searchTotal = useMemo(
     () => filteredSearchItems.reduce((sum, tx) => sum + tx.amount, 0),
     [filteredSearchItems]
   );
+  const visibleSearchItems = filteredSearchItems;
+  const searchRenderItems = useMemo(
+    () =>
+      visibleSearchItems.map((tx) => {
+        const noteText = stripRecorderPrefix(tx.note);
+        const categoryName = categoryMap.get(tx.categoryId) ?? "미분류";
+        const subtitle = `${format(tx.date.toDate(), "yyyy.MM.dd")} · ${categoryName} · ${
+          tx.subject || "주체"
+        }`;
+        const amountClass =
+          tx.type === "expense"
+            ? "text-red-600"
+            : tx.type === "income"
+            ? "text-emerald-600"
+            : "text-[color:rgba(45,38,34,0.7)]";
+        const sign =
+          tx.type === "expense" ? "-" : tx.type === "income" ? "+" : "";
+        return {
+          id: tx.id,
+          href: `/transactions/${tx.id}`,
+          title: noteText,
+          subtitle,
+          amountClass,
+          amountText: `${sign}${formatKrw(tx.amount)}`,
+        };
+      }),
+    [visibleSearchItems, categoryMap]
+  );
+
+  const handleSortToggle = useCallback(() => {
+    setListSortMode((prev) =>
+      prev === "input" ? "alpha" : prev === "alpha" ? "category" : "input"
+    );
+  }, []);
 
   return (
     <div className="flex flex-col gap-0">
@@ -442,7 +576,7 @@ export default function TransactionsPage() {
         <div className="mt-0.5 grid grid-cols-7 gap-0 px-0">
           {days.map((day) => {
             const key = toDateKey(day);
-            const data = calendarDailyMap.get(key);
+            const display = calendarDisplayMap.get(key);
             const isActive = isSameDay(day, selectedDate);
             return (
               <button
@@ -458,12 +592,12 @@ export default function TransactionsPage() {
                 <div className="mt-1 space-y-0.5 text-[9px] leading-tight text-[color:rgba(45,38,34,0.6)]">
                   <div className="text-blue-600">
                     <span className="block break-all">
-                      {formatKrw(data?.income ?? 0)}
+                      {display?.incomeText ?? zeroAmountText}
                     </span>
                   </div>
                   <div className="text-red-600">
                     <span className="block break-all">
-                      {formatKrw(data?.expense ?? 0)}
+                      {display?.expenseText ?? zeroAmountText}
                     </span>
                   </div>
                 </div>
@@ -641,44 +775,25 @@ export default function TransactionsPage() {
                   <p className="text-sm text-[color:rgba(45,38,34,0.6)]">
                     검색 중...
                   </p>
-                ) : filteredSearchItems.length === 0 ? (
+                ) : searchRenderItems.length === 0 ? (
                   <p className="text-sm text-[color:rgba(45,38,34,0.6)]">
                     검색 결과가 없습니다.
                   </p>
                 ) : (
-                  filteredSearchItems.map((tx) => (
+                  searchRenderItems.map((item) => (
                     <button
-                      key={tx.id}
+                      key={item.id}
                       type="button"
                       className="flex w-full items-center justify-between gap-4 rounded-2xl border border-[var(--border)] px-4 py-3 text-left text-sm"
-                      onClick={() => router.push(`/transactions/${tx.id}`)}
+                      onClick={() => router.push(item.href)}
                     >
                       <div className="min-w-0">
-                        <p className="truncate font-medium">
-                          {stripRecorderPrefix(tx.note)}
-                        </p>
+                        <p className="truncate font-medium">{item.title}</p>
                         <p className="mt-1 text-xs text-[color:rgba(45,38,34,0.6)]">
-                          {format(tx.date.toDate(), "yyyy.MM.dd")} ·{" "}
-                          {categoryMap.get(tx.categoryId) ?? "미분류"} ·{" "}
-                          {tx.subject || "주체"}
+                          {item.subtitle}
                         </p>
                       </div>
-                      <span
-                        className={
-                          tx.type === "expense"
-                            ? "text-red-600"
-                            : tx.type === "income"
-                            ? "text-emerald-600"
-                            : "text-[color:rgba(45,38,34,0.7)]"
-                        }
-                      >
-                        {tx.type === "expense"
-                          ? "-"
-                          : tx.type === "income"
-                          ? "+"
-                          : ""}
-                        {formatKrw(tx.amount)}
-                      </span>
+                      <span className={item.amountClass}>{item.amountText}</span>
                     </button>
                   ))
                 )}
@@ -697,26 +812,14 @@ export default function TransactionsPage() {
         ) : (
           <div className="mt-2 space-y-1">
             <div className="flex items-center justify-end">
-              <button
-                type="button"
-                className="rounded-full border border-[var(--border)] px-3 py-1 text-[11px] text-[color:rgba(45,38,34,0.7)]"
-                onClick={() =>
-                  setListSortMode((prev) =>
-                    prev === "input"
-                      ? "alpha"
-                      : prev === "alpha"
-                      ? "category"
-                      : "input"
-                  )
-                }
-              >
-                {listSortMode === "input"
-                  ? "입력순"
-                  : listSortMode === "alpha"
-                  ? "가나다순"
-                  : "카테고리순"}
-              </button>
-            </div>
+                <button
+                  type="button"
+                  className="rounded-full border border-[var(--border)] px-3 py-1 text-[11px] text-[color:rgba(45,38,34,0.7)]"
+                  onClick={handleSortToggle}
+                >
+                  {selectedItemsSortLabel}
+                </button>
+              </div>
             {sortedSelectedItems.map((tx) => (
               <div
                 key={tx.id}
@@ -725,7 +828,7 @@ export default function TransactionsPage() {
                   budgetCategoryIdSet.has(tx.categoryId) &&
                   !tx.budgetApplied
                     ? budgetHighlightByCategory.get(tx.categoryId) ??
-                      "border-violet-200 bg-violet-50"
+                      "border-violet-300 bg-violet-100"
                     : "border-[var(--border)]"
                 }`}
                 role="button"
