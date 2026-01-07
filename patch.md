@@ -1,5 +1,21 @@
 # Patch Notes
 
+## v1.7
+
+- Transactions: keep category/payment values when editing another user's entry; default subject to your nickname when available.
+- Transactions: search sheet now scrolls as a whole so filters are reachable on mobile.
+- Stats: headers switch to "입금/지출" based on view type; range confirm button text is now readable.
+- Budget: monthly budget input is per tab (공용/카테고리) and month navigator matches the stats layout.
+- Tooling: add backfill scripts for `budgetEnabled` and `budgetApplied`, plus admin deps.
+
+### v1.7 (한국어)
+
+- 내역: 다른 사람 내역 편집 시 카테고리/결제수단 값 유지; 주체 기본값을 내 닉네임으로 설정.
+- 내역: 검색 시트가 전체 스크롤되어 모바일에서 필터 접근 가능.
+- 통계: 입금/지출에 따라 섹션 제목 전환, 조회 완료 버튼 텍스트 가독성 개선.
+- 예산: 공용/카테고리 탭별 월 예산 입력 적용, 월 이동 UI를 통계와 동일한 배치로 정렬.
+- 도구: `budgetEnabled`/`budgetApplied` 백필 스크립트 추가 및 admin 의존성 추가.
+
 ## v1.5
 
 - Stats/Budget: add budget category tabs (common + budget categories with overflow sheet).

@@ -132,7 +132,7 @@ export default function BudgetPage() {
   const [barPositiveColor, setBarPositiveColor] = useState(BAR_POSITIVE_COLORS[0]);
   const [barNegativeColor, setBarNegativeColor] = useState(BAR_NEGATIVE_COLORS[0]);
   const [lineColor, setLineColor] = useState(LINE_COLORS[0]);
-  const [monthlyBudget, setMonthlyBudget] = useState<string>("");
+  const [monthlyBudgetCommon, setMonthlyBudgetCommon] = useState<string>("");
   const [categoryBudgets, setCategoryBudgets] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
@@ -252,6 +252,10 @@ export default function BudgetPage() {
     }
     return format(monthPoints[monthPoints.length - 1].month, "yyyy-MM");
   }, [monthPoints, selectedMonthKey]);
+  const selectedMonthDate = useMemo(
+    () => new Date(`${effectiveSelectedMonthKey}-01T00:00:00`),
+    [effectiveSelectedMonthKey]
+  );
 
   const maxAbs = useMemo(
     () => Math.max(1, ...monthPoints.map((point) => Math.abs(point.net))),
@@ -352,7 +356,9 @@ export default function BudgetPage() {
       }
       if (snapshot.exists()) {
         const data = snapshot.data() as BudgetDoc;
-        setMonthlyBudget(data.total ? formatNumberInput(String(data.total)) : "");
+        setMonthlyBudgetCommon(
+          data.total ? formatNumberInput(String(data.total)) : ""
+        );
         const byCategory = data.byCategory ?? {};
         const mapped: Record<string, string> = {};
         Object.entries(byCategory).forEach(([key, value]) => {
@@ -363,7 +369,7 @@ export default function BudgetPage() {
           lastNotifiedLoadKey.current = effectiveSelectedMonthKey;
         }
       } else {
-        setMonthlyBudget("");
+        setMonthlyBudgetCommon("");
         setCategoryBudgets({});
       }
     };
@@ -373,7 +379,11 @@ export default function BudgetPage() {
     };
   }, [householdId, effectiveSelectedMonthKey, user]);
 
-  const budgetValue = Number(normalizeNumberInput(monthlyBudget));
+  const activeMonthlyBudget =
+    effectiveBudgetScope === "common"
+      ? monthlyBudgetCommon
+      : categoryBudgets[effectiveBudgetScope] ?? "";
+  const budgetValue = Number(normalizeNumberInput(activeMonthlyBudget));
   const budgetProgress =
     budgetValue > 0 && selectedPoint
       ? Math.min(100, Math.round((selectedPoint.expense / budgetValue) * 100))
@@ -396,7 +406,7 @@ export default function BudgetPage() {
         byCategory[key] = num;
       }
     });
-    const total = Number(normalizeNumberInput(monthlyBudget));
+    const total = Number(normalizeNumberInput(monthlyBudgetCommon));
     await setDoc(
       doc(budgetsCol(householdId), effectiveSelectedMonthKey),
       {
@@ -421,6 +431,40 @@ export default function BudgetPage() {
 
   return (
     <div className="flex flex-col gap-6">
+      <div className="flex items-center justify-between">
+        <button
+          type="button"
+          className="flex h-9 w-9 items-center justify-center rounded-full border border-[var(--border)]"
+          onClick={() =>
+            setSelectedMonthKey(
+              format(addMonths(selectedMonthDate, -1), "yyyy-MM")
+            )
+          }
+          aria-label="이전 달"
+        >
+          {"<"}
+        </button>
+        <button
+          type="button"
+          className="flex items-center gap-2 text-lg font-semibold"
+          onClick={() => setSelectedMonthKey(format(new Date(), "yyyy-MM"))}
+        >
+          {format(selectedMonthDate, "M월")}
+        </button>
+        <button
+          type="button"
+          className="flex h-9 w-9 items-center justify-center rounded-full border border-[var(--border)]"
+          onClick={() =>
+            setSelectedMonthKey(
+              format(addMonths(selectedMonthDate, 1), "yyyy-MM")
+            )
+          }
+          aria-label="다음 달"
+        >
+          {">"}
+        </button>
+      </div>
+
       <section className="rounded-3xl border border-[var(--border)] bg-white p-6">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
@@ -520,8 +564,18 @@ export default function BudgetPage() {
               type="text"
               inputMode="numeric"
               placeholder="월 지출 예산을 입력"
-              value={monthlyBudget}
-              onChange={(event) => setMonthlyBudget(formatNumberInput(event.target.value))}
+              value={activeMonthlyBudget}
+              onChange={(event) => {
+                const nextValue = formatNumberInput(event.target.value);
+                if (effectiveBudgetScope === "common") {
+                  setMonthlyBudgetCommon(nextValue);
+                } else {
+                  setCategoryBudgets((prev) => ({
+                    ...prev,
+                    [effectiveBudgetScope]: nextValue,
+                  }));
+                }
+              }}
               className="mt-2 w-full rounded-xl border border-[var(--border)] px-3 py-2 text-sm"
             />
             <div className="mt-3 flex items-center justify-between gap-2">

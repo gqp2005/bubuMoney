@@ -659,7 +659,7 @@ export default function TransactionsPage() {
       ) : null}
       {showSearch ? (
         <div className="fixed inset-0 z-50 flex items-end bg-black/40">
-          <div className="w-full rounded-t-3xl border border-[var(--border)] bg-white p-5">
+          <div className="max-h-[85vh] w-full overflow-y-auto rounded-t-3xl border border-[var(--border)] bg-white p-5">
             <div className="flex items-center justify-between">
               <button
                 type="button"

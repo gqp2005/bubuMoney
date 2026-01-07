@@ -215,10 +215,26 @@ export default function EditTransactionPage() {
       if (!snapshot.exists()) {
         return;
       }
-      const data = snapshot.data() as { partnerDisplayName?: string | null };
-      setPartnerName(data.partnerDisplayName ?? "");
+      const data = snapshot.data() as {
+        creatorDisplayName?: string | null;
+        partnerDisplayName?: string | null;
+      };
+      const creatorName = data.creatorDisplayName ?? "";
+      const partnerDisplayName = data.partnerDisplayName ?? "";
+      const currentName = (displayName ?? "").trim();
+      if (currentName && creatorName && currentName === creatorName) {
+        setPartnerName(partnerDisplayName);
+      } else if (
+        currentName &&
+        partnerDisplayName &&
+        currentName === partnerDisplayName
+      ) {
+        setPartnerName(creatorName);
+      } else {
+        setPartnerName(partnerDisplayName);
+      }
     });
-  }, [householdId]);
+  }, [displayName, householdId]);
 
   useEffect(() => {
     if (!subject && subjects.length > 0) {
@@ -227,9 +243,10 @@ export default function EditTransactionPage() {
   }, [subjects, subject]);
 
   useEffect(() => {
-    if (!paymentMethod && paymentMethods.length > 0) {
-      setPaymentMethod(paymentMethods[0].name);
+    if (paymentMethod || paymentMethods.length === 0) {
+      return;
     }
+    setPaymentMethod(paymentMethods[0].name);
   }, [paymentMethods, paymentMethod]);
 
   useEffect(() => {
@@ -266,17 +283,23 @@ export default function EditTransactionPage() {
   }, [paymentMethod, paymentMethods, spouseRole, paymentOwner]);
 
   useEffect(() => {
+    if (!paymentMethod) {
+      return;
+    }
+    const existsAnywhere = paymentMethods.some(
+      (method) => method.name === paymentMethod
+    );
+    if (existsAnywhere) {
+      return;
+    }
     const ownerMethods = [
       ...paymentGrouped[paymentOwner].parents,
       ...paymentGrouped[paymentOwner].children,
     ];
-    if (!paymentMethod) {
-      return;
-    }
-    if (ownerMethods.length > 0 && !ownerMethods.some((m) => m.name === paymentMethod)) {
+    if (ownerMethods.length > 0) {
       setPaymentMethod(ownerMethods[0].name);
     }
-  }, [paymentGrouped, paymentMethod, paymentOwner]);
+  }, [paymentGrouped, paymentMethod, paymentOwner, paymentMethods]);
 
   useEffect(() => {
     if (categoryOptions.length === 0) {
@@ -286,10 +309,14 @@ export default function EditTransactionPage() {
       setCategoryId(categoryOptions[0].id);
       return;
     }
+    const currentCategory = categories.find((cat) => cat.id === categoryId);
+    if (currentCategory && currentCategory.type === type) {
+      return;
+    }
     if (!categoryOptions.some((cat) => cat.id === categoryId)) {
       setCategoryId(categoryOptions[0].id);
     }
-  }, [categoryId, categoryOptions]);
+  }, [categories, categoryId, categoryOptions, type]);
 
   useEffect(() => {
     if (!selectedCategoryBudgetEnabled) {

@@ -148,16 +148,37 @@ export default function NewTransactionPage() {
       if (!snapshot.exists()) {
         return;
       }
-      const data = snapshot.data() as { partnerDisplayName?: string | null };
-      setPartnerName(data.partnerDisplayName ?? "");
+      const data = snapshot.data() as {
+        creatorDisplayName?: string | null;
+        partnerDisplayName?: string | null;
+      };
+      const creatorName = data.creatorDisplayName ?? "";
+      const partnerDisplayName = data.partnerDisplayName ?? "";
+      const currentName = (displayName ?? "").trim();
+      if (currentName && creatorName && currentName === creatorName) {
+        setPartnerName(partnerDisplayName);
+      } else if (
+        currentName &&
+        partnerDisplayName &&
+        currentName === partnerDisplayName
+      ) {
+        setPartnerName(creatorName);
+      } else {
+        setPartnerName(partnerDisplayName);
+      }
     });
-  }, [householdId]);
+  }, [displayName, householdId]);
 
   useEffect(() => {
-    if (!subject && subjects.length > 0) {
-      setSubject(subjects[0].name);
+    if (subject || subjects.length === 0) {
+      return;
     }
-  }, [subjects, subject]);
+    const baseName = (displayName ?? "").trim();
+    const matched = baseName
+      ? subjects.find((item) => item.name === baseName)
+      : null;
+    setSubject(matched?.name ?? subjects[0].name);
+  }, [displayName, subject, subjects]);
 
   useEffect(() => {
     if (hasSetInitialOwner.current) {

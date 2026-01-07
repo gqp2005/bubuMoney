@@ -399,7 +399,7 @@ const RangeSheet = memo(function RangeSheet({
         <div className="border-t border-[var(--border)] bg-white p-4">
           <button
             type="button"
-            className="w-full rounded-2xl bg-[var(--text)] px-4 py-3 text-sm text-black"
+            className="w-full rounded-2xl bg-[var(--text)] px-4 py-3 text-sm text-white"
             onClick={onConfirm}
           >
             완료
@@ -1816,7 +1816,9 @@ export default function StatsPage() {
 
             <div className="space-y-4">
               <div className="space-y-2">
-                <SectionHeader title="카테고리별 지출" />
+                <SectionHeader
+                  title={`카테고리별 ${viewType === "income" ? "입금" : "지출"}`}
+                />
                 {renderStackBar(categoryBreakdown, CATEGORY_COLORS)}
               </div>
               {categoryBreakdown.length === 0 ? (
@@ -1866,7 +1868,9 @@ export default function StatsPage() {
             </div>
 
             <div className="space-y-4">
-              <SectionHeader title="구성원별 지출" />
+              <SectionHeader
+                title={`구성원별 ${viewType === "income" ? "입금" : "지출"}`}
+              />
               {renderStackBar(subjectBreakdown, SUBJECT_COLORS)}
               <div className="space-y-2">
                 {subjectBreakdown.slice(0, 4).map((item, index) => (
@@ -1898,7 +1902,9 @@ export default function StatsPage() {
             </div>
 
             <div className="space-y-4">
-              <SectionHeader title="자산별 지출" />
+              <SectionHeader
+                title={`자산별 ${viewType === "income" ? "입금" : "지출"}`}
+              />
               {renderStackBar(paymentBreakdown, PAYMENT_COLORS)}
               <div className="space-y-2">
                 {paymentBreakdown.slice(0, 4).map((item, index) => (
