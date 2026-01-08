@@ -1,5 +1,19 @@
 # Patch Notes
 
+## v1.8
+
+- Settings: CSV import section is collapsible and loads on demand.
+- Settings: data reset modal shows per-option delete count previews.
+- Settings: settings changes now use toasts only (no notification spam).
+- Stats/Budget: personal-only categories include `budgetApplied` entries in common view; personal-only tabs show only your entries.
+
+### v1.8 (한국어)
+
+- 설정: CSV 가져오기 섹션을 접기/펼치기로 변경하고 열 때만 로딩.
+- 설정: 데이터 초기화 모달에 항목별 삭제 건수 미리보기 표시.
+- 설정: 설정 변경은 토스트만 사용(알림 누적 방지).
+- 통계/예산: personalOnly 카테고리의 `budgetApplied`는 공용에 포함, personalOnly 탭은 본인 내역만 표시.
+
 ## v1.7
 
 - Transactions: keep category/payment values when editing another user's entry; default subject to your nickname when available.
@@ -16,18 +30,6 @@
 - 예산: 공용/카테고리 탭별 월 예산 입력 적용, 월 이동 UI를 통계와 동일한 배치로 정렬.
 - 도구: `budgetEnabled`/`budgetApplied` 백필 스크립트 추가 및 admin 의존성 추가.
 
-## v1.5
-
-- Stats/Budget: add budget category tabs (common + budget categories with overflow sheet).
-- Stats/Budget: budget-enabled categories are excluded from the common tab and shown only in their category tabs.
-- Budget: budgetApplied=true is treated as income within budget category tabs; removed “budget load complete” notifications.
-
-### v1.5 (한국어)
-
-- 통계/예산: 예산 카테고리 탭(공용 + 예산 카테고리, 더보기 시트) 추가.
-- 통계/예산: 예산 카테고리는 공용 탭에서 제외하고 해당 카테고리 탭에서만 표시.
-- 예산: budgetApplied=true는 카테고리 탭에서 수입으로 집계, “예산 불러오기 완료” 알림 제거.
-
 ## v1.6
 
 - Categories: add “personal only” flag for expense categories and honor it across transactions, stats, and budget views.
@@ -41,6 +43,18 @@
 - 내역: personalOnly 카테고리라도 budgetApplied=true 항목은 양쪽 리스트/달력에서 표시.
 - 알림: 개인 카테고리 내역 알림 제외, 내역 추가/수정/삭제 메시지 포맷 통일.
 - 알림: 타임라인 구분선(오늘/어제/이전) 추가.
+
+## v1.5
+
+- Stats/Budget: add budget category tabs (common + budget categories with overflow sheet).
+- Stats/Budget: budget-enabled categories are excluded from the common tab and shown only in their category tabs.
+- Budget: budgetApplied=true is treated as income within budget category tabs; removed “budget load complete” notifications.
+
+### v1.5 (한국어)
+
+- 통계/예산: 예산 카테고리 탭(공용 + 예산 카테고리, 더보기 시트) 추가.
+- 통계/예산: 예산 카테고리는 공용 탭에서 제외하고 해당 카테고리 탭에서만 표시.
+- 예산: budgetApplied=true는 카테고리 탭에서 수입으로 집계, “예산 불러오기 완료” 알림 제거.
 
 ## v1.4
 

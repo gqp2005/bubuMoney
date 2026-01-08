@@ -186,7 +186,8 @@ export default function BudgetPage() {
     return transactions.filter(
       (tx) =>
         !personalCategoryIdSet.has(tx.categoryId) ||
-        tx.createdBy === currentUserId
+        tx.createdBy === currentUserId ||
+        Boolean(tx.budgetApplied)
     );
   }, [personalCategoryIdSet, transactions, user]);
   const visibleTransactions = useMemo(() => {
@@ -199,6 +200,13 @@ export default function BudgetPage() {
           return true;
         }
         return Boolean(tx.budgetApplied);
+      }
+      const scopedCategory = categoryById.get(effectiveBudgetScope);
+      if (scopedCategory?.personalOnly) {
+        const currentUserId = user?.uid ?? null;
+        if (!currentUserId || tx.createdBy !== currentUserId) {
+          return false;
+        }
       }
       if (tx.type !== "expense") {
         return false;
@@ -217,6 +225,7 @@ export default function BudgetPage() {
     effectiveBudgetScope,
     budgetCategoryIdSet,
     categoryById,
+    user,
   ]);
 
   const monthPoints = useMemo(

@@ -994,7 +994,8 @@ export default function StatsPage() {
     return activeTransactions.filter(
       (tx) =>
         !personalCategoryIdSet.has(tx.categoryId) ||
-        tx.createdBy === currentUserId
+        tx.createdBy === currentUserId ||
+        Boolean(tx.budgetApplied)
     );
   }, [activeTransactions, personalCategoryIdSet, user]);
   const activeLoading =
@@ -1114,6 +1115,13 @@ export default function StatsPage() {
         }
         return Boolean(tx.budgetApplied);
       }
+      const scopedCategory = categoryById.get(effectiveBudgetScope);
+      if (scopedCategory?.personalOnly) {
+        const currentUserId = user?.uid ?? null;
+        if (!currentUserId || tx.createdBy !== currentUserId) {
+          return false;
+        }
+      }
       if (tx.type !== "expense") {
         return false;
       }
@@ -1131,6 +1139,7 @@ export default function StatsPage() {
     effectiveBudgetScope,
     budgetCategoryIdSet,
     categoryById,
+    user,
   ]);
 
   const statsData = useMemo(() => {
