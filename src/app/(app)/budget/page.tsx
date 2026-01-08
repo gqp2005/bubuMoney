@@ -141,9 +141,12 @@ export default function BudgetPage() {
   const [isBudgetSheetOpen, setIsBudgetSheetOpen] = useState(false);
   const lastNotifiedLoadKey = useRef<string | null>(null);
 
-  const endMonth = startOfMonth(new Date());
-  const rangeStart = startOfMonth(addMonths(endMonth, -(range - 1)));
-  const rangeEnd = endOfMonth(endMonth);
+  const endMonth = useMemo(() => startOfMonth(new Date()), []);
+  const rangeStart = useMemo(
+    () => startOfMonth(addMonths(endMonth, -(range - 1))),
+    [endMonth, range]
+  );
+  const rangeEnd = useMemo(() => endOfMonth(endMonth), [endMonth]);
   const { transactions, loading } = useTransactionsRange(
     householdId,
     rangeStart,
@@ -248,9 +251,8 @@ export default function BudgetPage() {
     ]
   );
 
-  const [selectedMonthKey, setSelectedMonthKey] = useState(
-    format(endMonth, "yyyy-MM")
-  );
+  const initialMonthKey = useMemo(() => format(endMonth, "yyyy-MM"), [endMonth]);
+  const [selectedMonthKey, setSelectedMonthKey] = useState(initialMonthKey);
   const effectiveSelectedMonthKey = useMemo(() => {
     if (monthPoints.length === 0) {
       return selectedMonthKey;

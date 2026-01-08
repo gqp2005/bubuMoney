@@ -328,10 +328,6 @@ function CsvImportSection({
 
   return (
     <>
-      <p className="mt-2 text-xs text-[color:rgba(45,38,34,0.7)]">
-        날짜, 입금/지출, 입력자, 주체, 카테고리, 지불 방식, 메모, 금액
-        순서로 된 CSV 파일을 업로드하세요.
-      </p>
       <input
         className="mt-4 w-full text-sm"
         type="file"
@@ -918,10 +914,11 @@ export default function SettingsPage() {
             </p>
           </div>
           <button
-            className="rounded-full border border-[var(--border)] px-4 py-2 text-xs"
+            className="flex h-9 w-9 items-center justify-center rounded-full border border-[var(--border)] text-base"
             onClick={() => setCsvOpen((prev) => !prev)}
+            aria-label={csvOpen ? "CSV 가져오기 접기" : "CSV 가져오기 펼치기"}
           >
-            {csvOpen ? "접기" : "펼치기"}
+            {csvOpen ? "⌃" : "⌄"}
           </button>
         </div>
         {csvOpen ? (

@@ -940,6 +940,16 @@ export default function StatsPage() {
   const [customMonthDate, setCustomMonthDate] = useState(() =>
     startOfMonth(new Date())
   );
+  const monthStart = useMemo(() => startOfMonth(monthDate), [monthDate]);
+  const monthEnd = useMemo(() => endOfMonth(monthDate), [monthDate]);
+  const customMonthStart = useMemo(
+    () => startOfMonth(customMonthDate),
+    [customMonthDate]
+  );
+  const customMonthEnd = useMemo(
+    () => endOfMonth(customMonthDate),
+    [customMonthDate]
+  );
   const [appliedRangeMode, setAppliedRangeMode] = useState<
     "monthly" | "custom"
   >(() =>
@@ -1461,10 +1471,8 @@ export default function StatsPage() {
   }, [draftCategoryIds, draftPayments, draftSubjects]);
 
   const customCalendarDays = useMemo(() => {
-    const monthStart = startOfMonth(customMonthDate);
-    const monthEnd = endOfMonth(customMonthDate);
-    const calendarStart = startOfWeek(monthStart, { weekStartsOn: 0 });
-    const calendarEnd = endOfWeek(monthEnd, { weekStartsOn: 0 });
+    const calendarStart = startOfWeek(customMonthStart, { weekStartsOn: 0 });
+    const calendarEnd = endOfWeek(customMonthEnd, { weekStartsOn: 0 });
     const days: Date[] = [];
     let day = calendarStart;
     while (day <= calendarEnd) {
@@ -1472,7 +1480,7 @@ export default function StatsPage() {
       day = addDays(day, 1);
     }
     return days;
-  }, [customMonthDate]);
+  }, [customMonthEnd, customMonthStart]);
 
   const customStartDate = useMemo(
     () => (customStart ? parseLocalDate(customStart) : null),

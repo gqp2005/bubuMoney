@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   addDays,
   addMonths,
@@ -67,12 +67,96 @@ const BUDGET_HIGHLIGHT_CLASSES = [
   "border-neutral-100 bg-neutral-50/70",
 ];
 
+type TransactionListItemProps = {
+  id: string;
+  title: string;
+  subtitle: string;
+  amountText: string;
+  amountClass: string;
+  highlightClass: string;
+  onOpen: (id: string) => void;
+};
+
+const TransactionListItem = memo(function TransactionListItem({
+  id,
+  title,
+  subtitle,
+  amountText,
+  amountClass,
+  highlightClass,
+  onOpen,
+}: TransactionListItemProps) {
+  return (
+    <div
+      className={`grid grid-cols-[minmax(0,1fr)_auto] items-start gap-4 rounded-2xl border px-4 py-3 ${highlightClass}`}
+      role="button"
+      tabIndex={0}
+      onClick={() => onOpen(id)}
+      onKeyDown={(event) => {
+        if (event.key === "Enter") {
+          onOpen(id);
+        }
+      }}
+    >
+      <div className="min-w-0">
+        <p className="truncate text-sm font-semibold">{title}</p>
+        <p className="text-xs text-[color:rgba(45,38,34,0.65)]">{subtitle}</p>
+      </div>
+      <div className="flex items-center gap-4 self-center">
+        <span className={amountClass}>{amountText}</span>
+      </div>
+    </div>
+  );
+});
+
+type SearchResultItemProps = {
+  id: string;
+  href: string;
+  title: string;
+  subtitle: string;
+  amountText: string;
+  amountClass: string;
+  onOpen: (href: string) => void;
+};
+
+const SearchResultItem = memo(function SearchResultItem({
+  id,
+  href,
+  title,
+  subtitle,
+  amountText,
+  amountClass,
+  onOpen,
+}: SearchResultItemProps) {
+  return (
+    <button
+      key={id}
+      type="button"
+      className="flex w-full items-center justify-between gap-4 rounded-2xl border border-[var(--border)] px-4 py-3 text-left text-sm"
+      onClick={() => onOpen(href)}
+    >
+      <div className="min-w-0">
+        <p className="truncate font-medium">{title}</p>
+        <p className="mt-1 text-xs text-[color:rgba(45,38,34,0.6)]">
+          {subtitle}
+        </p>
+      </div>
+      <span className={amountClass}>{amountText}</span>
+    </button>
+  );
+});
+
 export default function TransactionsPage() {
   const searchParams = useSearchParams();
   const { user } = useAuth();
   const { householdId } = useHousehold();
   const { categories } = useCategories(householdId);
   const [selectedDate, setSelectedDate] = useState(() => new Date());
+  const monthStart = useMemo(
+    () => startOfMonth(selectedDate),
+    [selectedDate]
+  );
+  const monthEnd = useMemo(() => endOfMonth(selectedDate), [selectedDate]);
   const monthKey = useMemo(() => toMonthKey(selectedDate), [selectedDate]);
   const { transactions, loading } = useMonthlyTransactions(householdId, monthKey);
   const [showPicker, setShowPicker] = useState(false);
@@ -106,6 +190,8 @@ export default function TransactionsPage() {
     return "input";
   });
   const router = useRouter();
+  const [visibleCount, setVisibleCount] = useState(30);
+  const [searchVisibleCount, setSearchVisibleCount] = useState(50);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -113,6 +199,16 @@ export default function TransactionsPage() {
     }
     window.localStorage.setItem("transactions:listSortMode", listSortMode);
   }, [listSortMode]);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- reset pagination on filters
+    setVisibleCount(30);
+  }, [selectedDate, listSortMode]);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- reset search pagination on filters
+    setSearchVisibleCount(50);
+  }, [showSearch, searchQuery, searchType, searchStart, searchEnd]);
 
   const categoryMap = useMemo(
     () => new Map(categories.map((category) => [category.id, category.name])),
@@ -201,8 +297,6 @@ export default function TransactionsPage() {
   }, [currentUserId, personalCategoryIdSet, transactions]);
 
   const { days, calendarDisplayMap, dailyItemsMap } = useMemo(() => {
-    const monthStart = startOfMonth(selectedDate);
-    const monthEnd = endOfMonth(selectedDate);
     const calendarStart = startOfWeek(monthStart, { weekStartsOn: 0 });
     const calendarEnd = endOfWeek(monthEnd, { weekStartsOn: 0 });
     const daysList: Date[] = [];
@@ -249,7 +343,7 @@ export default function TransactionsPage() {
       calendarDisplayMap: displayMap,
       dailyItemsMap: itemsMap,
     };
-  }, [selectedDate, visibleTransactions, budgetCategoryIdSet]);
+  }, [monthEnd, monthStart, visibleTransactions, budgetCategoryIdSet]);
 
   const zeroAmountText = useMemo(() => formatKrw(0), []);
   const selectedKey = toDateKey(selectedDate);
@@ -336,11 +430,11 @@ export default function TransactionsPage() {
       return;
     }
     if (delta > 0) {
-      setSelectedDate(addDays(endOfMonth(selectedDate), 1));
+      setSelectedDate(addDays(monthEnd, 1));
     } else {
-      setSelectedDate(addDays(startOfMonth(selectedDate), -1));
+      setSelectedDate(addDays(monthStart, -1));
     }
-  }, [selectedDate, touchEndX, touchStartX]);
+  }, [monthEnd, monthStart, touchEndX, touchStartX]);
 
   const yearOptions = useMemo(() => {
     const currentYear = new Date().getFullYear();
@@ -359,10 +453,10 @@ export default function TransactionsPage() {
   }, [monthValue, yearValue]);
 
   const openSearchSheet = useCallback(() => {
-    setSearchStart(startOfDay(startOfMonth(selectedDate)));
-    setSearchEnd(endOfDay(endOfMonth(selectedDate)));
+    setSearchStart(startOfDay(monthStart));
+    setSearchEnd(endOfDay(monthEnd));
     setShowSearch(true);
-  }, [selectedDate]);
+  }, [monthEnd, monthStart]);
 
   function toInputDate(value: Date | null) {
     return value ? format(value, "yyyy-MM-dd") : "";
@@ -464,10 +558,9 @@ export default function TransactionsPage() {
     () => filteredSearchItems.reduce((sum, tx) => sum + tx.amount, 0),
     [filteredSearchItems]
   );
-  const visibleSearchItems = filteredSearchItems;
   const searchRenderItems = useMemo(
     () =>
-      visibleSearchItems.map((tx) => {
+      filteredSearchItems.map((tx) => {
         const noteText = stripRecorderPrefix(tx.note);
         const categoryName = categoryMap.get(tx.categoryId) ?? "미분류";
         const subtitle = `${format(tx.date.toDate(), "yyyy.MM.dd")} · ${categoryName} · ${
@@ -490,7 +583,12 @@ export default function TransactionsPage() {
           amountText: `${sign}${formatKrw(tx.amount)}`,
         };
       }),
-    [visibleSearchItems, categoryMap]
+    [filteredSearchItems, categoryMap]
+  );
+
+  const visibleSearchItems = useMemo(
+    () => searchRenderItems.slice(0, searchVisibleCount),
+    [searchRenderItems, searchVisibleCount]
   );
 
   const handleSortToggle = useCallback(() => {
@@ -498,6 +596,47 @@ export default function TransactionsPage() {
       prev === "input" ? "alpha" : prev === "alpha" ? "category" : "input"
     );
   }, []);
+
+  const openTransaction = useCallback(
+    (id: string) => {
+      router.push(`/transactions/${id}`);
+    },
+    [router]
+  );
+  const openSearchResult = useCallback(
+    (href: string) => {
+      router.push(href);
+    },
+    [router]
+  );
+  const transactionCards = useMemo(() => {
+    return sortedSelectedItems.map((tx) => {
+      const amountClass =
+        tx.type === "expense"
+          ? "text-red-600"
+          : tx.type === "income"
+          ? "text-emerald-600"
+          : "text-[color:rgba(45,38,34,0.7)]";
+      const amountText = `${tx.type === "expense" ? "-" : tx.type === "income" ? "+" : ""}${formatKrw(tx.amount)}`;
+      const highlightClass =
+        tx.type === "expense" &&
+        budgetCategoryIdSet.has(tx.categoryId) &&
+        !tx.budgetApplied
+          ? budgetHighlightByCategory.get(tx.categoryId) ??
+            "border-violet-300 bg-violet-100"
+          : "border-[var(--border)]";
+      return {
+        id: tx.id,
+        title: stripRecorderPrefix(tx.note),
+        subtitle: `${categoryMap.get(tx.categoryId) ?? "미분류"} · ${
+          tx.subject || "주체"
+        } · ${formatPaymentMethod(tx.paymentMethod)}`,
+        amountClass,
+        amountText,
+        highlightClass,
+      };
+    });
+  }, [sortedSelectedItems, budgetCategoryIdSet, budgetHighlightByCategory, categoryMap]);
 
   return (
     <div className="flex flex-col gap-0">
@@ -544,7 +683,7 @@ export default function TransactionsPage() {
             <button
               className="rounded-full border border-[var(--border)] px-3 py-1 text-sm"
               onClick={() =>
-                setSelectedDate(addDays(startOfMonth(selectedDate), -1))
+                setSelectedDate(addDays(monthStart, -1))
               }
             >
               {"<"}
@@ -555,7 +694,7 @@ export default function TransactionsPage() {
             <button
               className="rounded-full border border-[var(--border)] px-3 py-1 text-sm"
               onClick={() =>
-                setSelectedDate(addDays(endOfMonth(selectedDate), 1))
+                setSelectedDate(addDays(monthEnd, 1))
               }
             >
               {">"}
@@ -780,24 +919,33 @@ export default function TransactionsPage() {
                     검색 결과가 없습니다.
                   </p>
                 ) : (
-                  searchRenderItems.map((item) => (
-                    <button
+                  visibleSearchItems.map((item) => (
+                    <SearchResultItem
                       key={item.id}
-                      type="button"
-                      className="flex w-full items-center justify-between gap-4 rounded-2xl border border-[var(--border)] px-4 py-3 text-left text-sm"
-                      onClick={() => router.push(item.href)}
-                    >
-                      <div className="min-w-0">
-                        <p className="truncate font-medium">{item.title}</p>
-                        <p className="mt-1 text-xs text-[color:rgba(45,38,34,0.6)]">
-                          {item.subtitle}
-                        </p>
-                      </div>
-                      <span className={item.amountClass}>{item.amountText}</span>
-                    </button>
+                      id={item.id}
+                      href={item.href}
+                      title={item.title}
+                      subtitle={item.subtitle}
+                      amountText={item.amountText}
+                      amountClass={item.amountClass}
+                      onOpen={openSearchResult}
+                    />
                   ))
                 )}
               </div>
+              {searchRenderItems.length > searchVisibleCount ? (
+                <button
+                  type="button"
+                  className="w-full rounded-full border border-[var(--border)] px-4 py-2 text-sm text-[color:rgba(45,38,34,0.7)]"
+                  onClick={() =>
+                    setSearchVisibleCount((prev) =>
+                      Math.min(prev + 50, searchRenderItems.length)
+                    )
+                  }
+                >
+                  더보기
+                </button>
+              ) : null}
             </div>
           </div>
         </div>
@@ -820,61 +968,36 @@ export default function TransactionsPage() {
                   {selectedItemsSortLabel}
                 </button>
               </div>
-            {sortedSelectedItems.map((tx) => (
-              <div
-                key={tx.id}
-                className={`grid grid-cols-[minmax(0,1fr)_auto] items-start gap-4 rounded-2xl border px-4 py-3 ${
-                  tx.type === "expense" &&
-                  budgetCategoryIdSet.has(tx.categoryId) &&
-                  !tx.budgetApplied
-                    ? budgetHighlightByCategory.get(tx.categoryId) ??
-                      "border-violet-300 bg-violet-100"
-                    : "border-[var(--border)]"
-                }`}
-                role="button"
-                tabIndex={0}
-                onClick={() => router.push(`/transactions/${tx.id}`)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter") {
-                    router.push(`/transactions/${tx.id}`);
-                  }
-                }}
-              >
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-semibold">
-                    {stripRecorderPrefix(tx.note)}
-                  </p>
-                  <p className="text-xs text-[color:rgba(45,38,34,0.65)]">
-                    {categoryMap.get(tx.categoryId) ?? "미분류"} ·{" "}
-                    {tx.subject || "주체"} ·{" "}
-                    {formatPaymentMethod(tx.paymentMethod)}
-                  </p>
-                </div>
-                <div className="flex items-center gap-4 self-center">
-                  <span
-                    className={
-                      tx.type === "expense"
-                        ? "text-red-600"
-                        : tx.type === "income"
-                        ? "text-emerald-600"
-                        : "text-[color:rgba(45,38,34,0.7)]"
-                    }
-                  >
-                    {tx.type === "expense"
-                      ? "-"
-                      : tx.type === "income"
-                      ? "+"
-                      : ""}
-                    {formatKrw(tx.amount)}
-                  </span>
-                </div>
-              </div>
+            {transactionCards.slice(0, visibleCount).map((item) => (
+              <TransactionListItem
+                key={item.id}
+                id={item.id}
+                title={item.title}
+                subtitle={item.subtitle}
+                amountText={item.amountText}
+                amountClass={item.amountClass}
+                highlightClass={item.highlightClass}
+                onOpen={openTransaction}
+              />
             ))}
+            {transactionCards.length > visibleCount ? (
+              <button
+                type="button"
+                className="w-full rounded-full border border-[var(--border)] px-4 py-2 text-sm text-[color:rgba(45,38,34,0.7)]"
+                onClick={() =>
+                  setVisibleCount((prev) =>
+                    Math.min(prev + 30, transactionCards.length)
+                  )
+                }
+              >
+                더보기
+              </button>
+            ) : null}
           </div>
         )}
         <div className="mt-4 flex justify-center">
           <Link
-            className="rounded-full bg-[var(--accent)] px-8 py-3 text-sm text-white"
+            className="rounded-full border border-[var(--border)] bg-[var(--card)] px-8 py-3 text-sm text-[var(--text)]"
             href={`/transactions/new?date=${selectedDateParam}`}
           >
             새 내역 등록

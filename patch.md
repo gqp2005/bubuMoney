@@ -6,6 +6,11 @@
 - Settings: data reset modal shows per-option delete count previews.
 - Settings: settings changes now use toasts only (no notification spam).
 - Stats/Budget: personal-only categories include `budgetApplied` entries in common view; personal-only tabs show only your entries.
+- Transactions: list/search rendering optimized with memoized cards + pagination ("더보기").
+- Notifications: pagination fixed and timeline list renders correctly with "더보기".
+- Hooks: cache subscriptions for categories/subjects/payment methods to reduce duplicate listeners.
+- Stats: range sheet quick buttons fixed and month-end uses per-range context.
+- Dark mode: header/menu contrast and global text/background overrides for readability.
 
 ### v1.8 (한국어)
 
@@ -13,6 +18,11 @@
 - 설정: 데이터 초기화 모달에 항목별 삭제 건수 미리보기 표시.
 - 설정: 설정 변경은 토스트만 사용(알림 누적 방지).
 - 통계/예산: personalOnly 카테고리의 `budgetApplied`는 공용에 포함, personalOnly 탭은 본인 내역만 표시.
+- 내역: 리스트/검색 렌더링 최적화(메모 카드) + 더보기 페이징 적용.
+- 알림: 타임라인 목록/더보기 페이징 정상화.
+- 훅: 카테고리/주체/결제수단 구독 캐시로 중복 리스너 감소.
+- 통계: 조회 기간 시트의 빠른 범위 버튼 오류 수정.
+- 다크모드: 헤더/메뉴 대비 및 전역 텍스트/배경 가독성 보정.
 
 ## v1.7
 

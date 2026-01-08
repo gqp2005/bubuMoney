@@ -9,6 +9,36 @@
   --accent: #3b2f2f;
 }
 
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #14110f;
+    --foreground: #f7efe6;
+    --text: var(--foreground);
+    --card: #1f1a17;
+    --border: #4c3f38;
+    --accent: #7a491e;
+  }
+
+  body {
+    background: var(--background);
+    color: var(--foreground);
+  }
+
+  .bg-white {
+    background-color: var(--card) !important;
+  }
+
+
+
+  .text-red-600 {
+    color: #ff7a7a !important;
+  }
+
+  .text-emerald-600 {
+    color: #6ee7b7 !important;
+  }
+}
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);

@@ -29,14 +29,14 @@ export default function AppNav({ items }: { items: NavItem[] }) {
     unreadCount > 0 && !pathname.startsWith("/notifications");
 
   return (
-    <nav className="flex flex-1 flex-wrap items-center gap-2 text-xs sm:text-sm md:flex-none md:gap-4">
+    <nav className="flex flex-1 flex-wrap items-center gap-2 text-xs text-[var(--text)] sm:text-sm md:flex-none md:gap-4">
       {items.map((item) => {
         const showCount = item.href === "/notifications" && showBadge;
         return (
           <Link
             key={item.href}
             href={item.href}
-            className="whitespace-nowrap rounded-full px-3 py-1 hover:bg-[var(--border)]"
+            className="whitespace-nowrap rounded-full px-3 py-1 text-[var(--text)] hover:bg-[var(--border)]"
           >
             <span className="inline-flex items-center gap-1">
               {item.label}
