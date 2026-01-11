@@ -90,6 +90,7 @@ function loadStoredStatsFilters(): StoredStatsFilters | null {
 }
 
 type ViewType = "income" | "expense";
+type BreakdownDetailType = "category" | "subject" | "payment";
 
 type BreakdownItem = {
   id: string;
@@ -904,6 +905,84 @@ const ResetConfirm = memo(function ResetConfirm({
   );
 });
 
+type BreakdownSheetItem = {
+  id: string;
+  title: string;
+  subtitle: string;
+  amount: number;
+};
+
+type BreakdownSheetProps = {
+  open: boolean;
+  onClose: () => void;
+  title: string;
+  periodLabel: string;
+  totalAmount: number;
+  items: BreakdownSheetItem[];
+};
+
+const BreakdownSheet = memo(function BreakdownSheet({
+  open,
+  onClose,
+  title,
+  periodLabel,
+  totalAmount,
+  items,
+}: BreakdownSheetProps) {
+  if (!open) {
+    return null;
+  }
+
+  return (
+    <div className="fixed inset-0 z-50">
+      <button
+        type="button"
+        className="absolute inset-0 bg-black/40"
+        onClick={onClose}
+        aria-label="닫기"
+      />
+      <div className="absolute bottom-0 left-0 right-0 flex max-h-[80vh] flex-col rounded-t-3xl bg-white">
+        <div className="flex-1 overflow-y-auto px-6 pb-6 pt-4">
+          <div className="mx-auto mb-4 h-1.5 w-12 rounded-full bg-[color:rgba(45,38,34,0.15)]" />
+          <div className="text-center">
+            <div className="text-base font-semibold">{title}</div>
+          </div>
+          <div className="mt-6 flex items-center justify-between text-sm text-[color:rgba(45,38,34,0.6)]">
+            <span>{periodLabel}</span>
+            <span className="text-base font-semibold text-[color:rgba(45,38,34,0.8)]">
+              {formatKrw(totalAmount)}
+            </span>
+          </div>
+          <div className="mt-6 space-y-4">
+            {items.length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-[var(--border)] px-4 py-6 text-center text-sm text-[color:rgba(45,38,34,0.6)]">
+                표시할 내역이 없습니다.
+              </div>
+            ) : (
+              items.map((item) => (
+                <div
+                  key={item.id}
+                  className="flex items-center justify-between border-b border-[color:rgba(45,38,34,0.08)] pb-3"
+                >
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium">{item.title}</p>
+                    <p className="mt-1 truncate text-xs text-[color:rgba(45,38,34,0.45)]">
+                      {item.subtitle}
+                    </p>
+                  </div>
+                  <p className="ml-4 whitespace-nowrap text-sm font-semibold text-[color:rgba(45,38,34,0.8)]">
+                    {formatKrw(item.amount)}
+                  </p>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+});
+
 export default function StatsPage() {
   const router = useRouter();
   const { user } = useAuth();
@@ -931,6 +1010,13 @@ export default function StatsPage() {
       : "expense"
   );
   const [expanded, setExpanded] = useState(false);
+  const [expandedSubjects, setExpandedSubjects] = useState(false);
+  const [expandedPayments, setExpandedPayments] = useState(false);
+  const [detailSheet, setDetailSheet] = useState<{
+    type: BreakdownDetailType;
+    id: string;
+    name: string;
+  } | null>(null);
   const [isRangeSheetOpen, setIsRangeSheetOpen] = useState(false);
   const [rangeMode, setRangeMode] = useState<"monthly" | "custom">("monthly");
   const [selectedYear, setSelectedYear] = useState(() => new Date().getFullYear());
@@ -1055,6 +1141,13 @@ export default function StatsPage() {
   const closeRangeSheet = useCallback(() => setIsRangeSheetOpen(false), []);
   const closeBudgetSheet = useCallback(() => setIsBudgetSheetOpen(false), []);
   const closeFilterSheet = useCallback(() => setIsFilterSheetOpen(false), []);
+  const closeDetailSheet = useCallback(() => setDetailSheet(null), []);
+  const openDetailSheet = useCallback(
+    (type: BreakdownDetailType, id: string, name: string) => {
+      setDetailSheet({ type, id, name });
+    },
+    []
+  );
   const handleBudgetSelect = useCallback((categoryId: string) => {
     setBudgetScope(categoryId);
     setIsBudgetSheetOpen(false);
@@ -1152,14 +1245,8 @@ export default function StatsPage() {
     user,
   ]);
 
-  const statsData = useMemo(() => {
-    const categoryTotals = new Map<string, number>();
-    const subjectTotals = new Map<string, number>();
-    const paymentTotals = new Map<string, number>();
-    let totalAmount = 0;
-    let income = 0;
-    let expense = 0;
-
+  const filteredForBreakdown = useMemo(() => {
+    const items = [];
     for (const tx of visibleTransactions) {
       const effectiveType =
         effectiveBudgetScope !== "common" && tx.budgetApplied ? "income" : tx.type;
@@ -1177,11 +1264,31 @@ export default function StatsPage() {
       if (appliedPayments.size > 0 && !appliedPayments.has(paymentKey)) {
         continue;
       }
+      items.push(tx);
+    }
+    return items;
+  }, [
+    appliedCategoryIds,
+    appliedPayments,
+    appliedSubjects,
+    effectiveBudgetScope,
+    viewType,
+    visibleTransactions,
+  ]);
 
+  const statsData = useMemo(() => {
+    const categoryTotals = new Map<string, number>();
+    const subjectTotals = new Map<string, number>();
+    const paymentTotals = new Map<string, number>();
+    let totalAmount = 0;
+    let income = 0;
+    let expense = 0;
+
+    for (const tx of filteredForBreakdown) {
       totalAmount += tx.amount;
-      if (effectiveType === "income") {
+      if (viewType === "income") {
         income += tx.amount;
-      } else if (effectiveType === "expense") {
+      } else if (viewType === "expense") {
         expense += tx.amount;
       }
       categoryTotals.set(
@@ -1233,12 +1340,8 @@ export default function StatsPage() {
       paymentBreakdown,
     };
   }, [
-    visibleTransactions,
-    effectiveBudgetScope,
+    filteredForBreakdown,
     viewType,
-    appliedCategoryIds,
-    appliedSubjects,
-    appliedPayments,
     categoryMap,
   ]);
 
@@ -1253,6 +1356,12 @@ export default function StatsPage() {
   const shownCategoryItems = expanded
     ? categoryBreakdown
     : categoryBreakdown.slice(0, 4);
+  const shownSubjectItems = expandedSubjects
+    ? subjectBreakdown
+    : subjectBreakdown.slice(0, 4);
+  const shownPaymentItems = expandedPayments
+    ? paymentBreakdown
+    : paymentBreakdown.slice(0, 4);
   const appliedCategoryNameList = useMemo(() => {
     return Array.from(appliedCategoryIds)
       .map((id) => categoryMap.get(id) ?? "미분류")
@@ -1278,6 +1387,66 @@ export default function StatsPage() {
     () => formatSelectionSummary(appliedPaymentNameList),
     [appliedPaymentNameList]
   );
+  const detailSheetTransactions = useMemo(() => {
+    if (!detailSheet) {
+      return [];
+    }
+    const matches = filteredForBreakdown.filter((tx) => {
+      if (detailSheet.type === "category") {
+        return tx.categoryId === detailSheet.id;
+      }
+      if (detailSheet.type === "subject") {
+        return (tx.subject || "미지정") === detailSheet.id;
+      }
+      return (tx.paymentMethod || "미지정") === detailSheet.id;
+    });
+    const toMillis = (value: unknown) => {
+      if (!value) {
+        return 0;
+      }
+      if (value instanceof Date) {
+        return value.getTime();
+      }
+      if (typeof (value as { toMillis?: () => number }).toMillis === "function") {
+        return (value as { toMillis: () => number }).toMillis();
+      }
+      if (typeof (value as { toDate?: () => Date }).toDate === "function") {
+        return (value as { toDate: () => Date }).toDate().getTime();
+      }
+      return 0;
+    };
+    return [...matches].sort((a, b) => {
+      const aTime = toMillis(a.date) || toMillis(a.createdAt);
+      const bTime = toMillis(b.date) || toMillis(b.createdAt);
+      return bTime - aTime;
+    });
+  }, [detailSheet, filteredForBreakdown]);
+  const detailSheetItems = useMemo(() => {
+    return detailSheetTransactions.map((tx, index) => {
+      const dateValue =
+        typeof tx.date?.toDate === "function"
+          ? tx.date.toDate()
+          : tx.date instanceof Date
+          ? tx.date
+          : null;
+      const dateLabel = dateValue ? format(dateValue, "yy.MM.dd") : "";
+      const categoryLabel = categoryMap.get(tx.categoryId) ?? "미분류";
+      const subjectLabel = tx.subject || "미지정";
+      const paymentLabel = tx.paymentMethod || "미지정";
+      const subtitleParts = [dateLabel, categoryLabel, subjectLabel, paymentLabel]
+        .filter(Boolean)
+        .join(" · ");
+      return {
+        id: tx.id ? `${tx.id}-${index}` : `${index}`,
+        title: tx.note?.trim() || categoryLabel,
+        subtitle: subtitleParts,
+        amount: tx.amount,
+      };
+    });
+  }, [categoryMap, detailSheetTransactions]);
+  const detailSheetTotal = useMemo(() => {
+    return detailSheetTransactions.reduce((acc, tx) => acc + tx.amount, 0);
+  }, [detailSheetTransactions]);
 
   const yearOptions = useMemo(() => {
     const currentYear = new Date().getFullYear();
@@ -1847,7 +2016,18 @@ export default function StatsPage() {
                   {shownCategoryItems.map((item, index) => (
                     <div
                       key={item.id}
-                      className="flex items-center justify-between"
+                      role="button"
+                      tabIndex={0}
+                      className="flex items-center justify-between cursor-pointer"
+                      onClick={() =>
+                        openDetailSheet("category", item.id, item.name)
+                      }
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.preventDefault();
+                          openDetailSheet("category", item.id, item.name);
+                        }
+                      }}
                     >
                       <div className="flex items-center gap-3">
                         <span
@@ -1890,10 +2070,19 @@ export default function StatsPage() {
               />
               {renderStackBar(subjectBreakdown, SUBJECT_COLORS)}
               <div className="space-y-2">
-                {subjectBreakdown.slice(0, 4).map((item, index) => (
+                {shownSubjectItems.map((item, index) => (
                   <div
                     key={item.id}
-                    className="flex items-center justify-between"
+                    role="button"
+                    tabIndex={0}
+                    className="flex items-center justify-between cursor-pointer"
+                    onClick={() => openDetailSheet("subject", item.id, item.name)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        openDetailSheet("subject", item.id, item.name);
+                      }
+                    }}
                   >
                     <div className="flex items-center gap-3">
                       <span
@@ -1916,6 +2105,15 @@ export default function StatsPage() {
                   </div>
                 ))}
               </div>
+              {subjectBreakdown.length > 4 ? (
+                <button
+                  type="button"
+                  className="mt-2 w-full text-sm text-[color:rgba(45,38,34,0.6)]"
+                  onClick={() => setExpandedSubjects((prev) => !prev)}
+                >
+                  {expandedSubjects ? "접기" : "더보기"} ▼
+                </button>
+              ) : null}
             </div>
 
             <div className="space-y-4">
@@ -1924,10 +2122,21 @@ export default function StatsPage() {
               />
               {renderStackBar(paymentBreakdown, PAYMENT_COLORS)}
               <div className="space-y-2">
-                {paymentBreakdown.slice(0, 4).map((item, index) => (
+                {shownPaymentItems.map((item, index) => (
                   <div
                     key={item.id}
-                    className="flex items-center justify-between"
+                    role="button"
+                    tabIndex={0}
+                    className="flex items-center justify-between cursor-pointer"
+                    onClick={() =>
+                      openDetailSheet("payment", item.id, item.name)
+                    }
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        openDetailSheet("payment", item.id, item.name);
+                      }
+                    }}
                   >
                     <div className="flex items-center gap-3">
                       <span
@@ -1950,10 +2159,28 @@ export default function StatsPage() {
                   </div>
                 ))}
               </div>
+              {paymentBreakdown.length > 4 ? (
+                <button
+                  type="button"
+                  className="mt-2 w-full text-sm text-[color:rgba(45,38,34,0.6)]"
+                  onClick={() => setExpandedPayments((prev) => !prev)}
+                >
+                  {expandedPayments ? "접기" : "더보기"} ▼
+                </button>
+              ) : null}
             </div>
           </div>
         )}
       </section>
+
+      <BreakdownSheet
+        open={Boolean(detailSheet)}
+        onClose={closeDetailSheet}
+        title={detailSheet?.name ?? ""}
+        periodLabel={headerLabel}
+        totalAmount={detailSheetTotal}
+        items={detailSheetItems}
+      />
 
       <RangeSheet {...rangeSheetProps} />
 

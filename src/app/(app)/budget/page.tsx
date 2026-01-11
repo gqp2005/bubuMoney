@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   addMonths,
   endOfMonth,
@@ -34,9 +34,15 @@ type BudgetDoc = {
   createdAt?: { toDate: () => Date };
 };
 
+type BudgetConfigDoc = {
+  selectedCategoryIdsByScope?: Record<string, string[]>;
+  updatedAt?: { toDate: () => Date };
+};
+
 const BAR_POSITIVE_COLORS = ["#34d399", "#22c55e", "#10b981", "#14b8a6"];
 const BAR_NEGATIVE_COLORS = ["#fb7185", "#f87171", "#ef4444", "#f97316"];
 const LINE_COLORS = ["#2d2622", "#0f766e", "#2563eb", "#7c3aed"];
+const BUDGET_CATEGORY_STORAGE_KEY = "couple-ledger.budget.selected-categories";
 
 function normalizeNumberInput(value: string) {
   return value.replace(/[^\d]/g, "");
@@ -123,6 +129,17 @@ function buildLinePath(points: MonthPoint[], width = 100, height = 160) {
     .join(" ");
 }
 
+function formatBudgetCategoryLabel(
+  category: { id: string; name: string; parentId?: string | null },
+  categoryById: Map<string, { id: string; name: string }>
+) {
+  if (!category.parentId) {
+    return category.name;
+  }
+  const parentName = categoryById.get(category.parentId)?.name;
+  return parentName ? `${parentName} > ${category.name}` : category.name;
+}
+
 export default function BudgetPage() {
   const { user } = useAuth();
   const { householdId } = useHousehold();
@@ -132,13 +149,17 @@ export default function BudgetPage() {
   const [barPositiveColor, setBarPositiveColor] = useState(BAR_POSITIVE_COLORS[0]);
   const [barNegativeColor, setBarNegativeColor] = useState(BAR_NEGATIVE_COLORS[0]);
   const [lineColor, setLineColor] = useState(LINE_COLORS[0]);
-  const [monthlyBudgetCommon, setMonthlyBudgetCommon] = useState<string>("");
   const [categoryBudgets, setCategoryBudgets] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const [showAllTopCategories, setShowAllTopCategories] = useState(false);
   const [budgetScope, setBudgetScope] = useState<"common" | string>("common");
   const [isBudgetSheetOpen, setIsBudgetSheetOpen] = useState(false);
+  const [isCategorySelectOpen, setIsCategorySelectOpen] = useState(false);
+  const [budgetCategoryConfigLoaded, setBudgetCategoryConfigLoaded] =
+    useState(false);
+  const [selectedBudgetCategoryIdsByScope, setSelectedBudgetCategoryIdsByScope] =
+    useState<Record<string, string[]>>({});
   const lastNotifiedLoadKey = useRef<string | null>(null);
 
   const endMonth = useMemo(() => startOfMonth(new Date()), []);
@@ -166,21 +187,127 @@ export default function BudgetPage() {
         .map((category) => category.id)
     );
   }, [categories]);
+  const budgetEnabledCategories = useMemo(() => {
+    return categories
+      .filter((category) => category.type === "expense" && category.budgetEnabled)
+      .sort((a, b) => a.order - b.order || a.name.localeCompare(b.name));
+  }, [categories]);
+  const budgetTabCategories = budgetEnabledCategories;
+  const activeSelectedCategoryIds =
+    selectedBudgetCategoryIdsByScope[budgetScope] ?? [];
+  const selectedBudgetCategoryIdSet = useMemo(
+    () => new Set(activeSelectedCategoryIds),
+    [activeSelectedCategoryIds]
+  );
   const categoryById = useMemo(
     () => new Map(categories.map((category) => [category.id, category])),
     [categories]
   );
   const budgetCategories = useMemo(() => {
-    return categories
-      .filter((category) => category.type === "expense" && category.budgetEnabled)
-      .sort((a, b) => a.order - b.order || a.name.localeCompare(b.name));
-  }, [categories]);
-  const maxBudgetTabs = budgetCategories.length > 3 ? 2 : 3;
-  const budgetTabs = budgetCategories.slice(0, maxBudgetTabs);
-  const hasMoreBudgetTabs = budgetCategories.length > maxBudgetTabs;
+    if (activeSelectedCategoryIds.length === 0) {
+      return budgetEnabledCategories;
+    }
+    return budgetEnabledCategories.filter((category) =>
+      selectedBudgetCategoryIdSet.has(category.id)
+    );
+  }, [
+    activeSelectedCategoryIds.length,
+    budgetEnabledCategories,
+    selectedBudgetCategoryIdSet,
+  ]);
+  useEffect(() => {
+    if (!householdId || typeof window === "undefined") {
+      return;
+    }
+    let active = true;
+    setBudgetCategoryConfigLoaded(false);
+    const storageKey = `${BUDGET_CATEGORY_STORAGE_KEY}.${householdId}`;
+    const enabledIds = budgetEnabledCategories.map((category) => category.id);
+    const enabledSet = new Set(enabledIds);
+    let stored: Record<string, string[]> = {};
+    try {
+      const raw = window.localStorage.getItem(storageKey);
+      stored = raw ? (JSON.parse(raw) as Record<string, string[]>) : {};
+    } catch {
+      stored = {};
+    }
+    const normalizeSelectionMap = (source: Record<string, string[]>) => {
+      const next: Record<string, string[]> = {};
+      Object.entries(source).forEach(([scope, ids]) => {
+        if (!Array.isArray(ids)) {
+          return;
+        }
+        const filtered = ids.filter((id) => enabledSet.has(id));
+        if (filtered.length > 0) {
+          next[scope] = filtered;
+        }
+      });
+      return next;
+    };
+
+    const initialMap = normalizeSelectionMap(stored);
+    setSelectedBudgetCategoryIdsByScope(initialMap);
+
+    const loadConfig = async () => {
+      try {
+        const ref = doc(budgetsCol(householdId), "config");
+        const snap = await getDoc(ref);
+        if (!snap.exists()) {
+          return;
+        }
+        const data = snap.data() as BudgetConfigDoc;
+        if (!data.selectedCategoryIdsByScope) {
+          return;
+        }
+        const normalized = normalizeSelectionMap(data.selectedCategoryIdsByScope);
+        if (active) {
+          setSelectedBudgetCategoryIdsByScope(normalized);
+        }
+      } finally {
+        if (active) {
+          setBudgetCategoryConfigLoaded(true);
+        }
+      }
+    };
+
+    loadConfig();
+
+    return () => {
+      active = false;
+    };
+  }, [budgetEnabledCategories, householdId]);
+  useEffect(() => {
+    if (!householdId || !budgetCategoryConfigLoaded || typeof window === "undefined") {
+      return;
+    }
+    const storageKey = `${BUDGET_CATEGORY_STORAGE_KEY}.${householdId}`;
+    window.localStorage.setItem(
+      storageKey,
+      JSON.stringify(selectedBudgetCategoryIdsByScope)
+    );
+    setDoc(
+      doc(budgetsCol(householdId), "config"),
+      {
+        selectedCategoryIdsByScope: selectedBudgetCategoryIdsByScope,
+        updatedAt: serverTimestamp(),
+      },
+      { merge: true }
+    );
+  }, [
+    householdId,
+    budgetCategoryConfigLoaded,
+    selectedBudgetCategoryIdsByScope,
+  ]);
+  const maxBudgetTabs = budgetTabCategories.length > 3 ? 2 : 3;
+  const budgetTabs = budgetTabCategories.slice(0, maxBudgetTabs);
+  const hasMoreBudgetTabs = budgetTabCategories.length > maxBudgetTabs;
   const effectiveBudgetScope = budgetCategoryIdSet.has(budgetScope)
     ? budgetScope
     : "common";
+  const budgetScopeLabel =
+    effectiveBudgetScope === "common"
+      ? "공용"
+      : categoryById.get(effectiveBudgetScope)?.name ?? "카테고리";
   const scopedTransactions = useMemo(() => {
     const currentUserId = user?.uid ?? null;
     if (!currentUserId || personalCategoryIdSet.size === 0) {
@@ -285,12 +412,16 @@ export default function BudgetPage() {
     [categories]
   );
 
-  const topCategories = useMemo(
+  const budgetInputCategories = useMemo(
     () =>
-      categories
-        .filter((cat) => cat.type === "expense" && !cat.parentId)
-        .sort((a, b) => a.order - b.order),
-    [categories]
+      budgetCategories
+        .filter((cat) => cat.type === "expense")
+        .sort((a, b) => a.order - b.order || a.name.localeCompare(b.name)),
+    [budgetCategories]
+  );
+  const budgetInputCategoryIdSet = useMemo(
+    () => new Set(budgetInputCategories.map((category) => category.id)),
+    [budgetInputCategories]
   );
 
   const selectedMonthExpenses = useMemo(() => {
@@ -346,6 +477,20 @@ export default function BudgetPage() {
       }))
       .sort((a, b) => b.amount - a.amount);
   }, [categoryMap, selectedMonthExpenses]);
+  const categorySpendById = useMemo(() => {
+    const totals: Record<string, number> = {};
+    selectedMonthExpenses.forEach((tx) => {
+      const category = categoryMap.get(tx.categoryId);
+      if (!category) {
+        return;
+      }
+      totals[category.id] = (totals[category.id] ?? 0) + tx.amount;
+      if (category.parentId && budgetInputCategoryIdSet.has(category.parentId)) {
+        totals[category.parentId] = (totals[category.parentId] ?? 0) + tx.amount;
+      }
+    });
+    return totals;
+  }, [budgetInputCategoryIdSet, categoryMap, selectedMonthExpenses]);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- reset UI state on month switch
@@ -367,9 +512,6 @@ export default function BudgetPage() {
       }
       if (snapshot.exists()) {
         const data = snapshot.data() as BudgetDoc;
-        setMonthlyBudgetCommon(
-          data.total ? formatNumberInput(String(data.total)) : ""
-        );
         const byCategory = data.byCategory ?? {};
         const mapped: Record<string, string> = {};
         Object.entries(byCategory).forEach(([key, value]) => {
@@ -380,7 +522,6 @@ export default function BudgetPage() {
           lastNotifiedLoadKey.current = effectiveSelectedMonthKey;
         }
       } else {
-        setMonthlyBudgetCommon("");
         setCategoryBudgets({});
       }
     };
@@ -390,19 +531,61 @@ export default function BudgetPage() {
     };
   }, [householdId, effectiveSelectedMonthKey, user]);
 
-  const activeMonthlyBudget =
+  const totalCategoryBudget = useMemo(() => {
+    return budgetInputCategories.reduce((sum, category) => {
+      const value = Number(normalizeNumberInput(categoryBudgets[category.id] ?? ""));
+      return sum + (Number.isNaN(value) ? 0 : value);
+    }, 0);
+  }, [budgetInputCategories, categoryBudgets]);
+  const scopedBudgetValue =
     effectiveBudgetScope === "common"
-      ? monthlyBudgetCommon
-      : categoryBudgets[effectiveBudgetScope] ?? "";
-  const budgetValue = Number(normalizeNumberInput(activeMonthlyBudget));
+      ? totalCategoryBudget
+      : Number(normalizeNumberInput(categoryBudgets[effectiveBudgetScope] ?? ""));
   const budgetProgress =
-    budgetValue > 0 && selectedPoint
-      ? Math.min(100, Math.round((selectedPoint.expense / budgetValue) * 100))
+    scopedBudgetValue > 0 && selectedPoint
+      ? Math.min(
+          100,
+          Math.round((selectedPoint.expense / scopedBudgetValue) * 100)
+        )
       : 0;
 
   const handleCategoryBudgetChange = (categoryId: string, value: string) => {
     setCategoryBudgets((prev) => ({ ...prev, [categoryId]: formatNumberInput(value) }));
   };
+  const toggleBudgetCategorySelection = useCallback(
+    (categoryId: string) => {
+      setSelectedBudgetCategoryIdsByScope((prev) => {
+        const next = { ...prev };
+        const current = new Set(next[budgetScope] ?? []);
+        if (current.has(categoryId)) {
+          current.delete(categoryId);
+        } else {
+          current.add(categoryId);
+        }
+        if (current.size === 0) {
+          delete next[budgetScope];
+          return next;
+        }
+        next[budgetScope] = Array.from(current);
+        return next;
+      });
+    },
+    [budgetScope]
+  );
+  const handleSelectAllBudgetCategories = useCallback(() => {
+    const ids = budgetEnabledCategories.map((category) => category.id);
+    setSelectedBudgetCategoryIdsByScope((prev) => ({
+      ...prev,
+      [budgetScope]: ids,
+    }));
+  }, [budgetEnabledCategories, budgetScope]);
+  const handleResetBudgetCategories = useCallback(() => {
+    setSelectedBudgetCategoryIdsByScope((prev) => {
+      const next = { ...prev };
+      delete next[budgetScope];
+      return next;
+    });
+  }, [budgetScope]);
 
   const handleSaveBudget = async () => {
     if (!householdId || !effectiveSelectedMonthKey) {
@@ -417,12 +600,16 @@ export default function BudgetPage() {
         byCategory[key] = num;
       }
     });
-    const total = Number(normalizeNumberInput(monthlyBudgetCommon));
+    const total = budgetInputCategories.reduce((sum, category) => {
+      const raw = categoryBudgets[category.id] ?? "";
+      const num = Number(normalizeNumberInput(raw));
+      return sum + (Number.isNaN(num) ? 0 : num);
+    }, 0);
     await setDoc(
       doc(budgetsCol(householdId), effectiveSelectedMonthKey),
       {
         monthKey: effectiveSelectedMonthKey,
-        total: Number.isNaN(total) ? 0 : total,
+        total,
         byCategory,
         createdAt: serverTimestamp(),
       },
@@ -539,7 +726,7 @@ export default function BudgetPage() {
               }`}
               onClick={() => setBudgetScope(category.id)}
             >
-              {category.name}
+              {formatBudgetCategoryLabel(category, categoryById)}
             </button>
           ))}
           {hasMoreBudgetTabs ? (
@@ -570,40 +757,15 @@ export default function BudgetPage() {
 
         <div className="mt-4 grid gap-4 md:grid-cols-[1.2fr_1fr]">
           <div className="rounded-2xl border border-[var(--border)] bg-white p-4">
-            <p className="text-xs text-[color:rgba(45,38,34,0.6)]">월 예산 입력</p>
-            <input
-              type="text"
-              inputMode="numeric"
-              placeholder="월 지출 예산을 입력"
-              value={activeMonthlyBudget}
-              onChange={(event) => {
-                const nextValue = formatNumberInput(event.target.value);
-                if (effectiveBudgetScope === "common") {
-                  setMonthlyBudgetCommon(nextValue);
-                } else {
-                  setCategoryBudgets((prev) => ({
-                    ...prev,
-                    [effectiveBudgetScope]: nextValue,
-                  }));
-                }
-              }}
-              className="mt-2 w-full rounded-xl border border-[var(--border)] px-3 py-2 text-sm"
-            />
-            <div className="mt-3 flex items-center justify-between gap-2">
-              <button
-                type="button"
-                onClick={handleSaveBudget}
-                className="rounded-full bg-[var(--text)] px-4 py-2 text-xs text-white"
-                disabled={saving}
-              >
-                {saving ? "저장 중..." : "예산 저장"}
-              </button>
-              {saveMessage ? (
-                <span className="text-xs text-[color:rgba(45,38,34,0.6)]">
-                  {saveMessage}
-                </span>
-              ) : null}
-            </div>
+            <p className="text-xs text-[color:rgba(45,38,34,0.6)]">총 예산</p>
+            <p className="mt-2 text-2xl font-semibold">
+              {formatKrw(totalCategoryBudget)}
+            </p>
+            {saveMessage ? (
+              <div className="mt-2 text-xs text-[color:rgba(45,38,34,0.6)]">
+                {saveMessage}
+              </div>
+            ) : null}
             <div className="mt-4">
               <div className="flex items-center justify-between text-xs text-[color:rgba(45,38,34,0.6)]">
                 <span>예산 대비</span>
@@ -617,7 +779,8 @@ export default function BudgetPage() {
               </div>
               {selectedPoint ? (
                 <p className="mt-2 text-xs text-[color:rgba(45,38,34,0.6)]">
-                  {format(selectedPoint.month, "yyyy년 M월")} 지출 {formatKrw(selectedPoint.expense)}
+                  {format(selectedPoint.month, "yyyy년 M월")} 지출{" "}
+                  {formatKrw(selectedPoint.expense)}
                 </p>
               ) : null}
             </div>
@@ -691,22 +854,31 @@ export default function BudgetPage() {
         </div>
 
         <div className="mt-4 rounded-2xl border border-[var(--border)] bg-white p-4">
-          <p className="text-sm font-semibold">카테고리별 예산</p>
-          <p className="mt-1 text-xs text-[color:rgba(45,38,34,0.6)]">
-            선택 월 기준으로 상위 카테고리 예산을 입력하세요.
-          </p>
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <p className="text-sm font-semibold">카테고리별 예산</p>
+            <p className="mt-1 text-xs text-[color:rgba(45,38,34,0.6)]">
+                선택 월 기준으로 카테고리 예산을 입력하세요.
+            </p>
+            </div>
+            <button
+              type="button"
+              className="rounded-full border border-[var(--border)] px-3 py-1 text-xs text-[color:rgba(45,38,34,0.7)]"
+              onClick={() => setIsCategorySelectOpen(true)}
+            >
+              카테고리 편집
+            </button>
+          </div>
           <div className="mt-3 space-y-3">
-            {topCategories.length === 0 ? (
+            {budgetInputCategories.length === 0 ? (
               <p className="text-xs text-[color:rgba(45,38,34,0.6)]">
                 지출 카테고리가 없습니다.
               </p>
             ) : (
-              topCategories.map((category) => {
+              budgetInputCategories.map((category) => {
                 const raw = categoryBudgets[category.id] ?? "";
                 const budget = Number(raw);
-                const spent =
-                  topCategorySpend.find((item) => item.categoryId === category.id)
-                    ?.amount ?? 0;
+                const spent = categorySpendById[category.id] ?? 0;
                 const progress =
                   !Number.isNaN(budget) && budget > 0
                     ? Math.min(100, Math.round((spent / budget) * 100))
@@ -714,7 +886,9 @@ export default function BudgetPage() {
                 return (
                   <div key={category.id} className="rounded-xl border border-[var(--border)] p-3">
                     <div className="flex items-center justify-between gap-2">
-                      <span className="text-sm font-medium">{category.name}</span>
+                      <span className="text-sm font-medium">
+                        {formatBudgetCategoryLabel(category, categoryById)}
+                      </span>
                       <input
                         type="text"
                         inputMode="numeric"
@@ -911,7 +1085,7 @@ export default function BudgetPage() {
                   </button>
                 </div>
                 <div className="mt-4 space-y-2">
-                  {budgetCategories.map((category) => (
+                  {budgetTabCategories.map((category) => (
                     <button
                       key={category.id}
                       type="button"
@@ -925,7 +1099,7 @@ export default function BudgetPage() {
                         setIsBudgetSheetOpen(false);
                       }}
                     >
-                      {category.name}
+                      {formatBudgetCategoryLabel(category, categoryById)}
                     </button>
                   ))}
                 </div>
@@ -933,7 +1107,95 @@ export default function BudgetPage() {
             </div>
           </div>
         ) : null}
+        {isCategorySelectOpen ? (
+          <div className="fixed inset-0 z-50">
+            <button
+              type="button"
+              className="absolute inset-0 bg-black/40"
+              onClick={() => setIsCategorySelectOpen(false)}
+              aria-label="닫기"
+            />
+            <div className="absolute bottom-0 left-0 right-0 flex max-h-[70vh] flex-col rounded-t-3xl bg-white">
+              <div className="flex-1 overflow-y-auto p-6">
+                <div className="mx-auto mb-6 h-1.5 w-12 rounded-full bg-[color:rgba(45,38,34,0.15)]" />
+                <div className="flex items-center justify-between">
+                  <div className="text-base font-semibold">
+                    예산 카테고리 선택 · {budgetScopeLabel}
+                  </div>
+                  <button
+                    type="button"
+                    className="text-sm text-[color:rgba(45,38,34,0.6)]"
+                    onClick={() => setIsCategorySelectOpen(false)}
+                  >
+                    닫기
+                  </button>
+                </div>
+                <p className="mt-2 text-xs text-[color:rgba(45,38,34,0.6)]">
+                  {budgetScopeLabel} 탭에서 사용할 카테고리를 선택하세요.
+                </p>
+                <div className="mt-4 flex gap-2">
+                  <button
+                    type="button"
+                    className="flex-1 rounded-full border border-[var(--border)] px-4 py-2 text-sm"
+                    onClick={handleSelectAllBudgetCategories}
+                  >
+                    전체 선택
+                  </button>
+                  <button
+                    type="button"
+                    className="flex-1 rounded-full border border-[var(--border)] px-4 py-2 text-sm text-[color:rgba(45,38,34,0.7)]"
+                    onClick={handleResetBudgetCategories}
+                  >
+                    초기화
+                  </button>
+                </div>
+                <div className="mt-4 space-y-2">
+                  {budgetEnabledCategories.length === 0 ? (
+                    <div className="rounded-2xl border border-dashed border-[var(--border)] px-4 py-6 text-center text-sm text-[color:rgba(45,38,34,0.6)]">
+                      예산 카테고리가 없습니다.
+                    </div>
+                  ) : (
+                    budgetEnabledCategories.map((category) => {
+                      const isSelected = selectedBudgetCategoryIdSet.has(
+                        category.id
+                      );
+                      return (
+                        <button
+                          key={category.id}
+                          type="button"
+                          className={`flex w-full items-center justify-between rounded-2xl border px-4 py-3 text-left text-sm ${
+                            isSelected
+                              ? "border-[var(--text)] bg-[color:rgba(45,38,34,0.06)] font-semibold"
+                              : "border-[var(--border)] text-[color:rgba(45,38,34,0.7)]"
+                          }`}
+                          onClick={() => toggleBudgetCategorySelection(category.id)}
+                        >
+                          <span>
+                            {formatBudgetCategoryLabel(category, categoryById)}
+                          </span>
+                          <span className="text-xs text-[color:rgba(45,38,34,0.5)]">
+                            {isSelected ? "추가됨" : "미선택"}
+                          </span>
+                        </button>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : null}
       </section>
+
+      <button
+        type="button"
+        onClick={handleSaveBudget}
+        className="fixed bottom-6 right-6 z-40 flex h-12 w-12 items-center justify-center rounded-full bg-[var(--text)] text-sm text-white shadow-lg"
+        aria-label="예산 저장"
+        disabled={saving}
+      >
+        {saving ? "..." : "저장"}
+      </button>
     </div>
   );
 }
