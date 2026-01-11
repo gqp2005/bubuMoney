@@ -1,19 +1,5 @@
 # Patch Notes
 
-## v1.9
-
-- Budget: per-tab category selection saved per scope (공용/카테고리) and synced across devices.
-- Budget: monthly total is now the sum of category budgets (removed direct monthly input).
-- Budget: floating save button and parent > child labels in tabs, sheets, and budget list.
-- Stats: member/asset breakdown now supports "더보기" toggles like category breakdown.
-
-### v1.9 (한국어)
-
-- 예산: 공용/카테고리 탭별 선택 카테고리를 저장하고 기기간 동기화.
-- 예산: 월 예산 입력 제거, 카테고리 예산 합계로 총 예산 표시.
-- 예산: 저장 버튼을 우측 하단 플로팅으로 변경, 부모 > 자식 라벨 표기.
-- 통계: 구성원/자산 지출도 더보기 토글 지원.
-
 ## v2.0
 
 - Dashboard: add card performance section between memo and monthly summary, showing only your payment methods.
@@ -29,6 +15,20 @@
 - 예산: 카테고리 선택 시트를 지출 전체(대/소분류)로 표시하고 접기/펼치기 제공; 공용 외 탭은 해당 카테고리만 표시.
 - 통계: 카드 실적 섹션 제거(대시보드로 이동).
 - 데이터: 결제수단에 `goalMonthly` 필드 추가.
+
+## v1.9
+
+- Budget: per-tab category selection saved per scope (공용/카테고리) and synced across devices.
+- Budget: monthly total is now the sum of category budgets (removed direct monthly input).
+- Budget: floating save button and parent > child labels in tabs, sheets, and budget list.
+- Stats: member/asset breakdown now supports "더보기" toggles like category breakdown.
+
+### v1.9 (한국어)
+
+- 예산: 공용/카테고리 탭별 선택 카테고리를 저장하고 기기간 동기화.
+- 예산: 월 예산 입력 제거, 카테고리 예산 합계로 총 예산 표시.
+- 예산: 저장 버튼을 우측 하단 플로팅으로 변경, 부모 > 자식 라벨 표기.
+- 통계: 구성원/자산 지출도 더보기 토글 지원.
 
 ## v1.8
 

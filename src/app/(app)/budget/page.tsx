@@ -15,7 +15,7 @@ import { useTransactionsRange } from "@/hooks/use-transactions";
 import { budgetsCol } from "@/lib/firebase/firestore";
 import { formatKrw } from "@/lib/format";
 import { addNotification } from "@/lib/notifications";
-import type { Transaction, TransactionType } from "@/types/ledger";
+import type { Category, Transaction, TransactionType } from "@/types/ledger";
 
 type RangeOption = 6 | 12;
 type ChartType = "bar" | "line";
