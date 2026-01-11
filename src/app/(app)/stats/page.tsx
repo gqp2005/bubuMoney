@@ -907,6 +907,7 @@ const ResetConfirm = memo(function ResetConfirm({
 
 type BreakdownSheetItem = {
   id: string;
+  txId?: string;
   title: string;
   subtitle: string;
   amount: number;
@@ -919,6 +920,7 @@ type BreakdownSheetProps = {
   periodLabel: string;
   totalAmount: number;
   items: BreakdownSheetItem[];
+  onSelectItem?: (item: BreakdownSheetItem) => void;
 };
 
 const BreakdownSheet = memo(function BreakdownSheet({
@@ -928,6 +930,7 @@ const BreakdownSheet = memo(function BreakdownSheet({
   periodLabel,
   totalAmount,
   items,
+  onSelectItem,
 }: BreakdownSheetProps) {
   if (!open) {
     return null;
@@ -959,22 +962,41 @@ const BreakdownSheet = memo(function BreakdownSheet({
                 표시할 내역이 없습니다.
               </div>
             ) : (
-              items.map((item) => (
-                <div
-                  key={item.id}
-                  className="flex items-center justify-between border-b border-[color:rgba(45,38,34,0.08)] pb-3"
-                >
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-medium">{item.title}</p>
-                    <p className="mt-1 truncate text-xs text-[color:rgba(45,38,34,0.45)]">
-                      {item.subtitle}
+              items.map((item) => {
+                const content = (
+                  <>
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium">{item.title}</p>
+                      <p className="mt-1 truncate text-xs text-[color:rgba(45,38,34,0.45)]">
+                        {item.subtitle}
+                      </p>
+                    </div>
+                    <p className="ml-4 whitespace-nowrap text-sm font-semibold text-[color:rgba(45,38,34,0.8)]">
+                      {formatKrw(item.amount)}
                     </p>
+                  </>
+                );
+                if (item.txId && onSelectItem) {
+                  return (
+                    <button
+                      key={item.id}
+                      type="button"
+                      className="flex w-full items-center justify-between border-b border-[color:rgba(45,38,34,0.08)] pb-3 text-left"
+                      onClick={() => onSelectItem(item)}
+                    >
+                      {content}
+                    </button>
+                  );
+                }
+                return (
+                  <div
+                    key={item.id}
+                    className="flex items-center justify-between border-b border-[color:rgba(45,38,34,0.08)] pb-3"
+                  >
+                    {content}
                   </div>
-                  <p className="ml-4 whitespace-nowrap text-sm font-semibold text-[color:rgba(45,38,34,0.8)]">
-                    {formatKrw(item.amount)}
-                  </p>
-                </div>
-              ))
+                );
+              })
             )}
           </div>
         </div>
@@ -1468,6 +1490,7 @@ export default function StatsPage() {
         .join(" · ");
       return {
         id: tx.id ? `${tx.id}-${index}` : `${index}`,
+        txId: tx.id,
         title: tx.note?.trim() || categoryLabel,
         subtitle: subtitleParts,
         amount: tx.amount,
@@ -2210,6 +2233,12 @@ export default function StatsPage() {
         periodLabel={headerLabel}
         totalAmount={detailSheetTotal}
         items={detailSheetItems}
+        onSelectItem={(item) => {
+          if (item.txId) {
+            closeDetailSheet();
+            router.push(`/transactions/${item.txId}`);
+          }
+        }}
       />
 
       <RangeSheet {...rangeSheetProps} />

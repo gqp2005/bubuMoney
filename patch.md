@@ -16,6 +16,18 @@
 - 통계: 카드 실적 섹션 제거(대시보드로 이동).
 - 데이터: 결제수단에 `goalMonthly` 필드 추가.
 
+## v2.1
+
+- Stats: detail sheet items now open the transaction edit page on tap.
+- Budget: category selection is limited to parent categories (children are informational).
+- Payment methods: allow `goalMonthly` to be null to avoid save errors.
+
+### v2.1 (한국어)
+
+- 통계: 상세 시트의 내역을 탭하면 내역 수정 화면으로 이동.
+- 예산: 카테고리 선택은 대분류만 가능(소분류는 안내용 표시).
+- 결제수단: `goalMonthly`가 null이어도 저장 가능하도록 허용.
+
 ## v1.9
 
 - Budget: per-tab category selection saved per scope (공용/카테고리) and synced across devices.
