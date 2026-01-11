@@ -39,6 +39,8 @@ type BudgetConfigDoc = {
   updatedAt?: { toDate: () => Date };
 };
 
+type CategoryWithId = Category & { id: string };
+
 const BAR_POSITIVE_COLORS = ["#34d399", "#22c55e", "#10b981", "#14b8a6"];
 const BAR_NEGATIVE_COLORS = ["#fb7185", "#f87171", "#ef4444", "#f97316"];
 const LINE_COLORS = ["#2d2622", "#0f766e", "#2563eb", "#7c3aed"];
@@ -176,30 +178,31 @@ export default function BudgetPage() {
     rangeStart,
     rangeEnd
   );
+  const categoriesWithId = categories as CategoryWithId[];
   const personalCategoryIdSet = useMemo(() => {
     return new Set(
-      categories
+      categoriesWithId
         .filter((category) => category.personalOnly)
         .map((category) => category.id)
     );
-  }, [categories]);
+  }, [categoriesWithId]);
   const budgetCategoryIdSet = useMemo(() => {
     return new Set(
-      categories
+      categoriesWithId
         .filter((category) => category.type === "expense" && category.budgetEnabled)
         .map((category) => category.id)
     );
-  }, [categories]);
+  }, [categoriesWithId]);
   const budgetSelectableCategories = useMemo(() => {
-    return categories
+    return categoriesWithId
       .filter((category) => category.type === "expense")
       .sort((a, b) => a.order - b.order || a.name.localeCompare(b.name));
-  }, [categories]);
+  }, [categoriesWithId]);
   const budgetEnabledCategories = useMemo(() => {
-    return categories
+    return categoriesWithId
       .filter((category) => category.type === "expense" && category.budgetEnabled)
       .sort((a, b) => a.order - b.order || a.name.localeCompare(b.name));
-  }, [categories]);
+  }, [categoriesWithId]);
   const budgetTabCategories = budgetEnabledCategories;
   const activeSelectedCategoryIds =
     selectedBudgetCategoryIdsByScope[budgetScope] ?? [];
@@ -208,14 +211,14 @@ export default function BudgetPage() {
     [activeSelectedCategoryIds]
   );
   const categoryById = useMemo(
-    () => new Map(categories.map((category) => [category.id, category])),
-    [categories]
+    () => new Map(categoriesWithId.map((category) => [category.id, category])),
+    [categoriesWithId]
   );
   const budgetParentCategories = useMemo(() => {
     return budgetSelectableCategories.filter((category) => !category.parentId);
   }, [budgetSelectableCategories]);
   const budgetChildrenByParent = useMemo(() => {
-    const map = new Map<string, Category[]>();
+    const map = new Map<string, CategoryWithId[]>();
     budgetSelectableCategories.forEach((category) => {
       if (!category.parentId) {
         return;
