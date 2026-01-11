@@ -463,10 +463,14 @@ export default function BudgetPage() {
   const budgetInputCategories = useMemo(() => {
     if (effectiveBudgetScope !== "common") {
       const scoped = categoryById.get(effectiveBudgetScope);
-      return scoped ? [scoped] : [];
+      if (!scoped) {
+        return [];
+      }
+      return scoped.parentId ? [] : [scoped];
     }
     return budgetCategories
       .filter((cat) => cat.type === "expense")
+      .filter((cat) => !cat.parentId)
       .sort((a, b) => a.order - b.order || a.name.localeCompare(b.name));
   }, [budgetCategories, categoryById, effectiveBudgetScope]);
   const budgetInputCategoryIdSet = useMemo(
