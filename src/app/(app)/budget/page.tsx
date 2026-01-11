@@ -943,7 +943,7 @@ export default function BudgetPage() {
             ) : (
               budgetInputCategories.map((category) => {
                 const raw = categoryBudgets[category.id] ?? "";
-                const budget = Number(raw);
+                const budget = Number(normalizeNumberInput(raw));
                 const spent = categorySpendById[category.id] ?? 0;
                 const progress =
                   !Number.isNaN(budget) && budget > 0
@@ -1086,6 +1086,26 @@ export default function BudgetPage() {
             </div>
           ) : (
             <div className="relative h-44">
+              {selectedPoint ? (
+                <div
+                  className="pointer-events-none absolute rounded-full bg-white/90 px-2 py-1 text-[11px] font-semibold text-[var(--text)] shadow-sm"
+                  style={{
+                    left: `${Math.round(
+                      (monthPoints.findIndex(
+                        (point) =>
+                          format(point.month, "yyyy-MM") ===
+                          effectiveSelectedMonthKey
+                      ) /
+                        Math.max(monthPoints.length - 1, 1)) *
+                        100
+                    )}%`,
+                    top: "18px",
+                    transform: "translateX(-50%)",
+                  }}
+                >
+                  {formatKrw(selectedPoint.net)}
+                </div>
+              ) : null}
               <svg
                 viewBox="0 0 100 160"
                 className="h-full w-full"

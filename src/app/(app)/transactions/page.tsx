@@ -177,6 +177,7 @@ export default function TransactionsPage() {
   const [touchEndX, setTouchEndX] = useState<number | null>(null);
   const searchStartRef = useRef<HTMLInputElement | null>(null);
   const searchEndRef = useRef<HTMLInputElement | null>(null);
+  const lastAppliedDateParamRef = useRef<string | null>(null);
   const [listSortMode, setListSortMode] = useState<
     "input" | "alpha" | "category"
   >(() => {
@@ -255,12 +256,16 @@ export default function TransactionsPage() {
     if (!dateParam) {
       return;
     }
+    if (dateParam === lastAppliedDateParamRef.current) {
+      return;
+    }
     const parsed = parseDateParam(dateParam);
-    if (parsed && !isSameDay(parsed, selectedDate)) {
+    if (parsed) {
       // eslint-disable-next-line react-hooks/set-state-in-effect -- URL date sync
       setSelectedDate(parsed);
+      lastAppliedDateParamRef.current = dateParam;
     }
-  }, [dateParam, selectedDate]);
+  }, [dateParam]);
 
   const shouldSearchRange = Boolean(showSearch && searchStart && searchEnd);
   const { transactions: searchTransactions, loading: searchLoading } =
