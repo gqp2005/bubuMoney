@@ -59,7 +59,7 @@ export interface PaymentMethod {
   owner?: "husband" | "wife" | "our";
   parentId?: string | null;
   imported?: boolean;
-  goalMonthly?: number;
+  goalMonthly?: number | null;
 }
 
 export interface Budget {

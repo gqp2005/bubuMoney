@@ -9,7 +9,7 @@ export async function addPaymentMethod(
     owner?: "husband" | "wife" | "our";
     parentId?: string | null;
     imported?: boolean;
-    goalMonthly?: number;
+    goalMonthly?: number | null;
   }
 ) {
   return addDoc(paymentMethodsCol(householdId), data);
@@ -24,7 +24,7 @@ export async function updatePaymentMethod(
     owner?: "husband" | "wife" | "our";
     parentId?: string | null;
     imported?: boolean;
-    goalMonthly?: number;
+    goalMonthly?: number | null;
   }
 ) {
   return updateDoc(doc(paymentMethodsCol(householdId), paymentMethodId), data);
