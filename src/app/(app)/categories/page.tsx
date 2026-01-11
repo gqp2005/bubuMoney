@@ -59,6 +59,18 @@ type DragItem = {
   owner?: PaymentOwner;
 };
 
+function normalizeNumberInput(value: string) {
+  return value.replace(/[^\d]/g, "");
+}
+
+function formatNumberInput(value: string) {
+  const cleaned = normalizeNumberInput(value);
+  if (!cleaned) {
+    return "";
+  }
+  return Number(cleaned).toLocaleString("en-US");
+}
+
 function makeDragId(item: DragItem) {
   return [
     item.kind,
@@ -182,6 +194,7 @@ export default function CategoriesPage() {
   const [editingBudgetEnabled, setEditingBudgetEnabled] = useState(false);
   const [editingPersonalOnly, setEditingPersonalOnly] = useState(false);
   const [editingOwner, setEditingOwner] = useState<PaymentOwner>("our");
+  const [editingGoal, setEditingGoal] = useState("");
   const [expandedParentId, setExpandedParentId] = useState<string | null>(null);
   const [expandedPaymentParentId, setExpandedPaymentParentId] = useState<
     string | null
@@ -287,6 +300,7 @@ export default function CategoriesPage() {
     setEditingBudgetEnabled(false);
     setEditingPersonalOnly(false);
     setEditingOwner("our");
+    setEditingGoal("");
     setExpandedParentId(null);
     setExpandedPaymentParentId(null);
   }, [activeTab]);
@@ -400,6 +414,16 @@ export default function CategoriesPage() {
       : false;
     setEditingPersonalOnly(Boolean(resolvedPersonalOnly));
     setEditingParentId(currentParentId ?? "none");
+    if (activeTab === "payment") {
+      const current = paymentMethods.find((method) => method.id === itemId);
+      const goalValue =
+        typeof current?.goalMonthly === "number"
+          ? String(current.goalMonthly)
+          : "";
+      setEditingGoal(formatNumberInput(goalValue));
+    } else {
+      setEditingGoal("");
+    }
   }
 
   async function handleUpdate() {
@@ -418,11 +442,15 @@ export default function CategoriesPage() {
         trimmed
       );
     } else if (activeTab === "payment") {
+      const cleanedGoal = normalizeNumberInput(editingGoal);
+      const parsedGoal =
+        cleanedGoal === "" ? null : Number(normalizeNumberInput(editingGoal));
       await updatePaymentMethod(householdId, editingId, {
         name: trimmed,
         owner: editingOwner,
         parentId: editingParentId === "none" ? null : editingParentId,
         imported: false,
+        goalMonthly: Number.isNaN(parsedGoal ?? NaN) ? null : parsedGoal,
       });
       await updateTransactionsPaymentMethodName(
         householdId,
@@ -442,6 +470,7 @@ export default function CategoriesPage() {
     setEditingId(null);
     setEditingName("");
     setEditingOriginalName("");
+    setEditingGoal("");
   }
 
   async function handleDragEnd(event: DragEndEvent) {
@@ -1162,6 +1191,20 @@ export default function CategoriesPage() {
                             </option>
                           ))}
                         </select>
+                        <div className="flex items-center gap-2 text-xs">
+                          <span className="text-[color:rgba(45,38,34,0.6)]">
+                            월 실적
+                          </span>
+                          <input
+                            className="w-28 rounded-lg border border-[var(--border)] px-2 py-1 text-right text-xs"
+                            inputMode="numeric"
+                            placeholder="0"
+                            value={editingGoal}
+                            onChange={(event) =>
+                              setEditingGoal(formatNumberInput(event.target.value))
+                            }
+                          />
+                        </div>
                         <div className="flex items-center gap-2">
                           <button
                             className="rounded-full bg-[var(--accent)] px-3 py-1 text-xs text-white"
@@ -1171,7 +1214,10 @@ export default function CategoriesPage() {
                           </button>
                           <button
                             className="rounded-full border border-[var(--border)] px-3 py-1 text-xs"
-                            onClick={() => setEditingId(null)}
+                            onClick={() => {
+                              setEditingId(null);
+                              setEditingGoal("");
+                            }}
                           >
                             취소
                           </button>
@@ -1253,26 +1299,47 @@ export default function CategoriesPage() {
                                     onClick={(event) => event.stopPropagation()}
                                   >
                                     {editingId === child.id ? (
-                                      <div className="flex w-full flex-wrap items-center gap-2">
-                                        <input
-                                          className="flex-1 rounded-lg border border-[var(--border)] px-2 py-1 text-xs"
-                                          value={editingName}
-                                          onChange={(event) =>
-                                            setEditingName(event.target.value)
-                                          }
-                                        />
-                                        <button
-                                          className="rounded-full bg-[var(--accent)] px-2 py-1 text-[10px] text-white"
-                                          onClick={handleUpdate}
-                                        >
-                                          저장
-                                        </button>
-                                        <button
-                                          className="rounded-full border border-[var(--border)] px-2 py-1 text-[10px]"
-                                          onClick={() => setEditingId(null)}
-                                        >
-                                          취소
-                                        </button>
+                                      <div className="w-full space-y-2">
+                                        <div className="flex w-full flex-wrap items-center gap-2">
+                                          <input
+                                            className="flex-1 rounded-lg border border-[var(--border)] px-2 py-1 text-xs"
+                                            value={editingName}
+                                            onChange={(event) =>
+                                              setEditingName(event.target.value)
+                                            }
+                                          />
+                                          <button
+                                            className="rounded-full bg-[var(--accent)] px-2 py-1 text-[10px] text-white"
+                                            onClick={handleUpdate}
+                                          >
+                                            저장
+                                          </button>
+                                          <button
+                                            className="rounded-full border border-[var(--border)] px-2 py-1 text-[10px]"
+                                            onClick={() => {
+                                              setEditingId(null);
+                                              setEditingGoal("");
+                                            }}
+                                          >
+                                            취소
+                                          </button>
+                                        </div>
+                                        <div className="flex items-center gap-2 text-[10px]">
+                                          <span className="text-[color:rgba(45,38,34,0.6)]">
+                                            월 실적
+                                          </span>
+                                          <input
+                                            className="w-24 rounded-md border border-[var(--border)] px-2 py-1 text-right text-[10px]"
+                                            inputMode="numeric"
+                                            placeholder="0"
+                                            value={editingGoal}
+                                            onChange={(event) =>
+                                              setEditingGoal(
+                                                formatNumberInput(event.target.value)
+                                              )
+                                            }
+                                          />
+                                        </div>
                                       </div>
                                     ) : (
                                       <>

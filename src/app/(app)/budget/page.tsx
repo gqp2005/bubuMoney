@@ -155,6 +155,9 @@ export default function BudgetPage() {
   const [showAllTopCategories, setShowAllTopCategories] = useState(false);
   const [budgetScope, setBudgetScope] = useState<"common" | string>("common");
   const [isBudgetSheetOpen, setIsBudgetSheetOpen] = useState(false);
+  const [expandedBudgetParents, setExpandedBudgetParents] = useState<Set<string>>(
+    () => new Set()
+  );
   const [isCategorySelectOpen, setIsCategorySelectOpen] = useState(false);
   const [budgetCategoryConfigLoaded, setBudgetCategoryConfigLoaded] =
     useState(false);
@@ -187,6 +190,11 @@ export default function BudgetPage() {
         .map((category) => category.id)
     );
   }, [categories]);
+  const budgetSelectableCategories = useMemo(() => {
+    return categories
+      .filter((category) => category.type === "expense")
+      .sort((a, b) => a.order - b.order || a.name.localeCompare(b.name));
+  }, [categories]);
   const budgetEnabledCategories = useMemo(() => {
     return categories
       .filter((category) => category.type === "expense" && category.budgetEnabled)
@@ -203,16 +211,48 @@ export default function BudgetPage() {
     () => new Map(categories.map((category) => [category.id, category])),
     [categories]
   );
+  const budgetParentCategories = useMemo(() => {
+    return budgetSelectableCategories.filter((category) => !category.parentId);
+  }, [budgetSelectableCategories]);
+  const budgetChildrenByParent = useMemo(() => {
+    const map = new Map<string, Category[]>();
+    budgetSelectableCategories.forEach((category) => {
+      if (!category.parentId) {
+        return;
+      }
+      const bucket = map.get(category.parentId) ?? [];
+      bucket.push(category);
+      map.set(category.parentId, bucket);
+    });
+    map.forEach((list) =>
+      list.sort((a, b) => a.order - b.order || a.name.localeCompare(b.name))
+    );
+    return map;
+  }, [budgetSelectableCategories]);
+  const budgetOrphanCategories = useMemo(() => {
+    return budgetSelectableCategories.filter(
+      (category) => category.parentId && !categoryById.has(category.parentId)
+    );
+  }, [budgetSelectableCategories, categoryById]);
+  useEffect(() => {
+    if (!isCategorySelectOpen) {
+      return;
+    }
+    if (expandedBudgetParents.size > 0) {
+      return;
+    }
+    setExpandedBudgetParents(new Set(budgetParentCategories.map((cat) => cat.id)));
+  }, [budgetParentCategories, expandedBudgetParents, isCategorySelectOpen]);
   const budgetCategories = useMemo(() => {
     if (activeSelectedCategoryIds.length === 0) {
-      return budgetEnabledCategories;
+      return budgetSelectableCategories;
     }
-    return budgetEnabledCategories.filter((category) =>
+    return budgetSelectableCategories.filter((category) =>
       selectedBudgetCategoryIdSet.has(category.id)
     );
   }, [
     activeSelectedCategoryIds.length,
-    budgetEnabledCategories,
+    budgetSelectableCategories,
     selectedBudgetCategoryIdSet,
   ]);
   useEffect(() => {
@@ -222,7 +262,7 @@ export default function BudgetPage() {
     let active = true;
     setBudgetCategoryConfigLoaded(false);
     const storageKey = `${BUDGET_CATEGORY_STORAGE_KEY}.${householdId}`;
-    const enabledIds = budgetEnabledCategories.map((category) => category.id);
+    const enabledIds = budgetSelectableCategories.map((category) => category.id);
     const enabledSet = new Set(enabledIds);
     let stored: Record<string, string[]> = {};
     try {
@@ -275,7 +315,7 @@ export default function BudgetPage() {
     return () => {
       active = false;
     };
-  }, [budgetEnabledCategories, householdId]);
+  }, [budgetSelectableCategories, householdId]);
   useEffect(() => {
     if (!householdId || !budgetCategoryConfigLoaded || typeof window === "undefined") {
       return;
@@ -412,13 +452,15 @@ export default function BudgetPage() {
     [categories]
   );
 
-  const budgetInputCategories = useMemo(
-    () =>
-      budgetCategories
-        .filter((cat) => cat.type === "expense")
-        .sort((a, b) => a.order - b.order || a.name.localeCompare(b.name)),
-    [budgetCategories]
-  );
+  const budgetInputCategories = useMemo(() => {
+    if (effectiveBudgetScope !== "common") {
+      const scoped = categoryById.get(effectiveBudgetScope);
+      return scoped ? [scoped] : [];
+    }
+    return budgetCategories
+      .filter((cat) => cat.type === "expense")
+      .sort((a, b) => a.order - b.order || a.name.localeCompare(b.name));
+  }, [budgetCategories, categoryById, effectiveBudgetScope]);
   const budgetInputCategoryIdSet = useMemo(
     () => new Set(budgetInputCategories.map((category) => category.id)),
     [budgetInputCategories]
@@ -573,12 +615,12 @@ export default function BudgetPage() {
     [budgetScope]
   );
   const handleSelectAllBudgetCategories = useCallback(() => {
-    const ids = budgetEnabledCategories.map((category) => category.id);
+    const ids = budgetSelectableCategories.map((category) => category.id);
     setSelectedBudgetCategoryIdsByScope((prev) => ({
       ...prev,
       [budgetScope]: ids,
     }));
-  }, [budgetEnabledCategories, budgetScope]);
+  }, [budgetSelectableCategories, budgetScope]);
   const handleResetBudgetCategories = useCallback(() => {
     setSelectedBudgetCategoryIdsByScope((prev) => {
       const next = { ...prev };
@@ -586,6 +628,17 @@ export default function BudgetPage() {
       return next;
     });
   }, [budgetScope]);
+  const toggleBudgetParentExpand = useCallback((categoryId: string) => {
+    setExpandedBudgetParents((prev) => {
+      const next = new Set(prev);
+      if (next.has(categoryId)) {
+        next.delete(categoryId);
+      } else {
+        next.add(categoryId);
+      }
+      return next;
+    });
+  }, []);
 
   const handleSaveBudget = async () => {
     if (!householdId || !effectiveSelectedMonthKey) {
@@ -857,17 +910,19 @@ export default function BudgetPage() {
           <div className="flex items-start justify-between gap-4">
             <div>
               <p className="text-sm font-semibold">카테고리별 예산</p>
-            <p className="mt-1 text-xs text-[color:rgba(45,38,34,0.6)]">
+              <p className="mt-1 text-xs text-[color:rgba(45,38,34,0.6)]">
                 선택 월 기준으로 카테고리 예산을 입력하세요.
-            </p>
+              </p>
             </div>
-            <button
-              type="button"
-              className="rounded-full border border-[var(--border)] px-3 py-1 text-xs text-[color:rgba(45,38,34,0.7)]"
-              onClick={() => setIsCategorySelectOpen(true)}
-            >
-              카테고리 편집
-            </button>
+            {effectiveBudgetScope === "common" ? (
+              <button
+                type="button"
+                className="rounded-full border border-[var(--border)] px-3 py-1 text-xs text-[color:rgba(45,38,34,0.7)]"
+                onClick={() => setIsCategorySelectOpen(true)}
+              >
+                카테고리 편집
+              </button>
+            ) : null}
           </div>
           <div className="mt-3 space-y-3">
             {budgetInputCategories.length === 0 ? (
@@ -1150,35 +1205,136 @@ export default function BudgetPage() {
                   </button>
                 </div>
                 <div className="mt-4 space-y-2">
-                  {budgetEnabledCategories.length === 0 ? (
+                  {budgetSelectableCategories.length === 0 ? (
                     <div className="rounded-2xl border border-dashed border-[var(--border)] px-4 py-6 text-center text-sm text-[color:rgba(45,38,34,0.6)]">
                       예산 카테고리가 없습니다.
                     </div>
                   ) : (
-                    budgetEnabledCategories.map((category) => {
-                      const isSelected = selectedBudgetCategoryIdSet.has(
-                        category.id
-                      );
-                      return (
-                        <button
-                          key={category.id}
-                          type="button"
-                          className={`flex w-full items-center justify-between rounded-2xl border px-4 py-3 text-left text-sm ${
-                            isSelected
-                              ? "border-[var(--text)] bg-[color:rgba(45,38,34,0.06)] font-semibold"
-                              : "border-[var(--border)] text-[color:rgba(45,38,34,0.7)]"
-                          }`}
-                          onClick={() => toggleBudgetCategorySelection(category.id)}
-                        >
-                          <span>
-                            {formatBudgetCategoryLabel(category, categoryById)}
-                          </span>
-                          <span className="text-xs text-[color:rgba(45,38,34,0.5)]">
-                            {isSelected ? "추가됨" : "미선택"}
-                          </span>
-                        </button>
-                      );
-                    })
+                    <div className="space-y-3">
+                      {budgetParentCategories.map((category) => {
+                        const isSelected = selectedBudgetCategoryIdSet.has(
+                          category.id
+                        );
+                        const children =
+                          budgetChildrenByParent.get(category.id) ?? [];
+                        const isExpanded = expandedBudgetParents.has(category.id);
+                        return (
+                          <div
+                            key={category.id}
+                            className="rounded-2xl border border-[var(--border)] bg-white"
+                          >
+                            <div
+                              className={`flex w-full items-center gap-3 rounded-2xl px-4 py-3 text-left text-sm ${
+                                isSelected
+                                  ? "border border-[var(--text)] bg-[color:rgba(45,38,34,0.06)] font-semibold"
+                                  : "text-[color:rgba(45,38,34,0.7)]"
+                              }`}
+                            >
+                              <button
+                                type="button"
+                                className="flex flex-1 items-center justify-between gap-3 text-left"
+                                onClick={() =>
+                                  toggleBudgetCategorySelection(category.id)
+                                }
+                              >
+                                <span>
+                                  {formatBudgetCategoryLabel(
+                                    category,
+                                    categoryById
+                                  )}
+                                </span>
+                                <span className="text-xs text-[color:rgba(45,38,34,0.5)]">
+                                  소분류 {children.length}개
+                                </span>
+                              </button>
+                              {children.length > 0 ? (
+                                <button
+                                  type="button"
+                                  className="rounded-full border border-[var(--border)] px-2 py-0.5 text-xs"
+                                  onClick={() => toggleBudgetParentExpand(category.id)}
+                                  aria-label={
+                                    isExpanded ? "소분류 접기" : "소분류 펼치기"
+                                  }
+                                >
+                                  {isExpanded ? "⌃" : "⌄"}
+                                </button>
+                              ) : null}
+                            </div>
+                            {children.length > 0 && isExpanded ? (
+                              <div className="space-y-2 border-t border-[var(--border)] px-4 py-3">
+                                <div className="text-xs text-[color:rgba(45,38,34,0.5)]">
+                                  소분류
+                                </div>
+                                {children.map((child) => {
+                                  const childSelected =
+                                    selectedBudgetCategoryIdSet.has(child.id);
+                                  return (
+                                    <button
+                                      key={child.id}
+                                      type="button"
+                                      className={`flex w-full items-center justify-between rounded-xl border px-3 py-2 text-left text-sm ${
+                                        childSelected
+                                          ? "border-[var(--text)] bg-[color:rgba(45,38,34,0.06)] font-semibold"
+                                          : "border-[var(--border)] text-[color:rgba(45,38,34,0.7)]"
+                                      }`}
+                                      onClick={() =>
+                                        toggleBudgetCategorySelection(child.id)
+                                      }
+                                    >
+                                      <span>
+                                        {formatBudgetCategoryLabel(
+                                          child,
+                                          categoryById
+                                        )}
+                                      </span>
+                                      <span className="text-xs text-[color:rgba(45,38,34,0.5)]">
+                                        {childSelected ? "추가됨" : "미선택"}
+                                      </span>
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            ) : null}
+                          </div>
+                        );
+                      })}
+                      {budgetOrphanCategories.length > 0 ? (
+                        <div className="space-y-2">
+                          <div className="text-xs text-[color:rgba(45,38,34,0.5)]">
+                            기타
+                          </div>
+                          {budgetOrphanCategories.map((category) => {
+                            const isSelected = selectedBudgetCategoryIdSet.has(
+                              category.id
+                            );
+                            return (
+                              <button
+                                key={category.id}
+                                type="button"
+                                className={`flex w-full items-center justify-between rounded-2xl border px-4 py-3 text-left text-sm ${
+                                  isSelected
+                                    ? "border-[var(--text)] bg-[color:rgba(45,38,34,0.06)] font-semibold"
+                                    : "border-[var(--border)] text-[color:rgba(45,38,34,0.7)]"
+                                }`}
+                                onClick={() =>
+                                  toggleBudgetCategorySelection(category.id)
+                                }
+                              >
+                                <span>
+                                  {formatBudgetCategoryLabel(
+                                    category,
+                                    categoryById
+                                  )}
+                                </span>
+                                <span className="text-xs text-[color:rgba(45,38,34,0.5)]">
+                                  {isSelected ? "추가됨" : "미선택"}
+                                </span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      ) : null}
+                    </div>
                   )}
                 </div>
               </div>

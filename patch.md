@@ -14,6 +14,22 @@
 - 예산: 저장 버튼을 우측 하단 플로팅으로 변경, 부모 > 자식 라벨 표기.
 - 통계: 구성원/자산 지출도 더보기 토글 지원.
 
+## v2.0
+
+- Dashboard: add card performance section between memo and monthly summary, showing only your payment methods.
+- Payment Methods: monthly goal editable from categories and settings; 0 is allowed without save errors.
+- Budget: category selection sheet now lists all expense categories in parent/child groups with expand/collapse; non-common scope shows only its category.
+- Stats: remove card performance section (moved to dashboard).
+- Data: payment methods support `goalMonthly`.
+
+### v2.0 (한국어)
+
+- 대시보드: 메모와 이번 달 요약 사이에 카드 실적 섹션 추가(본인 결제수단만 표시).
+- 결제수단: 카테고리/설정에서 월 실적 편집 가능, 0원 저장 오류 개선.
+- 예산: 카테고리 선택 시트를 지출 전체(대/소분류)로 표시하고 접기/펼치기 제공; 공용 외 탭은 해당 카테고리만 표시.
+- 통계: 카드 실적 섹션 제거(대시보드로 이동).
+- 데이터: 결제수단에 `goalMonthly` 필드 추가.
+
 ## v1.8
 
 - Settings: CSV import section is collapsible and loads on demand.

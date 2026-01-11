@@ -1138,6 +1138,36 @@ export default function StatsPage() {
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [budgetScope, setBudgetScope] = useState<"common" | string>("common");
   const [isBudgetSheetOpen, setIsBudgetSheetOpen] = useState(false);
+
+  useEffect(() => {
+    if (typeof document === "undefined") {
+      return;
+    }
+    const isOverlayOpen =
+      isRangeSheetOpen ||
+      isFilterSheetOpen ||
+      isBudgetSheetOpen ||
+      Boolean(detailSheet) ||
+      showResetConfirm;
+    const prevBodyOverflow = document.body.style.overflow;
+    const prevHtmlOverscroll = document.documentElement.style.overscrollBehavior;
+
+    if (isOverlayOpen) {
+      document.body.style.overflow = "hidden";
+      document.documentElement.style.overscrollBehavior = "contain";
+    }
+
+    return () => {
+      document.body.style.overflow = prevBodyOverflow;
+      document.documentElement.style.overscrollBehavior = prevHtmlOverscroll;
+    };
+  }, [
+    isRangeSheetOpen,
+    isFilterSheetOpen,
+    isBudgetSheetOpen,
+    detailSheet,
+    showResetConfirm,
+  ]);
   const closeRangeSheet = useCallback(() => setIsRangeSheetOpen(false), []);
   const closeBudgetSheet = useCallback(() => setIsBudgetSheetOpen(false), []);
   const closeFilterSheet = useCallback(() => setIsFilterSheetOpen(false), []);
@@ -1447,7 +1477,6 @@ export default function StatsPage() {
   const detailSheetTotal = useMemo(() => {
     return detailSheetTransactions.reduce((acc, tx) => acc + tx.amount, 0);
   }, [detailSheetTransactions]);
-
   const yearOptions = useMemo(() => {
     const currentYear = new Date().getFullYear();
     return Array.from({ length: 11 }, (_, idx) => currentYear - 5 + idx);
@@ -2169,6 +2198,7 @@ export default function StatsPage() {
                 </button>
               ) : null}
             </div>
+
           </div>
         )}
       </section>
