@@ -220,7 +220,8 @@ export async function updateTransfer(params: {
       if (!snap || !snap.exists()) {
         throw new Error("계좌를 찾을 수 없습니다.");
       }
-      return (snap.data().balance as number) ?? 0;
+      const data = snap.data() as { balance?: number } | undefined;
+      return data?.balance ?? 0;
     };
 
     const deltas = new Map<string, number>();
@@ -305,7 +306,8 @@ export async function deleteTransfer(params: {
       if (!snap || !snap.exists()) {
         throw new Error("계좌를 찾을 수 없습니다.");
       }
-      return (snap.data().balance as number) ?? 0;
+      const data = snap.data() as { balance?: number } | undefined;
+      return data?.balance ?? 0;
     };
 
     const deltas = new Map<string, number>();
