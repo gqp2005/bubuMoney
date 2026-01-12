@@ -47,6 +47,41 @@ service cloud.firestore {
         allow create, update, delete: if isMember(householdId);
       }
 
+      match /accounts/{accountId} {
+        allow read: if isMember(householdId);
+        allow create, update, delete: if isMember(householdId);
+      }
+
+      match /accounts/{accountId}/holdings/{holdingId} {
+        allow read: if isMember(householdId);
+        allow create, update, delete: if isMember(householdId);
+      }
+
+      match /accounts/{accountId}/kis/{docId} {
+        allow read, write: if false;
+      }
+
+      match /accounts/{accountId}/trades/{tradeId} {
+        allow read: if isMember(householdId);
+        allow create, update, delete: if isMember(householdId);
+      }
+
+      match /accountGroups/{groupId} {
+        allow read: if isMember(householdId)
+          && (!resource.data.keys().hasAny(["visibility"])
+            || resource.data.visibility == "shared"
+            || resource.data.createdBy == request.auth.uid);
+        allow create: if isMember(householdId)
+          && request.resource.data.createdBy == request.auth.uid;
+        allow update, delete: if isMember(householdId)
+          && resource.data.createdBy == request.auth.uid;
+      }
+
+      match /transfers/{transferId} {
+        allow read: if isMember(householdId);
+        allow create, update, delete: if isMember(householdId);
+      }
+
       match /budgets/{monthKey} {
         allow read: if isMember(householdId);
         allow create, update, delete: if isMember(householdId);

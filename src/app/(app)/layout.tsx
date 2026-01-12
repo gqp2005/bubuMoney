@@ -7,6 +7,7 @@ const navItems = [
   { href: "/transactions", label: "내역" },
   { href: "/stats", label: "통계" },
   { href: "/budget", label: "예산" },
+  { href: "/assets", label: "자산" },
   { href: "/notifications", label: "알림" },
 ];
 

@@ -1,5 +1,19 @@
 # Patch Notes
 
+## v2.2
+
+- Assets: add asset management tab with accounts, transfers, savings details, and investment trades/holdings views.
+- Assets: account groups support shared/personal visibility and per-group account lists.
+- Transfers: edit/delete now rebalance account balances safely.
+- Data: add accounts/accountGroups/transfers/holdings/trades types and Firestore rules.
+
+### v2.2 (한국어)
+
+- 자산: 계좌/이체/저축 상세/투자 내역을 볼 수 있는 자산 탭 추가.
+- 자산: 계좌 그룹(공용/개인)으로 분리해 목록을 관리.
+- 이체: 수정/삭제 시 계좌 잔액이 안전하게 재계산되도록 개선.
+- 데이터: accounts/accountGroups/transfers/holdings/trades 타입 및 Firestore 규칙 추가.
+
 ## v2.0
 
 - Dashboard: add card performance section between memo and monthly summary, showing only your payment methods.

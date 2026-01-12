@@ -19,6 +19,21 @@ export const subjectsCol = (householdId: string) =>
 export const paymentMethodsCol = (householdId: string) =>
   collection(db, "households", householdId, "paymentMethods");
 
+export const accountsCol = (householdId: string) =>
+  collection(db, "households", householdId, "accounts");
+
+export const accountGroupsCol = (householdId: string) =>
+  collection(db, "households", householdId, "accountGroups");
+
+export const accountTradesCol = (householdId: string, accountId: string) =>
+  collection(db, "households", householdId, "accounts", accountId, "trades");
+
+export const accountHoldingsCol = (householdId: string, accountId: string) =>
+  collection(db, "households", householdId, "accounts", accountId, "holdings");
+
+export const transfersCol = (householdId: string) =>
+  collection(db, "households", householdId, "transfers");
+
 export const transactionsCol = (householdId: string) =>
   collection(db, "households", householdId, "transactions");
 
