@@ -638,11 +638,10 @@ export default function AssetsPage() {
     setSaving(true);
     try {
       await addInvestmentTrade(householdId, selectedAccountId, {
-        accountId: selectedAccountId,
         type: tradeType,
         amount: Number(cleaned),
         date: parsedDate,
-        memo: tradeMemo.trim(),
+        memo: tradeMemo.trim() || undefined,
         createdBy: user.uid,
       });
       setTradeType("buy");
