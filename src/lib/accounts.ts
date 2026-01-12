@@ -195,8 +195,8 @@ export async function updateTransfer(params: {
       ? doc(accountsCol(householdId), current.toAccountId)
       : null;
 
-    const refsToRead = new Map<string, typeof prevFromRef>();
-    const addRef = (ref: typeof prevFromRef) => {
+    const refsToRead = new Map<string, NonNullable<typeof prevFromRef>>();
+    const addRef = (ref: typeof prevFromRef | null) => {
       if (ref) {
         refsToRead.set(ref.path, ref);
       }
@@ -282,8 +282,8 @@ export async function deleteTransfer(params: {
       ? doc(accountsCol(householdId), current.toAccountId)
       : null;
 
-    const refsToRead = new Map<string, typeof prevFromRef>();
-    const addRef = (ref: typeof prevFromRef) => {
+    const refsToRead = new Map<string, NonNullable<typeof prevFromRef>>();
+    const addRef = (ref: typeof prevFromRef | null) => {
       if (ref) {
         refsToRead.set(ref.path, ref);
       }
