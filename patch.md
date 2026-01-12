@@ -14,6 +14,14 @@
 - 이체: 수정/삭제 시 계좌 잔액이 안전하게 재계산되도록 개선.
 - 데이터: accounts/accountGroups/transfers/holdings/trades 타입 및 Firestore 규칙 추가.
 
+## v2.2.1
+
+- Assets: fix savings date fields to store Firestore Timestamp values.
+
+### v2.2.1 (한국어)
+
+- 자산: 저축 계좌 날짜 필드를 Firestore Timestamp로 저장하도록 수정.
+
 ## v2.0
 
 - Dashboard: add card performance section between memo and monthly summary, showing only your payment methods.

@@ -9,6 +9,7 @@ import {
   startOfMonth,
   subMonths,
 } from "date-fns";
+import { Timestamp } from "firebase/firestore";
 import { useAuth } from "@/components/auth-provider";
 import { useHousehold } from "@/components/household-provider";
 import { useAccounts } from "@/hooks/use-accounts";
@@ -507,8 +508,12 @@ export default function AssetsPage() {
           accountType === "savings" && savingsKind === "installment"
             ? monthlyDepositValue ?? 0
             : undefined,
-        startDate: accountType === "savings" && start ? start : undefined,
-        maturityDate: accountType === "savings" && maturity ? maturity : undefined,
+        startDate:
+          accountType === "savings" && start ? Timestamp.fromDate(start) : undefined,
+        maturityDate:
+          accountType === "savings" && maturity
+            ? Timestamp.fromDate(maturity)
+            : undefined,
         taxType: accountType === "savings" ? taxType : undefined,
         createdBy: user.uid,
       });
