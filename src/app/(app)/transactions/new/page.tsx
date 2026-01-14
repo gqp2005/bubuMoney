@@ -280,7 +280,7 @@ export default function NewTransactionPage() {
   }
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-6 ios-no-zoom">
       <form
         className="rounded-3xl border border-[var(--border)] bg-white p-6"
         onSubmit={handleSubmit}
