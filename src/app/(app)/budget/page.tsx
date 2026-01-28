@@ -370,6 +370,9 @@ export default function BudgetPage() {
   }, [personalCategoryIdSet, transactions, user]);
   const visibleTransactions = useMemo(() => {
     return scopedTransactions.filter((tx) => {
+      if (tx.type === "expense" && tx.budgetExcluded) {
+        return false;
+      }
       if (effectiveBudgetScope === "common") {
         if (tx.type !== "expense") {
           return true;
@@ -484,6 +487,9 @@ export default function BudgetPage() {
     }
     return visibleTransactions.filter((tx) => {
       if (tx.type !== "expense") {
+        return false;
+      }
+      if (tx.budgetExcluded) {
         return false;
       }
       if (effectiveBudgetScope !== "common" && tx.budgetApplied) {

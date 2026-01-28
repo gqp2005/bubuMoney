@@ -25,6 +25,7 @@ export async function addTransaction(params: {
   date: Date;
   note?: string;
   budgetApplied?: boolean;
+  budgetExcluded?: boolean;
   createdBy: string;
 }) {
   const { householdId, date, ...rest } = params;
@@ -49,6 +50,7 @@ export async function updateTransaction(params: {
   date: Date;
   note?: string;
   budgetApplied?: boolean;
+  budgetExcluded?: boolean;
 }) {
   const { householdId, transactionId, date, ...rest } = params;
   const payload = {

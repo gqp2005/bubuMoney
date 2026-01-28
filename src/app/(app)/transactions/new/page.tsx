@@ -36,6 +36,7 @@ export default function NewTransactionPage() {
   const [partnerName, setPartnerName] = useState("");
   const [categoryId, setCategoryId] = useState("");
   const [budgetApplied, setBudgetApplied] = useState(false);
+  const [budgetExcluded, setBudgetExcluded] = useState(false);
   const [isTypeSheetOpen, setIsTypeSheetOpen] = useState(false);
   const [isSubjectSheetOpen, setIsSubjectSheetOpen] = useState(false);
   const [isCategorySheetOpen, setIsCategorySheetOpen] = useState(false);
@@ -229,6 +230,12 @@ export default function NewTransactionPage() {
     }
   }, [selectedCategoryBudgetEnabled]);
 
+  useEffect(() => {
+    if (type !== "expense" && budgetExcluded) {
+      setBudgetExcluded(false);
+    }
+  }, [budgetExcluded, type]);
+
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!user || !householdId) {
@@ -258,6 +265,7 @@ export default function NewTransactionPage() {
         date: new Date(date),
         note: note.length ? note : undefined,
         budgetApplied,
+        budgetExcluded: type === "expense" ? budgetExcluded : false,
         createdBy: user.uid,
       });
       const memoText = note.trim() || "메모 없음";
@@ -300,7 +308,7 @@ export default function NewTransactionPage() {
               유형
               <button
                 type="button"
-                className="mt-2 w-full rounded-xl border border-[var(--border)] bg-white px-4 py-3 text-left"
+                className="mt-2 w-full rounded-xl border border-[var(--border)] bg-white px-4 py-3 text-left text-sm"
                 onClick={() => setIsTypeSheetOpen(true)}
               >
                 {typeLabelMap[type]}
@@ -321,22 +329,35 @@ export default function NewTransactionPage() {
               />
             </label>
           </div>
-          <label className="text-sm font-medium">
-            주체
-            <button
-              type="button"
-              className="mt-2 w-full rounded-xl border border-[var(--border)] bg-white px-4 py-3 text-left disabled:opacity-60"
-              onClick={() => setIsSubjectSheetOpen(true)}
-              disabled={subjects.length === 0}
-            >
-              {subject || "선택"}
-            </button>
-          </label>
+          <div className="grid gap-2">
+            <span className="text-sm font-medium">주체</span>
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                className="flex-1 rounded-xl border border-[var(--border)] bg-white px-4 py-3 text-left text-sm disabled:opacity-60"
+                onClick={() => setIsSubjectSheetOpen(true)}
+                disabled={subjects.length === 0}
+              >
+                {subject || "선택"}
+              </button>
+              {type === "expense" ? (
+                <label className="flex items-center gap-2 text-sm text-[color:rgba(45,38,34,0.8)]">
+                  <input
+                    type="checkbox"
+                    className="h-5 w-5 rounded border-[var(--border)]"
+                    checked={budgetExcluded}
+                    onChange={(event) => setBudgetExcluded(event.target.checked)}
+                  />
+                  예산 제외
+                </label>
+              ) : null}
+            </div>
+          </div>
           <label className="text-sm font-medium">
             카테고리
             <button
               type="button"
-              className="mt-2 w-full rounded-xl border border-[var(--border)] bg-white px-4 py-3 text-left disabled:opacity-60"
+              className="mt-2 w-full rounded-xl border border-[var(--border)] bg-white px-4 py-3 text-left text-sm disabled:opacity-60"
               onClick={() => setIsCategorySheetOpen(true)}
               disabled={!hasCategories}
             >
@@ -363,7 +384,7 @@ export default function NewTransactionPage() {
             결제수단
             <button
               type="button"
-              className="mt-2 w-full rounded-xl border border-[var(--border)] bg-white px-4 py-3 text-left disabled:opacity-60"
+              className="mt-2 w-full rounded-xl border border-[var(--border)] bg-white px-4 py-3 text-left text-sm disabled:opacity-60"
               onClick={() => setIsPaymentSheetOpen(true)}
               disabled={paymentMethods.length === 0}
             >

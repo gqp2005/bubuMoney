@@ -51,6 +51,7 @@ export default function EditTransactionPage() {
   const [date, setDate] = useState(toDateKey(new Date()));
   const [note, setNote] = useState("");
   const [budgetApplied, setBudgetApplied] = useState(false);
+  const [budgetExcluded, setBudgetExcluded] = useState(false);
   const [originalTransaction, setOriginalTransaction] = useState<{
     type: TransactionType;
     amount: number;
@@ -60,6 +61,7 @@ export default function EditTransactionPage() {
     date: string;
     note?: string;
     budgetApplied?: boolean;
+    budgetExcluded?: boolean;
   } | null>(null);
   const typeLabelMap: Record<TransactionType, string> = {
     expense: "지출",
@@ -182,6 +184,7 @@ export default function EditTransactionPage() {
           date: { toDate: () => Date };
           note?: string;
           budgetApplied?: boolean;
+          budgetExcluded?: boolean;
         };
         setType(data.type);
         setAmount(formatAmountValue(String(data.amount)));
@@ -191,6 +194,7 @@ export default function EditTransactionPage() {
         setDate(toDateKey(data.date.toDate()));
         setNote(data.note ?? "");
         setBudgetApplied(Boolean(data.budgetApplied));
+        setBudgetExcluded(Boolean(data.budgetExcluded));
         setOriginalTransaction({
           type: data.type,
           amount: data.amount,
@@ -200,6 +204,7 @@ export default function EditTransactionPage() {
           date: toDateKey(data.date.toDate()),
           note: data.note ?? "",
           budgetApplied: data.budgetApplied,
+          budgetExcluded: data.budgetExcluded,
         });
       })
       .catch(() => setError("거래 내역을 불러오지 못했습니다."))
@@ -324,6 +329,12 @@ export default function EditTransactionPage() {
     }
   }, [selectedCategoryBudgetEnabled]);
 
+  useEffect(() => {
+    if (type !== "expense" && budgetExcluded) {
+      setBudgetExcluded(false);
+    }
+  }, [budgetExcluded, type]);
+
   async function handleSave() {
     if (!householdId || !transactionId) {
       return;
@@ -344,6 +355,7 @@ export default function EditTransactionPage() {
         date: new Date(date),
         note: note || undefined,
         budgetApplied,
+        budgetExcluded: type === "expense" ? budgetExcluded : false,
       });
       if (!selectedCategory?.personalOnly) {
         await addNotification(householdId, {
@@ -422,7 +434,7 @@ export default function EditTransactionPage() {
               유형
               <button
                 type="button"
-                className="mt-2 w-full rounded-xl border border-[var(--border)] bg-white px-4 py-3 text-left"
+                className="mt-2 w-full rounded-xl border border-[var(--border)] bg-white px-4 py-3 text-left text-sm"
                 onClick={() => setIsTypeSheetOpen(true)}
               >
                 {typeLabelMap[type]}
@@ -443,22 +455,35 @@ export default function EditTransactionPage() {
               />
             </label>
           </div>
-          <label className="text-sm font-medium">
-            주체
-            <button
-              type="button"
-              className="mt-2 w-full rounded-xl border border-[var(--border)] bg-white px-4 py-3 text-left disabled:opacity-60"
-              onClick={() => setIsSubjectSheetOpen(true)}
-              disabled={subjects.length === 0}
-            >
-              {subject || "선택"}
-            </button>
-          </label>
+          <div className="grid gap-2">
+            <span className="text-sm font-medium">주체</span>
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                className="flex-1 rounded-xl border border-[var(--border)] bg-white px-4 py-3 text-left text-sm disabled:opacity-60"
+                onClick={() => setIsSubjectSheetOpen(true)}
+                disabled={subjects.length === 0}
+              >
+                {subject || "선택"}
+              </button>
+              {type === "expense" ? (
+                <label className="flex items-center gap-2 text-sm text-[color:rgba(45,38,34,0.8)]">
+                  <input
+                    type="checkbox"
+                    className="h-5 w-5 rounded border-[var(--border)]"
+                    checked={budgetExcluded}
+                    onChange={(event) => setBudgetExcluded(event.target.checked)}
+                  />
+                  예산 제외
+                </label>
+              ) : null}
+            </div>
+          </div>
           <label className="text-sm font-medium">
             카테고리
             <button
               type="button"
-              className="mt-2 w-full rounded-xl border border-[var(--border)] bg-white px-4 py-3 text-left"
+              className="mt-2 w-full rounded-xl border border-[var(--border)] bg-white px-4 py-3 text-left text-sm"
               onClick={() => setIsCategorySheetOpen(true)}
             >
               {selectedCategoryName || "선택"}
@@ -479,7 +504,7 @@ export default function EditTransactionPage() {
             결제수단
             <button
               type="button"
-              className="mt-2 w-full rounded-xl border border-[var(--border)] bg-white px-4 py-3 text-left disabled:opacity-60"
+              className="mt-2 w-full rounded-xl border border-[var(--border)] bg-white px-4 py-3 text-left text-sm disabled:opacity-60"
               onClick={() => setIsPaymentSheetOpen(true)}
               disabled={paymentMethods.length === 0}
             >

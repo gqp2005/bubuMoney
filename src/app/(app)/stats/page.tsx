@@ -71,6 +71,7 @@ type StoredStatsFilters = {
   appliedSubjects?: string[];
   appliedPayments?: string[];
   paymentOwnerFilter?: "husband" | "wife" | "our";
+  hideBudgetExcluded?: boolean;
 };
 
 function loadStoredStatsFilters(): StoredStatsFilters | null {
@@ -1142,6 +1143,9 @@ export default function StatsPage() {
   const [appliedPayments, setAppliedPayments] = useState<Set<string>>(
     () => new Set(storedFilters?.appliedPayments ?? [])
   );
+  const [hideBudgetExcluded, setHideBudgetExcluded] = useState<boolean>(
+    () => Boolean(storedFilters?.hideBudgetExcluded)
+  );
   const [expandedCategoryParents, setExpandedCategoryParents] = useState<
     Set<string>
   >(() => new Set());
@@ -1219,6 +1223,7 @@ export default function StatsPage() {
       appliedSubjects: Array.from(appliedSubjects),
       appliedPayments: Array.from(appliedPayments),
       paymentOwnerFilter,
+      hideBudgetExcluded,
     };
     window.localStorage.setItem(STATS_STORAGE_KEY, JSON.stringify(payload));
   }, [
@@ -1231,6 +1236,7 @@ export default function StatsPage() {
     appliedSubjects,
     appliedPayments,
     paymentOwnerFilter,
+    hideBudgetExcluded,
   ]);
 
   const categoryMap = useMemo(
@@ -1300,6 +1306,9 @@ export default function StatsPage() {
   const filteredForBreakdown = useMemo(() => {
     const items = [];
     for (const tx of visibleTransactions) {
+      if (hideBudgetExcluded && tx.budgetExcluded) {
+        continue;
+      }
       const effectiveType =
         effectiveBudgetScope !== "common" && tx.budgetApplied ? "income" : tx.type;
       if (effectiveType !== viewType) {
@@ -1323,6 +1332,7 @@ export default function StatsPage() {
     appliedCategoryIds,
     appliedPayments,
     appliedSubjects,
+    hideBudgetExcluded,
     effectiveBudgetScope,
     viewType,
     visibleTransactions,
@@ -1665,6 +1675,7 @@ export default function StatsPage() {
     setAppliedPayments(new Set());
     setExpandedCategoryParents(new Set());
     setExpandedPaymentParents(new Set());
+    setHideBudgetExcluded(false);
     setIsFilterSheetOpen(false);
   }, []);
 
@@ -1677,6 +1688,7 @@ export default function StatsPage() {
     setDraftPayments(new Set());
     setExpandedCategoryParents(new Set());
     setExpandedPaymentParents(new Set());
+    setHideBudgetExcluded(false);
   }, []);
 
   const handleResetConfirm = useCallback(() => {
@@ -2034,6 +2046,18 @@ export default function StatsPage() {
                 onClick={() => openFilterSheet("payment")}
               >
                 자산 ▼
+              </button>
+              <button
+                type="button"
+                className={`rounded-full border px-4 py-2 text-sm ${
+                  hideBudgetExcluded
+                    ? "border-[var(--accent)] bg-[color:rgba(145,102,82,0.12)] font-semibold text-[var(--text)]"
+                    : "border-[var(--border)] text-[color:rgba(45,38,34,0.7)]"
+                }`}
+                onClick={() => setHideBudgetExcluded((prev) => !prev)}
+                aria-pressed={hideBudgetExcluded}
+              >
+                예산 제외 숨김
               </button>
               <button
                 type="button"

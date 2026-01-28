@@ -43,6 +43,7 @@ export interface Transaction {
   monthKey: string;
   note?: string;
   budgetApplied?: boolean;
+  budgetExcluded?: boolean;
   createdBy: string;
   createdAt: Timestamp;
 }

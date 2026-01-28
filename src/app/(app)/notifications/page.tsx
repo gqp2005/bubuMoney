@@ -37,9 +37,6 @@ export default function NotificationsPage() {
     markAllNotificationsRead(householdId, uid);
   }, [hasUnread, householdId, uid]);
 
-  useEffect(() => {
-    setVisibleCount(40);
-  }, [notifications.length]);
   return (
     <div className="flex flex-col gap-6">
       <div className="flex items-center justify-between">
