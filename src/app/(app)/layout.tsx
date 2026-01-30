@@ -3,7 +3,7 @@ import AppGuard from "@/components/app-guard";
 import AppNav from "@/components/app-nav";
 
 const navItems = [
-  { href: "/dashboard", label: "대시보드" },
+  { href: "/dashboard", label: "메인" },
   { href: "/transactions", label: "내역" },
   { href: "/stats", label: "통계" },
   { href: "/budget", label: "예산" },

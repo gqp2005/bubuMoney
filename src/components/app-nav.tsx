@@ -29,7 +29,7 @@ export default function AppNav({ items }: { items: NavItem[] }) {
     unreadCount > 0 && !pathname.startsWith("/notifications");
 
   return (
-    <nav className="flex flex-1 flex-wrap items-center gap-2 text-xs text-[var(--text)] sm:text-sm md:flex-none md:gap-4">
+    <nav className="flex flex-1 flex-nowrap items-center gap-2 overflow-x-auto text-xs text-[var(--text)] sm:text-sm md:flex-none md:gap-4 hide-scrollbar min-w-0">
       {items.map((item) => {
         const showCount = item.href === "/notifications" && showBadge;
         return (

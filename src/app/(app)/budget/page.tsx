@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   addMonths,
   endOfMonth,
@@ -143,6 +144,7 @@ function formatBudgetCategoryLabel(
 }
 
 export default function BudgetPage() {
+  const router = useRouter();
   const { user } = useAuth();
   const { householdId } = useHousehold();
   const { categories } = useCategories(householdId);
@@ -161,6 +163,7 @@ export default function BudgetPage() {
     () => new Set()
   );
   const [isCategorySelectOpen, setIsCategorySelectOpen] = useState(false);
+  const [detailCategoryId, setDetailCategoryId] = useState<string | null>(null);
   const [budgetCategoryConfigLoaded, setBudgetCategoryConfigLoaded] =
     useState(false);
   const [selectedBudgetCategoryIdsByScope, setSelectedBudgetCategoryIdsByScope] =
@@ -370,9 +373,6 @@ export default function BudgetPage() {
   }, [personalCategoryIdSet, transactions, user]);
   const visibleTransactions = useMemo(() => {
     return scopedTransactions.filter((tx) => {
-      if (tx.type === "expense" && tx.budgetExcluded) {
-        return false;
-      }
       if (effectiveBudgetScope === "common") {
         if (tx.type !== "expense") {
           return true;
@@ -489,9 +489,6 @@ export default function BudgetPage() {
       if (tx.type !== "expense") {
         return false;
       }
-      if (tx.budgetExcluded) {
-        return false;
-      }
       if (effectiveBudgetScope !== "common" && tx.budgetApplied) {
         return false;
       }
@@ -551,6 +548,29 @@ export default function BudgetPage() {
     });
     return totals;
   }, [budgetInputCategoryIdSet, categoryMap, selectedMonthExpenses]);
+  const detailCategory = detailCategoryId
+    ? categoryById.get(detailCategoryId) ?? null
+    : null;
+  const detailTransactions = useMemo(() => {
+    if (!detailCategoryId) {
+      return [];
+    }
+    return selectedMonthExpenses
+      .filter((tx) => {
+        const category = categoryMap.get(tx.categoryId);
+        if (!category) {
+          return false;
+        }
+        return (
+          category.id === detailCategoryId ||
+          category.parentId === detailCategoryId
+        );
+      })
+      .sort((a, b) => b.date.toMillis() - a.date.toMillis());
+  }, [detailCategoryId, selectedMonthExpenses, categoryMap]);
+  const detailTotal = useMemo(() => {
+    return detailTransactions.reduce((acc, tx) => acc + tx.amount, 0);
+  }, [detailTransactions]);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- reset UI state on month switch
@@ -962,9 +982,13 @@ export default function BudgetPage() {
                 return (
                   <div key={category.id} className="rounded-xl border border-[var(--border)] p-3">
                     <div className="flex items-center justify-between gap-2">
-                      <span className="text-sm font-medium">
+                      <button
+                        type="button"
+                        className="flex-1 text-left text-sm font-medium"
+                        onClick={() => setDetailCategoryId(category.id)}
+                      >
                         {formatBudgetCategoryLabel(category, categoryById)}
-                      </span>
+                      </button>
                       <input
                         type="text"
                         inputMode="numeric"
@@ -1361,6 +1385,69 @@ export default function BudgetPage() {
                         </div>
                       ) : null}
                     </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : null}
+        {detailCategoryId ? (
+          <div className="fixed inset-0 z-50">
+            <button
+              type="button"
+              className="absolute inset-0 bg-black/40"
+              onClick={() => setDetailCategoryId(null)}
+              aria-label="닫기"
+            />
+            <div className="absolute bottom-0 left-0 right-0 flex max-h-[75vh] flex-col rounded-t-3xl bg-white">
+              <div className="flex-1 overflow-y-auto p-6">
+                <div className="mx-auto mb-6 h-1.5 w-12 rounded-full bg-[color:rgba(45,38,34,0.15)]" />
+                <div className="flex items-center justify-between">
+                  <div className="text-base font-semibold">
+                    {detailCategory
+                      ? formatBudgetCategoryLabel(detailCategory, categoryById)
+                      : "카테고리"}
+                  </div>
+                  <button
+                    type="button"
+                    className="text-sm text-[color:rgba(45,38,34,0.6)]"
+                    onClick={() => setDetailCategoryId(null)}
+                  >
+                    닫기
+                  </button>
+                </div>
+                <div className="mt-4 flex items-center justify-between text-sm">
+                  <span className="text-[color:rgba(45,38,34,0.6)]">
+                    {format(selectedMonthDate, "yyyy년 M월")}
+                  </span>
+                  <span className="font-semibold">{formatKrw(detailTotal)}</span>
+                </div>
+                <div className="mt-4 space-y-3">
+                  {detailTransactions.length === 0 ? (
+                    <div className="rounded-2xl border border-dashed border-[var(--border)] px-4 py-6 text-center text-sm text-[color:rgba(45,38,34,0.6)]">
+                      표시할 내역이 없습니다.
+                    </div>
+                  ) : (
+                    detailTransactions.map((tx) => (
+                      <button
+                        key={tx.id}
+                        type="button"
+                        onClick={() => router.push(`/transactions/${tx.id}`)}
+                        className="flex w-full items-center justify-between rounded-2xl border border-[var(--border)] px-4 py-3 text-left"
+                      >
+                        <div>
+                          <div className="text-sm font-medium">
+                            {tx.note || "메모 없음"}
+                          </div>
+                          <div className="mt-1 text-xs text-[color:rgba(45,38,34,0.6)]">
+                            {format(tx.date.toDate(), "yy.MM.dd")}
+                          </div>
+                        </div>
+                        <div className="text-sm font-semibold">
+                          {formatKrw(tx.amount)}
+                        </div>
+                      </button>
+                    ))
                   )}
                 </div>
               </div>

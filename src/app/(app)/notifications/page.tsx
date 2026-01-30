@@ -27,6 +27,7 @@ export default function NotificationsPage() {
   const { notifications, loading } = useNotifications(householdId, uid);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(() => new Set());
   const [visibleCount, setVisibleCount] = useState(40);
+  const safeVisibleCount = Math.min(visibleCount, notifications.length);
   const hasUnread =
     uid && notifications.some((item) => !item.readBy?.[uid]);
 
@@ -56,7 +57,7 @@ export default function NotificationsPage() {
             <div className="space-y-2">
               {(() => {
                 let lastBucket: "today" | "yesterday" | "older" | null = null;
-                return notifications.slice(0, visibleCount).map((item) => {
+                return notifications.slice(0, safeVisibleCount).map((item) => {
                   const createdAt = item.createdAt?.toDate() ?? null;
                   let bucket: "today" | "yesterday" | "older" = "older";
                   if (createdAt && isToday(createdAt)) {
@@ -160,7 +161,7 @@ export default function NotificationsPage() {
                 });
               })()}
             </div>
-            {notifications.length > visibleCount ? (
+            {notifications.length > safeVisibleCount ? (
               <button
                 type="button"
                 className="mt-3 w-full rounded-full border border-[var(--border)] px-4 py-2 text-sm text-[color:rgba(45,38,34,0.7)]"

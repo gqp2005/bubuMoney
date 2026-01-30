@@ -803,7 +803,7 @@ export default function SettingsPage() {
 
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-6 ios-no-zoom">
       <section className="rounded-3xl border border-[var(--border)] bg-white p-6">
         <div className="mb-4 rounded-2xl border border-[var(--border)] px-4 py-3">
           <p className="text-xs text-[color:rgba(45,38,34,0.6)]">
