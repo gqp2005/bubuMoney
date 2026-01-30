@@ -1665,7 +1665,6 @@ export default function StatsPage() {
     setAppliedPayments(new Set());
     setExpandedCategoryParents(new Set());
     setExpandedPaymentParents(new Set());
-    setHideBudgetExcluded(false);
     setIsFilterSheetOpen(false);
   }, []);
 
@@ -1678,7 +1677,6 @@ export default function StatsPage() {
     setDraftPayments(new Set());
     setExpandedCategoryParents(new Set());
     setExpandedPaymentParents(new Set());
-    setHideBudgetExcluded(false);
   }, []);
 
   const handleResetConfirm = useCallback(() => {
