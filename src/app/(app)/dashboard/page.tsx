@@ -5,11 +5,11 @@ import { useEffect, useMemo, useState } from "react";
 import { format } from "date-fns";
 import { useHousehold } from "@/components/household-provider";
 import { formatKrw } from "@/lib/format";
-import { formatDate, toMonthKey } from "@/lib/time";
+import { formatDate } from "@/lib/time";
 import { useCategories } from "@/hooks/use-categories";
 import { usePaymentMethods } from "@/hooks/use-payment-methods";
 import { useMonthlyTransactions } from "@/hooks/use-transactions";
-import { getMonthlyMemoEntries } from "@/lib/memos";
+import { getLatestMemoEntries } from "@/lib/memos";
 
 export default function DashboardPage() {
   const { householdId, spouseRole } = useHousehold();
@@ -21,7 +21,6 @@ export default function DashboardPage() {
   >([]);
   const [memoLoading, setMemoLoading] = useState(false);
   const [memoError, setMemoError] = useState<string | null>(null);
-  const monthKey = toMonthKey(new Date());
   const budgetCategoryIdSet = useMemo(() => {
     return new Set(
       categories
@@ -112,7 +111,7 @@ export default function DashboardPage() {
     }
     setMemoLoading(true);
     setMemoError(null);
-    getMonthlyMemoEntries(householdId, monthKey)
+    getLatestMemoEntries(householdId)
       .then((entries) =>
         setMemoEntries(
           entries
@@ -130,7 +129,7 @@ export default function DashboardPage() {
       )
       .catch(() => setMemoError("메모를 불러오지 못했습니다."))
       .finally(() => setMemoLoading(false));
-  }, [householdId, monthKey]);
+  }, [householdId]);
 
   return (
     <div className="flex flex-col gap-6">

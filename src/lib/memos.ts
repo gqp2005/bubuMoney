@@ -1,4 +1,15 @@
-import { Timestamp, doc, getDoc, serverTimestamp, setDoc } from "firebase/firestore";
+import {
+  Timestamp,
+  collection,
+  doc,
+  getDoc,
+  getDocs,
+  limit,
+  orderBy,
+  query,
+  serverTimestamp,
+  setDoc,
+} from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 
 type MemoEntry = {
@@ -45,6 +56,24 @@ export async function getMonthlyMemoEntries(
     return [];
   }
   const data = snapshot.data() as {
+    text?: string;
+    entries?: MemoEntry[];
+    updatedAt?: Timestamp;
+    updatedBy?: string;
+  };
+  return normalizeEntries(data);
+}
+
+export async function getLatestMemoEntries(householdId: string) {
+  const memosRef = collection(db, "households", householdId, "memos");
+  const snapshot = await getDocs(
+    query(memosRef, orderBy("updatedAt", "desc"), limit(1))
+  );
+  if (snapshot.empty) {
+    return [];
+  }
+  const docSnap = snapshot.docs[0];
+  const data = docSnap.data() as {
     text?: string;
     entries?: MemoEntry[];
     updatedAt?: Timestamp;
