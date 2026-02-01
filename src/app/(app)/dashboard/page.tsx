@@ -134,21 +134,21 @@ export default function DashboardPage() {
   return (
     <div className="flex flex-col gap-6">
       <section className="rounded-3xl border border-[var(--border)] bg-white p-6">
-        <div className="relative min-h-[96px]">
+        <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold">메모</h2>
           <Link
-            className="absolute right-0 top-0 rounded-full bg-[var(--accent)] px-4 py-2 text-sm text-white"
+            className="rounded-full bg-[var(--accent)] px-4 py-2 text-sm text-white"
             href="/memos/new?mode=create"
           >
             글쓰기
           </Link>
         </div>
         {memoLoading ? (
-          <p className="mt-4 text-sm text-[color:rgba(45,38,34,0.7)]">
+          <p className="mt-1 text-sm text-[color:rgba(45,38,34,0.7)]">
             불러오는 중...
           </p>
         ) : memoEntries.length > 0 ? (
-          <div className="mt-4 space-y-2 text-sm">
+          <div className="mt-1 space-y-2 text-sm">
             {memoEntries.map((entry) => (
               <div
                 key={entry.id}
@@ -169,7 +169,7 @@ export default function DashboardPage() {
             ))}
           </div>
         ) : (
-          <p className="mt-4 text-sm text-[color:rgba(45,38,34,0.7)]">
+          <p className="mt-1 text-sm text-[color:rgba(45,38,34,0.7)]">
             아직 저장된 메모가 없습니다.
           </p>
         )}

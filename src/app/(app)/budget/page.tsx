@@ -721,6 +721,38 @@ export default function BudgetPage() {
     }
   };
 
+  const handleImportPreviousBudget = useCallback(async () => {
+    if (!householdId || !effectiveSelectedMonthKey) {
+      return;
+    }
+    if (typeof window !== "undefined") {
+      const confirmed = window.confirm("전달 예산을 가져오시겠습니까?");
+      if (!confirmed) {
+        return;
+      }
+    }
+    const prevKey = format(
+      addMonths(monthKeyToDate(effectiveSelectedMonthKey), -1),
+      "yyyy-MM"
+    );
+    const snapshot = await getDoc(doc(budgetsCol(householdId), prevKey));
+    if (!snapshot.exists()) {
+      setSaveMessage("전달 예산이 없습니다.");
+      return;
+    }
+    const data = snapshot.data() as BudgetDoc;
+    const byCategory = data.byCategory ?? {};
+    const mapped: Record<string, string> = {};
+    Object.entries(byCategory).forEach(([key, value]) => {
+      if (!budgetInputCategoryIdSet.has(key)) {
+        return;
+      }
+      mapped[key] = formatNumberInput(String(value));
+    });
+    setCategoryBudgets((prev) => ({ ...prev, ...mapped }));
+    setSaveMessage("전달 예산을 불러왔습니다.");
+  }, [budgetInputCategoryIdSet, effectiveSelectedMonthKey, householdId]);
+
   return (
     <div className="flex flex-col gap-6">
       <div className="flex items-center justify-between">
@@ -956,13 +988,22 @@ export default function BudgetPage() {
               </p>
             </div>
             {effectiveBudgetScope === "common" ? (
-              <button
-                type="button"
-                className="rounded-full border border-[var(--border)] px-3 py-1 text-xs text-[color:rgba(45,38,34,0.7)]"
-                onClick={() => setIsCategorySelectOpen(true)}
-              >
-                카테고리 편집
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  className="rounded-full border border-[var(--border)] px-3 py-1 text-xs text-[color:rgba(45,38,34,0.7)]"
+                  onClick={handleImportPreviousBudget}
+                >
+                  가져오기
+                </button>
+                <button
+                  type="button"
+                  className="rounded-full border border-[var(--border)] px-3 py-1 text-xs text-[color:rgba(45,38,34,0.7)]"
+                  onClick={() => setIsCategorySelectOpen(true)}
+                >
+                  편집
+                </button>
+              </div>
             ) : null}
           </div>
           <div className="mt-3 space-y-3">
