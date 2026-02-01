@@ -93,7 +93,7 @@ function buildMonthPoints(
       target.net += tx.amount;
     } else if (tx.type === "expense") {
       if (budgetScope === "common") {
-        if (budgetCategoryIdSet.has(tx.categoryId)) {
+        if (budgetCategoryIdSet.has(tx.categoryId) && !tx.budgetApplied) {
           return;
         }
       } else {
