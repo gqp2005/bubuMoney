@@ -359,6 +359,24 @@ export default function BudgetPage() {
     effectiveBudgetScope === "common"
       ? "공용"
       : categoryById.get(effectiveBudgetScope)?.name ?? "카테고리";
+
+  useEffect(() => {
+    if (typeof document === "undefined") {
+      return;
+    }
+    const shouldLock = isBudgetSheetOpen || isCategorySelectOpen;
+    if (!shouldLock) {
+      return;
+    }
+    const prevOverflow = document.body.style.overflow;
+    const prevTouchAction = document.body.style.touchAction;
+    document.body.style.overflow = "hidden";
+    document.body.style.touchAction = "none";
+    return () => {
+      document.body.style.overflow = prevOverflow;
+      document.body.style.touchAction = prevTouchAction;
+    };
+  }, [isBudgetSheetOpen, isCategorySelectOpen]);
   const scopedTransactions = useMemo(() => {
     const currentUserId = user?.uid ?? null;
     if (!currentUserId || personalCategoryIdSet.size === 0) {
