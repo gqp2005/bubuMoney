@@ -118,12 +118,13 @@ function parseBudgetTotal(data: BudgetDoc) {
     }
   }
   if (data.byCategory && typeof data.byCategory === "object") {
-    const sum = Object.values(data.byCategory).reduce((acc, value) => {
-      const parsed =
+    const sum = Object.values(data.byCategory).reduce<number>((acc, value) => {
+      const parsedValue =
         typeof value === "number"
           ? value
           : Number(String(value).replace(/[^\d]/g, ""));
-      return acc + (Number.isNaN(parsed) ? 0 : parsed);
+      const parsed = Number.isFinite(parsedValue) ? parsedValue : 0;
+      return acc + parsed;
     }, 0);
     return sum > 0 ? sum : null;
   }
