@@ -16,6 +16,7 @@ import { useTransactionsRange } from "@/hooks/use-transactions";
 import { budgetsCol } from "@/lib/firebase/firestore";
 import { formatKrw } from "@/lib/format";
 import { addNotification } from "@/lib/notifications";
+import { getEffectiveExpenseAmount } from "@/lib/transaction-amount";
 import type { Category, Transaction, TransactionType } from "@/types/ledger";
 
 type RangeOption = 6 | 12;
@@ -92,6 +93,7 @@ function buildMonthPoints(
       target.income += tx.amount;
       target.net += tx.amount;
     } else if (tx.type === "expense") {
+      const expenseAmount = getEffectiveExpenseAmount(tx);
       if (budgetScope === "common") {
         if (budgetCategoryIdSet.has(tx.categoryId) && !tx.budgetApplied) {
           return;
@@ -106,11 +108,11 @@ function buildMonthPoints(
         }
       }
       if (budgetScope !== "common" && tx.budgetApplied) {
-        target.income += tx.amount;
-        target.net += tx.amount;
+        target.income += expenseAmount;
+        target.net += expenseAmount;
       } else {
-        target.expense += tx.amount;
-        target.net -= tx.amount;
+        target.expense += expenseAmount;
+        target.net -= expenseAmount;
       }
     }
   });
@@ -542,7 +544,8 @@ export default function BudgetPage() {
     selectedMonthExpenses.forEach((tx) => {
       const category = categoryMap.get(tx.categoryId);
       const topId = category?.parentId ?? category?.id ?? tx.categoryId;
-      totals[topId] = (totals[topId] ?? 0) + tx.amount;
+      const expenseAmount = getEffectiveExpenseAmount(tx);
+      totals[topId] = (totals[topId] ?? 0) + expenseAmount;
     });
     return Object.entries(totals)
       .map(([categoryId, amount]) => ({
@@ -559,9 +562,11 @@ export default function BudgetPage() {
       if (!category) {
         return;
       }
-      totals[category.id] = (totals[category.id] ?? 0) + tx.amount;
+      const expenseAmount = getEffectiveExpenseAmount(tx);
+      totals[category.id] = (totals[category.id] ?? 0) + expenseAmount;
       if (category.parentId && budgetInputCategoryIdSet.has(category.parentId)) {
-        totals[category.parentId] = (totals[category.parentId] ?? 0) + tx.amount;
+        totals[category.parentId] =
+          (totals[category.parentId] ?? 0) + expenseAmount;
       }
     });
     return totals;
@@ -587,7 +592,10 @@ export default function BudgetPage() {
       .sort((a, b) => b.date.toMillis() - a.date.toMillis());
   }, [detailCategoryId, selectedMonthExpenses, categoryMap]);
   const detailTotal = useMemo(() => {
-    return detailTransactions.reduce((acc, tx) => acc + tx.amount, 0);
+    return detailTransactions.reduce(
+      (acc, tx) => acc + getEffectiveExpenseAmount(tx),
+      0
+    );
   }, [detailTransactions]);
 
   useEffect(() => {
@@ -1503,7 +1511,7 @@ export default function BudgetPage() {
                           </div>
                         </div>
                         <div className="text-sm font-semibold">
-                          {formatKrw(tx.amount)}
+                          {formatKrw(getEffectiveExpenseAmount(tx))}
                         </div>
                       </button>
                     ))

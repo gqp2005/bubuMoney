@@ -22,6 +22,10 @@ import { useHousehold } from "@/components/household-provider";
 import { formatKrw } from "@/lib/format";
 import { toMonthKey } from "@/lib/time";
 import { toDateKey } from "@/lib/time";
+import {
+  getEffectiveExpenseAmount,
+  getExpenseDiscountAmount,
+} from "@/lib/transaction-amount";
 import { useCategories } from "@/hooks/use-categories";
 import { useMonthlyTransactions, useTransactionsRange } from "@/hooks/use-transactions";
 
@@ -71,8 +75,7 @@ type TransactionListItemProps = {
   id: string;
   title: string;
   subtitle: string;
-  amountText: string;
-  amountClass: string;
+  amountLines: { label?: string; text: string; className: string }[];
   highlightClass: string;
   onOpen: (id: string) => void;
 };
@@ -81,14 +84,13 @@ const TransactionListItem = memo(function TransactionListItem({
   id,
   title,
   subtitle,
-  amountText,
-  amountClass,
+  amountLines,
   highlightClass,
   onOpen,
 }: TransactionListItemProps) {
   return (
     <div
-      className={`grid grid-cols-[minmax(0,1fr)_auto] items-start gap-4 rounded-2xl border px-4 py-3 ${highlightClass}`}
+      className={`grid grid-cols-[minmax(0,1fr)_auto] items-center gap-4 rounded-2xl border px-4 py-3 ${highlightClass}`}
       role="button"
       tabIndex={0}
       onClick={() => onOpen(id)}
@@ -102,8 +104,25 @@ const TransactionListItem = memo(function TransactionListItem({
         <p className="truncate text-sm font-semibold">{title}</p>
         <p className="text-xs text-[color:rgba(45,38,34,0.65)]">{subtitle}</p>
       </div>
-      <div className="flex items-center gap-4 self-center">
-        <span className={amountClass}>{amountText}</span>
+      <div className="flex flex-col items-end gap-0.5 self-center">
+        {amountLines.map((line, idx) => (
+          line.label ? (
+            <div
+              key={`${id}-line-${idx}`}
+              className={`inline-grid grid-cols-[auto_auto] items-center gap-1 text-xs ${line.className}`}
+            >
+              <span className="whitespace-nowrap">{line.label}</span>
+              <span className="whitespace-nowrap text-left">{line.text}</span>
+            </div>
+          ) : (
+            <div
+              key={`${id}-line-${idx}`}
+              className={`text-right ${line.className}`}
+            >
+              {line.text}
+            </div>
+          )
+        ))}
       </div>
     </div>
   );
@@ -616,13 +635,46 @@ export default function TransactionsPage() {
   );
   const transactionCards = useMemo(() => {
     return sortedSelectedItems.map((tx) => {
-      const amountClass =
+      const amountLines =
         tx.type === "expense"
-          ? "text-red-600"
-          : tx.type === "income"
-          ? "text-emerald-600"
-          : "text-[color:rgba(45,38,34,0.7)]";
-      const amountText = `${tx.type === "expense" ? "-" : tx.type === "income" ? "+" : ""}${formatKrw(tx.amount)}`;
+          ? (() => {
+              const discount = getExpenseDiscountAmount(tx);
+              const netExpense = getEffectiveExpenseAmount(tx);
+              if (discount > 0) {
+                return [
+                  {
+                    label: "합계",
+                    text: `-${formatKrw(tx.amount)}`,
+                    className: "font-semibold text-[color:rgba(45,38,34,0.95)]",
+                  },
+                  {
+                    label: "할인",
+                    text: formatKrw(discount),
+                    className: "text-[color:rgba(45,38,34,0.65)]",
+                  },
+                  {
+                    label: "지출",
+                    text: formatKrw(netExpense),
+                    className: "text-red-600",
+                  },
+                ];
+              }
+              return [
+                {
+                  text: `-${formatKrw(tx.amount)}`,
+                  className: "text-red-600",
+                },
+              ];
+            })()
+          : [
+              {
+                text: `${tx.type === "income" ? "+" : ""}${formatKrw(tx.amount)}`,
+                className:
+                  tx.type === "income"
+                    ? "text-emerald-600"
+                    : "text-[color:rgba(45,38,34,0.7)]",
+              },
+            ];
       const highlightClass =
         tx.type === "expense" &&
         budgetCategoryIdSet.has(tx.categoryId) &&
@@ -636,8 +688,7 @@ export default function TransactionsPage() {
         subtitle: `${categoryMap.get(tx.categoryId) ?? "미분류"} · ${
           tx.subject || "주체"
         } · ${formatPaymentMethod(tx.paymentMethod)}`,
-        amountClass,
-        amountText,
+        amountLines,
         highlightClass,
       };
     });
@@ -979,8 +1030,7 @@ export default function TransactionsPage() {
                 id={item.id}
                 title={item.title}
                 subtitle={item.subtitle}
-                amountText={item.amountText}
-                amountClass={item.amountClass}
+                amountLines={item.amountLines}
                 highlightClass={item.highlightClass}
                 onOpen={openTransaction}
               />

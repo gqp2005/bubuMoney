@@ -19,6 +19,7 @@ export async function addTransaction(params: {
   householdId: string;
   type: TransactionType;
   amount: number;
+  discountAmount?: number;
   categoryId: string;
   paymentMethod: string;
   subject: string;
@@ -43,6 +44,7 @@ export async function updateTransaction(params: {
   transactionId: string;
   type: TransactionType;
   amount: number;
+  discountAmount?: number;
   categoryId: string;
   paymentMethod: string;
   subject: string;

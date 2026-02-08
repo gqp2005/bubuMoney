@@ -20,6 +20,7 @@ import { useAuth } from "@/components/auth-provider";
 import { useHousehold } from "@/components/household-provider";
 import { formatKrw } from "@/lib/format";
 import { toMonthKey } from "@/lib/time";
+import { getEffectiveExpenseAmount } from "@/lib/transaction-amount";
 import { useCategories } from "@/hooks/use-categories";
 import { usePaymentMethods } from "@/hooks/use-payment-methods";
 import { useSubjects } from "@/hooks/use-subjects";
@@ -27,6 +28,8 @@ import {
   useMonthlyTransactions,
   useTransactionsRange,
 } from "@/hooks/use-transactions";
+import { doc, getDoc } from "firebase/firestore";
+import { budgetsCol } from "@/lib/firebase/firestore";
 
 const CATEGORY_COLORS = [
   "#22c55e",
@@ -98,6 +101,34 @@ type BreakdownItem = {
   amount: number;
   percent: number;
 };
+
+type BudgetDoc = {
+  total?: number;
+  byCategory?: Record<string, number | string>;
+};
+
+function parseBudgetTotal(data: BudgetDoc) {
+  if (typeof data.total === "number" && data.total > 0) {
+    return data.total;
+  }
+  if (typeof data.total === "string") {
+    const parsed = Number(data.total.replace(/[^\d]/g, ""));
+    if (!Number.isNaN(parsed) && parsed > 0) {
+      return parsed;
+    }
+  }
+  if (data.byCategory && typeof data.byCategory === "object") {
+    const sum = Object.values(data.byCategory).reduce((acc, value) => {
+      const parsed =
+        typeof value === "number"
+          ? value
+          : Number(String(value).replace(/[^\d]/g, ""));
+      return acc + (Number.isNaN(parsed) ? 0 : parsed);
+    }, 0);
+    return sum > 0 ? sum : null;
+  }
+  return null;
+}
 
 function buildBreakdown(
   items: { id: string; name: string; amount: number }[],
@@ -1078,6 +1109,38 @@ export default function StatsPage() {
   const monthKey = toMonthKey(appliedMonthDate);
   const { transactions: monthlyTransactions, loading: monthlyLoading } =
     useMonthlyTransactions(householdId, monthKey);
+  const [monthlyBudgetTotal, setMonthlyBudgetTotal] = useState<number | null>(
+    null
+  );
+  useEffect(() => {
+    if (!householdId || !monthKey) {
+      return;
+    }
+    let active = true;
+    const loadMonthlyBudget = async () => {
+      try {
+        const snapshot = await getDoc(doc(budgetsCol(householdId), monthKey));
+        if (!active) {
+          return;
+        }
+        if (!snapshot.exists()) {
+          setMonthlyBudgetTotal(null);
+          return;
+        }
+        const data = snapshot.data() as BudgetDoc;
+        setMonthlyBudgetTotal(parseBudgetTotal(data));
+      } catch {
+        if (!active) {
+          return;
+        }
+        setMonthlyBudgetTotal(null);
+      }
+    };
+    loadMonthlyBudget();
+    return () => {
+      active = false;
+    };
+  }, [householdId, monthKey]);
   const rangeStart = useMemo(() => {
     if (!appliedStart) {
       return null;
@@ -1337,25 +1400,27 @@ export default function StatsPage() {
     let expense = 0;
 
     for (const tx of filteredForBreakdown) {
-      totalAmount += tx.amount;
+      const amount =
+        tx.type === "expense" ? getEffectiveExpenseAmount(tx) : tx.amount;
+      totalAmount += amount;
       if (viewType === "income") {
-        income += tx.amount;
+        income += amount;
       } else if (viewType === "expense") {
-        expense += tx.amount;
+        expense += amount;
       }
       categoryTotals.set(
         tx.categoryId,
-        (categoryTotals.get(tx.categoryId) ?? 0) + tx.amount
+        (categoryTotals.get(tx.categoryId) ?? 0) + amount
       );
       const subjectLabel = tx.subject || "미지정";
       subjectTotals.set(
         subjectLabel,
-        (subjectTotals.get(subjectLabel) ?? 0) + tx.amount
+        (subjectTotals.get(subjectLabel) ?? 0) + amount
       );
       const paymentLabel = tx.paymentMethod || "미지정";
       paymentTotals.set(
         paymentLabel,
-        (paymentTotals.get(paymentLabel) ?? 0) + tx.amount
+        (paymentTotals.get(paymentLabel) ?? 0) + amount
       );
     }
 
@@ -1493,12 +1558,16 @@ export default function StatsPage() {
         txId: tx.id,
         title: tx.note?.trim() || categoryLabel,
         subtitle: subtitleParts,
-        amount: tx.amount,
+        amount: tx.type === "expense" ? getEffectiveExpenseAmount(tx) : tx.amount,
       };
     });
   }, [categoryMap, detailSheetTransactions]);
   const detailSheetTotal = useMemo(() => {
-    return detailSheetTransactions.reduce((acc, tx) => acc + tx.amount, 0);
+    return detailSheetTransactions.reduce(
+      (acc, tx) =>
+        acc + (tx.type === "expense" ? getEffectiveExpenseAmount(tx) : tx.amount),
+      0
+    );
   }, [detailSheetTransactions]);
   const yearOptions = useMemo(() => {
     const currentYear = new Date().getFullYear();
@@ -2007,9 +2076,15 @@ export default function StatsPage() {
                 <p className="text-xs text-[color:rgba(45,38,34,0.6)]">
                   한 달 예산
                 </p>
-                <p className="mt-2 text-xl text-[color:rgba(45,38,34,0.4)]">
-                  미설정
-                </p>
+                {monthlyBudgetTotal ? (
+                  <p className="mt-2 text-xl font-semibold">
+                    {formatKrw(monthlyBudgetTotal)}
+                  </p>
+                ) : (
+                  <p className="mt-2 text-xl text-[color:rgba(45,38,34,0.4)]">
+                    미설정
+                  </p>
+                )}
               </div>
             </div>
 

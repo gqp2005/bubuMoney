@@ -32,6 +32,7 @@ export default function NewTransactionPage() {
   const [paymentMethod, setPaymentMethod] = useState("");
   const [paymentOwner, setPaymentOwner] = useState<PaymentOwner>("our");
   const [amountInput, setAmountInput] = useState("");
+  const [discountInput, setDiscountInput] = useState("");
   const hasSetInitialOwner = useRef(false);
   const [partnerName, setPartnerName] = useState("");
   const [categoryId, setCategoryId] = useState("");
@@ -71,6 +72,26 @@ export default function NewTransactionPage() {
   function parseAmountValue(value: string) {
     return Number(value.replace(/,/g, ""));
   }
+  const amountValue = useMemo(() => parseAmountValue(amountInput), [amountInput]);
+  const discountValue = useMemo(
+    () => parseAmountValue(discountInput),
+    [discountInput]
+  );
+  const effectiveDiscountAmount = useMemo(() => {
+    if (type !== "expense") {
+      return 0;
+    }
+    if (!amountValue || !discountValue) {
+      return 0;
+    }
+    return Math.min(amountValue, discountValue);
+  }, [amountValue, discountValue, type]);
+  const netExpenseAmount = useMemo(() => {
+    if (type !== "expense") {
+      return 0;
+    }
+    return Math.max(0, amountValue - effectiveDiscountAmount);
+  }, [amountValue, effectiveDiscountAmount, type]);
 
   const selectedCategory = useMemo(() => {
     return categories.find((category) => category.id === categoryId) ?? null;
@@ -228,6 +249,11 @@ export default function NewTransactionPage() {
       setBudgetApplied(false);
     }
   }, [selectedCategoryBudgetEnabled]);
+  useEffect(() => {
+    if (type !== "expense" && discountInput) {
+      setDiscountInput("");
+    }
+  }, [discountInput, type]);
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -252,6 +278,10 @@ export default function NewTransactionPage() {
         householdId,
         type,
         amount,
+        discountAmount:
+          type === "expense" && effectiveDiscountAmount > 0
+            ? effectiveDiscountAmount
+            : undefined,
         categoryId,
         paymentMethod: paymentValue,
         subject: subjectValue,
@@ -295,7 +325,7 @@ export default function NewTransactionPage() {
               defaultValue={defaultDate}
             />
           </label>
-          <div className="grid grid-cols-[0.3fr_0.7fr] gap-3">
+          <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-3">
             <label className="text-sm font-medium">
               유형
               <button
@@ -306,6 +336,85 @@ export default function NewTransactionPage() {
                 {typeLabelMap[type]}
               </button>
             </label>
+            <div className="grid gap-2">
+              <span className="text-sm font-medium">주체</span>
+              <button
+                type="button"
+                className="rounded-xl border border-[var(--border)] bg-white px-4 py-3 text-left text-sm disabled:opacity-60"
+                onClick={() => setIsSubjectSheetOpen(true)}
+                disabled={subjects.length === 0}
+              >
+                {subject || "선택"}
+              </button>
+            </div>
+          </div>
+          <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-3">
+            <label className="text-sm font-medium">
+              카테고리
+              <button
+                type="button"
+                className="mt-2 w-full rounded-xl border border-[var(--border)] bg-white px-4 py-3 text-left text-sm disabled:opacity-60"
+                onClick={() => setIsCategorySheetOpen(true)}
+                disabled={!hasCategories}
+              >
+                {selectedCategoryName || "선택"}
+              </button>
+              {!hasCategories ? (
+                <span className="mt-2 block text-xs text-[color:rgba(45,38,34,0.6)]">
+                  카테고리를 먼저 추가해주세요.
+                </span>
+              ) : null}
+            </label>
+            <label className="text-sm font-medium">
+              결제수단
+              <button
+                type="button"
+                className="mt-2 w-full rounded-xl border border-[var(--border)] bg-white px-4 py-3 text-left text-sm disabled:opacity-60"
+                onClick={() => setIsPaymentSheetOpen(true)}
+                disabled={paymentMethods.length === 0}
+              >
+                {paymentMethod || "선택"}
+              </button>
+            </label>
+          </div>
+          {type === "expense" ? (
+            <div className="grid grid-cols-3 gap-3">
+              <label className="text-sm font-medium">
+                금액
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete="off"
+                  className="mt-2 w-full rounded-xl border border-[var(--border)] bg-white px-4 py-3"
+                  placeholder="0"
+                  value={amountInput}
+                  onChange={(event) =>
+                    setAmountInput(formatAmountValue(event.target.value))
+                  }
+                />
+              </label>
+              <label className="text-sm font-medium">
+                할인
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete="off"
+                  className="mt-2 w-full rounded-xl border border-[var(--border)] bg-white px-4 py-3"
+                  placeholder="0"
+                  value={discountInput}
+                  onChange={(event) =>
+                    setDiscountInput(formatAmountValue(event.target.value))
+                  }
+                />
+              </label>
+              <div className="text-sm font-medium">
+                실제 지출
+                <div className="mt-2 w-full rounded-xl border border-[var(--border)] bg-[color:rgba(45,38,34,0.04)] px-4 py-3 text-left text-base font-semibold text-[color:rgba(45,38,34,0.9)]">
+                  {formatKrw(netExpenseAmount)}
+                </div>
+              </div>
+            </div>
+          ) : (
             <label className="text-sm font-medium">
               금액
               <input
@@ -320,34 +429,7 @@ export default function NewTransactionPage() {
                 }
               />
             </label>
-          </div>
-          <div className="grid gap-2">
-            <span className="text-sm font-medium">주체</span>
-            <button
-              type="button"
-              className="rounded-xl border border-[var(--border)] bg-white px-4 py-3 text-left text-sm disabled:opacity-60"
-              onClick={() => setIsSubjectSheetOpen(true)}
-              disabled={subjects.length === 0}
-            >
-              {subject || "선택"}
-            </button>
-          </div>
-          <label className="text-sm font-medium">
-            카테고리
-            <button
-              type="button"
-              className="mt-2 w-full rounded-xl border border-[var(--border)] bg-white px-4 py-3 text-left text-sm disabled:opacity-60"
-              onClick={() => setIsCategorySheetOpen(true)}
-              disabled={!hasCategories}
-            >
-              {selectedCategoryName || "선택"}
-            </button>
-            {!hasCategories ? (
-              <span className="mt-2 block text-xs text-[color:rgba(45,38,34,0.6)]">
-                카테고리를 먼저 추가해주세요.
-              </span>
-            ) : null}
-          </label>
+          )}
           {selectedCategoryBudgetEnabled && type === "expense" ? (
             <label className="flex items-center gap-2 text-sm text-[color:rgba(45,38,34,0.8)]">
               <input
@@ -359,17 +441,6 @@ export default function NewTransactionPage() {
               예산으로 처리
             </label>
           ) : null}
-          <label className="text-sm font-medium">
-            결제수단
-            <button
-              type="button"
-              className="mt-2 w-full rounded-xl border border-[var(--border)] bg-white px-4 py-3 text-left text-sm disabled:opacity-60"
-              onClick={() => setIsPaymentSheetOpen(true)}
-              disabled={paymentMethods.length === 0}
-            >
-              {paymentMethod || "선택"}
-            </button>
-          </label>
         </div>
         <label className="mt-4 block text-sm font-medium">
           메모

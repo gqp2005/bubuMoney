@@ -36,6 +36,7 @@ export interface Category {
 export interface Transaction {
   type: TransactionType;
   amount: number;
+  discountAmount?: number;
   categoryId: string;
   paymentMethod: string;
   subject: string;

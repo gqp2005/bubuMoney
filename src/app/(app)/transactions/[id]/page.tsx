@@ -45,6 +45,7 @@ export default function EditTransactionPage() {
 
   const [type, setType] = useState<TransactionType>("expense");
   const [amount, setAmount] = useState("");
+  const [discountAmount, setDiscountAmount] = useState("");
   const [categoryId, setCategoryId] = useState("");
   const [paymentMethod, setPaymentMethod] = useState("");
   const [subject, setSubject] = useState("");
@@ -54,6 +55,7 @@ export default function EditTransactionPage() {
   const [originalTransaction, setOriginalTransaction] = useState<{
     type: TransactionType;
     amount: number;
+    discountAmount?: number;
     categoryId: string;
     paymentMethod: string;
     subject: string;
@@ -83,11 +85,32 @@ export default function EditTransactionPage() {
   function parseAmountValue(value: string) {
     return Number(value.replace(/,/g, ""));
   }
+  const parsedAmount = useMemo(() => parseAmountValue(amount), [amount]);
+  const parsedDiscountAmount = useMemo(
+    () => parseAmountValue(discountAmount),
+    [discountAmount]
+  );
+  const effectiveDiscountAmount = useMemo(() => {
+    if (type !== "expense") {
+      return 0;
+    }
+    if (!parsedAmount || !parsedDiscountAmount) {
+      return 0;
+    }
+    return Math.min(parsedAmount, parsedDiscountAmount);
+  }, [parsedAmount, parsedDiscountAmount, type]);
+  const netExpenseAmount = useMemo(() => {
+    if (type !== "expense") {
+      return 0;
+    }
+    return Math.max(0, parsedAmount - effectiveDiscountAmount);
+  }, [effectiveDiscountAmount, parsedAmount, type]);
 
   function buildUpdateSummary(
     original: {
       type: TransactionType;
       amount: number;
+      discountAmount?: number;
       categoryId: string;
       paymentMethod: string;
       subject: string;
@@ -98,6 +121,7 @@ export default function EditTransactionPage() {
     next: {
       type: TransactionType;
       amount: number;
+      discountAmount?: number;
       categoryId: string;
       paymentMethod: string;
       subject: string;
@@ -114,6 +138,13 @@ export default function EditTransactionPage() {
     }
     if (original.amount !== next.amount) {
       changes.push(`금액 ${formatKrw(original.amount)}→${formatKrw(next.amount)}`);
+    }
+    if (original.discountAmount !== next.discountAmount) {
+      changes.push(
+        `할인 ${formatKrw(original.discountAmount ?? 0)}→${formatKrw(
+          next.discountAmount ?? 0
+        )}`
+      );
     }
     if (original.categoryId !== next.categoryId) {
       changes.push(
@@ -232,6 +263,7 @@ export default function EditTransactionPage() {
         const data = snapshot.data() as {
           type: TransactionType;
           amount: number;
+          discountAmount?: number;
           categoryId: string;
           paymentMethod: string;
           subject: string;
@@ -241,6 +273,7 @@ export default function EditTransactionPage() {
         };
         setType(data.type);
         setAmount(formatAmountValue(String(data.amount)));
+        setDiscountAmount(formatAmountValue(String(data.discountAmount ?? "")));
         setCategoryId(data.categoryId);
         setPaymentMethod(data.paymentMethod);
         setSubject(data.subject);
@@ -250,6 +283,7 @@ export default function EditTransactionPage() {
         setOriginalTransaction({
           type: data.type,
           amount: data.amount,
+          discountAmount: data.discountAmount ?? 0,
           categoryId: data.categoryId,
           paymentMethod: data.paymentMethod,
           subject: data.subject,
@@ -379,6 +413,11 @@ export default function EditTransactionPage() {
       setBudgetApplied(false);
     }
   }, [selectedCategoryBudgetEnabled]);
+  useEffect(() => {
+    if (type !== "expense" && discountAmount) {
+      setDiscountAmount("");
+    }
+  }, [discountAmount, type]);
 
   async function handleSave() {
     if (!householdId || !transactionId) {
@@ -393,6 +432,10 @@ export default function EditTransactionPage() {
         ? {
             type,
             amount: nextAmount,
+            discountAmount:
+              type === "expense" && effectiveDiscountAmount > 0
+                ? effectiveDiscountAmount
+                : 0,
             categoryId,
             paymentMethod,
             subject,
@@ -409,6 +452,10 @@ export default function EditTransactionPage() {
         transactionId,
         type,
         amount: nextAmount,
+        discountAmount:
+          type === "expense" && effectiveDiscountAmount > 0
+            ? effectiveDiscountAmount
+            : undefined,
         categoryId,
         paymentMethod,
         subject,
@@ -488,7 +535,7 @@ export default function EditTransactionPage() {
               onChange={(event) => setDate(event.target.value)}
             />
           </label>
-          <div className="grid grid-cols-[0.3fr_0.7fr] gap-3">
+          <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-3">
             <label className="text-sm font-medium">
               유형
               <button
@@ -499,6 +546,78 @@ export default function EditTransactionPage() {
                 {typeLabelMap[type]}
               </button>
             </label>
+            <div className="grid gap-2">
+              <span className="text-sm font-medium">주체</span>
+              <button
+                type="button"
+                className="rounded-xl border border-[var(--border)] bg-white px-4 py-3 text-left text-sm disabled:opacity-60"
+                onClick={() => setIsSubjectSheetOpen(true)}
+                disabled={subjects.length === 0}
+              >
+                {subject || "선택"}
+              </button>
+            </div>
+          </div>
+          <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-3">
+            <label className="text-sm font-medium">
+              카테고리
+              <button
+                type="button"
+                className="mt-2 w-full rounded-xl border border-[var(--border)] bg-white px-4 py-3 text-left text-sm"
+                onClick={() => setIsCategorySheetOpen(true)}
+              >
+                {selectedCategoryName || "선택"}
+              </button>
+            </label>
+            <label className="text-sm font-medium">
+              결제수단
+              <button
+                type="button"
+                className="mt-2 w-full rounded-xl border border-[var(--border)] bg-white px-4 py-3 text-left text-sm disabled:opacity-60"
+                onClick={() => setIsPaymentSheetOpen(true)}
+                disabled={paymentMethods.length === 0}
+              >
+                {paymentMethod || "선택"}
+              </button>
+            </label>
+          </div>
+          {type === "expense" ? (
+            <div className="grid grid-cols-3 gap-3">
+              <label className="text-sm font-medium">
+                금액
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete="off"
+                  name="amount"
+                  className="mt-2 w-full rounded-xl border border-[var(--border)] bg-white px-4 py-3"
+                  value={amount}
+                  onChange={(event) =>
+                    setAmount(formatAmountValue(event.target.value))
+                  }
+                />
+              </label>
+              <label className="text-sm font-medium">
+                할인
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete="off"
+                  className="mt-2 w-full rounded-xl border border-[var(--border)] bg-white px-4 py-3"
+                  value={discountAmount}
+                  onChange={(event) =>
+                    setDiscountAmount(formatAmountValue(event.target.value))
+                  }
+                />
+              </label>
+              <div className="text-sm font-medium">
+                실제 지출
+                <div className="mt-2 w-full rounded-xl border border-[var(--border)] bg-[color:rgba(45,38,34,0.04)] px-4 py-3 text-left text-base font-semibold text-[color:rgba(45,38,34,0.9)]">
+                  {formatKrw(netExpenseAmount)}
+                </div>
+              </div>
+            </div>
+          ) : (
             <label className="text-sm font-medium">
               금액
               <input
@@ -513,28 +632,7 @@ export default function EditTransactionPage() {
                 }
               />
             </label>
-          </div>
-          <div className="grid gap-2">
-            <span className="text-sm font-medium">주체</span>
-            <button
-              type="button"
-              className="rounded-xl border border-[var(--border)] bg-white px-4 py-3 text-left text-sm disabled:opacity-60"
-              onClick={() => setIsSubjectSheetOpen(true)}
-              disabled={subjects.length === 0}
-            >
-              {subject || "선택"}
-            </button>
-          </div>
-          <label className="text-sm font-medium">
-            카테고리
-            <button
-              type="button"
-              className="mt-2 w-full rounded-xl border border-[var(--border)] bg-white px-4 py-3 text-left text-sm"
-              onClick={() => setIsCategorySheetOpen(true)}
-            >
-              {selectedCategoryName || "선택"}
-            </button>
-          </label>
+          )}
           {selectedCategoryBudgetEnabled && type === "expense" ? (
             <label className="flex items-center gap-2 text-sm text-[color:rgba(45,38,34,0.8)]">
               <input
@@ -546,17 +644,6 @@ export default function EditTransactionPage() {
               예산으로 처리
             </label>
           ) : null}
-          <label className="text-sm font-medium">
-            결제수단
-            <button
-              type="button"
-              className="mt-2 w-full rounded-xl border border-[var(--border)] bg-white px-4 py-3 text-left text-sm disabled:opacity-60"
-              onClick={() => setIsPaymentSheetOpen(true)}
-              disabled={paymentMethods.length === 0}
-            >
-              {paymentMethod || "선택"}
-            </button>
-          </label>
         </div>
         <label className="mt-4 block text-sm font-medium">
           메모
