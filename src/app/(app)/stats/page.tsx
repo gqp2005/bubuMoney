@@ -103,7 +103,7 @@ type BreakdownItem = {
 };
 
 type BudgetDoc = {
-  total?: number;
+  total?: number | string;
   byCategory?: Record<string, number | string>;
 };
 
