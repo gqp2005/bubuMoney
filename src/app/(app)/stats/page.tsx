@@ -547,6 +547,7 @@ type FilterSheetProps = {
   setPaymentOwnerFilter: (owner: "husband" | "wife" | "our") => void;
   paymentParents: PaymentMethodItem[];
   paymentChildrenByParent: Map<string, PaymentMethodItem[]>;
+  allPaymentMethodNames: string[];
   draftPayments: Set<string>;
   setDraftPayments: (next: Set<string>) => void;
   expandedPaymentParents: Set<string>;
@@ -574,6 +575,7 @@ const FilterSheet = memo(function FilterSheet({
   setPaymentOwnerFilter,
   paymentParents,
   paymentChildrenByParent,
+  allPaymentMethodNames,
   draftPayments,
   setDraftPayments,
   expandedPaymentParents,
@@ -584,6 +586,27 @@ const FilterSheet = memo(function FilterSheet({
   if (!open) {
     return null;
   }
+
+  const handleSelectAll = () => {
+    if (filterTab === "category") {
+      const allCategoryIds = new Set<string>();
+      categoryParents.forEach((parent) => {
+        const children = categoryChildrenByParent.get(parent.id) ?? [];
+        if (children.length === 0) {
+          allCategoryIds.add(parent.id);
+          return;
+        }
+        children.forEach((child) => allCategoryIds.add(child.id));
+      });
+      setDraftCategoryIds(allCategoryIds);
+      return;
+    }
+    if (filterTab === "subject") {
+      setDraftSubjects(new Set(subjects.map((subject) => subject.name)));
+      return;
+    }
+    setDraftPayments(new Set(allPaymentMethodNames));
+  };
 
   return (
     <div className="fixed inset-0 z-50">
@@ -877,6 +900,15 @@ const FilterSheet = memo(function FilterSheet({
           ) : null}
         </div>
         <div className="border-t border-[var(--border)] bg-white p-4 pb-6">
+          <div className="mb-3">
+            <button
+              type="button"
+              className="w-full rounded-2xl border border-[var(--border)] px-4 py-3 text-sm text-[color:rgba(45,38,34,0.75)]"
+              onClick={handleSelectAll}
+            >
+              전체 선택
+            </button>
+          </div>
           <div className="flex items-center gap-3">
             <button
               type="button"
@@ -1614,6 +1646,15 @@ export default function StatsPage() {
     map.forEach((list) => list.sort((a, b) => a.order - b.order));
     return map;
   }, [paymentMethods, paymentOwnerFilter]);
+  const allPaymentMethodNames = useMemo(() => {
+    return Array.from(
+      new Set(
+        paymentMethods
+          .map((method) => method.name)
+          .filter((name) => typeof name === "string" && name.length > 0)
+      )
+    );
+  }, [paymentMethods]);
 
   const paymentOwnerLabels = useMemo(() => {
     const baseName = displayName?.trim() || "";
@@ -1914,6 +1955,7 @@ export default function StatsPage() {
       setPaymentOwnerFilter,
       paymentParents,
       paymentChildrenByParent,
+      allPaymentMethodNames,
       draftPayments,
       setDraftPayments,
       expandedPaymentParents,
@@ -1934,6 +1976,7 @@ export default function StatsPage() {
       filterTab,
       isFilterSheetOpen,
       paymentChildrenByParent,
+      allPaymentMethodNames,
       paymentOwnerFilter,
       paymentOwnerLabels,
       paymentParents,

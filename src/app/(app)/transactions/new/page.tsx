@@ -325,7 +325,7 @@ export default function NewTransactionPage() {
               defaultValue={defaultDate}
             />
           </label>
-          <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-3">
+          <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-3 [&>*]:min-w-0">
             <label className="text-sm font-medium">
               유형
               <button
@@ -348,7 +348,7 @@ export default function NewTransactionPage() {
               </button>
             </div>
           </div>
-          <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-3">
+          <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-3 [&>*]:min-w-0">
             <label className="text-sm font-medium">
               카테고리
               <button
@@ -378,7 +378,7 @@ export default function NewTransactionPage() {
             </label>
           </div>
           {type === "expense" ? (
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-3 gap-3 [&>*]:min-w-0">
               <label className="text-sm font-medium">
                 금액
                 <input
