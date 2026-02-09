@@ -1,6 +1,7 @@
 import {
   Timestamp,
   addDoc,
+  deleteField,
   deleteDoc,
   doc,
   getDocs,
@@ -14,6 +15,12 @@ import { db } from "@/lib/firebase/client";
 import { transactionsCol } from "@/lib/firebase/firestore";
 import { toMonthKey } from "@/lib/time";
 import type { TransactionType } from "@/types/ledger";
+
+function stripUndefinedValues<T extends Record<string, unknown>>(input: T) {
+  return Object.fromEntries(
+    Object.entries(input).filter(([, value]) => value !== undefined)
+  ) as Partial<T>;
+}
 
 export async function addTransaction(params: {
   householdId: string;
@@ -30,7 +37,7 @@ export async function addTransaction(params: {
 }) {
   const { householdId, date, ...rest } = params;
   const payload = {
-    ...rest,
+    ...stripUndefinedValues(rest),
     date: Timestamp.fromDate(date),
     monthKey: toMonthKey(date),
     createdAt: serverTimestamp(),
@@ -53,11 +60,17 @@ export async function updateTransaction(params: {
   budgetApplied?: boolean;
 }) {
   const { householdId, transactionId, date, ...rest } = params;
-  const payload = {
-    ...rest,
+  const payload: Record<string, unknown> = {
+    ...stripUndefinedValues(rest),
     date: Timestamp.fromDate(date),
     monthKey: toMonthKey(date),
   };
+  if (rest.note === undefined) {
+    payload.note = deleteField();
+  }
+  if (rest.discountAmount === undefined) {
+    payload.discountAmount = deleteField();
+  }
   return updateDoc(
     doc(db, "households", householdId, "transactions", transactionId),
     payload

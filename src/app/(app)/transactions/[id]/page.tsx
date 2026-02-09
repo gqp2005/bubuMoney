@@ -598,12 +598,13 @@ export default function EditTransactionPage() {
                 />
               </label>
               <label className="text-sm font-medium">
-                할인
+                할인 (선택)
                 <input
                   type="text"
                   inputMode="numeric"
                   autoComplete="off"
                   className="mt-2 w-full rounded-xl border border-[var(--border)] bg-white px-4 py-3"
+                  placeholder="미입력 시 0"
                   value={discountAmount}
                   onChange={(event) =>
                     setDiscountAmount(formatAmountValue(event.target.value))
