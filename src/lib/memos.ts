@@ -22,6 +22,17 @@ export type MemoEntry = {
   monthKey?: string;
 };
 
+function toFirestoreEntries(entries: MemoEntry[]) {
+  return entries.map((entry) => ({
+    id: entry.id,
+    text: entry.text,
+    createdAt: entry.createdAt ?? null,
+    createdBy: entry.createdBy ?? null,
+    visibleFrom: entry.visibleFrom ?? null,
+    visibleUntil: entry.visibleUntil ?? null,
+  }));
+}
+
 function normalizeEntries(data: {
   text?: string;
   entries?: MemoEntry[];
@@ -31,7 +42,9 @@ function normalizeEntries(data: {
   if (Array.isArray(data.entries)) {
     return data.entries
       .filter((entry) => entry && entry.text)
-      .map((entry) => ({ ...entry, monthKey: monthKey ?? entry.monthKey }));
+      .map((entry) =>
+        monthKey ? { ...entry, monthKey } : { ...entry }
+      );
   }
   if (data.text) {
     return [
@@ -125,14 +138,7 @@ export async function purgeExpiredMemoEntries(householdId: string, uid?: string)
       await setDoc(
         doc(db, "households", householdId, "memos", docSnap.id),
         {
-          entries: nextEntries.map((entry) => ({
-            id: entry.id,
-            text: entry.text,
-            createdAt: entry.createdAt ?? null,
-            createdBy: entry.createdBy ?? null,
-            visibleFrom: entry.visibleFrom ?? null,
-            visibleUntil: entry.visibleUntil ?? null,
-          })),
+          entries: toFirestoreEntries(nextEntries),
           updatedBy: uid ?? "system",
           updatedAt: serverTimestamp(),
         },
@@ -168,7 +174,7 @@ export async function addMonthlyMemoEntry(
   await setDoc(
     ref,
     {
-      entries: next,
+      entries: toFirestoreEntries(next),
       updatedBy: uid,
       updatedAt: serverTimestamp(),
     },
@@ -210,7 +216,7 @@ export async function updateMonthlyMemoEntry(
   await setDoc(
     ref,
     {
-      entries: next,
+      entries: toFirestoreEntries(next),
       updatedBy: uid,
       updatedAt: serverTimestamp(),
     },
@@ -234,7 +240,7 @@ export async function deleteMonthlyMemoEntry(
   await setDoc(
     ref,
     {
-      entries: next,
+      entries: toFirestoreEntries(next),
       updatedBy: uid,
       updatedAt: serverTimestamp(),
     },
