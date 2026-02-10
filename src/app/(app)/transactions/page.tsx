@@ -70,6 +70,7 @@ const BUDGET_HIGHLIGHT_CLASSES = [
   "border-stone-100 bg-stone-50/70",
   "border-neutral-100 bg-neutral-50/70",
 ];
+const DEFAULT_BUDGET_DOT_COLOR = "#916652";
 
 type TransactionListItemProps = {
   id: string;
@@ -234,6 +235,18 @@ export default function TransactionsPage() {
     () => new Map(categories.map((category) => [category.id, category.name])),
     [categories]
   );
+  const categoryMetaMap = useMemo(() => {
+    return new Map(
+      categories.map((category) => [
+        category.id,
+        {
+          budgetEnabled: Boolean(category.budgetEnabled),
+          personalOnly: Boolean(category.personalOnly),
+          dotColor: category.dotColor || DEFAULT_BUDGET_DOT_COLOR,
+        },
+      ])
+    );
+  }, [categories]);
   const personalCategoryIdSet = useMemo(() => {
     return new Set(
       categories
@@ -320,7 +333,8 @@ export default function TransactionsPage() {
     );
   }, [currentUserId, personalCategoryIdSet, transactions]);
 
-  const { days, calendarDisplayMap, dailyItemsMap } = useMemo(() => {
+  const { days, calendarDisplayMap, dailyItemsMap, budgetDotColorsByDay } =
+    useMemo(() => {
     const calendarStart = startOfWeek(monthStart, { weekStartsOn: 0 });
     const calendarEnd = endOfWeek(monthEnd, { weekStartsOn: 0 });
     const daysList: Date[] = [];
@@ -335,11 +349,27 @@ export default function TransactionsPage() {
     >();
     const displayMap = new Map<string, { incomeText: string; expenseText: string }>();
     const itemsMap = new Map<string, typeof transactions>();
+    const dotColorsByDay = new Map<string, string[]>();
     visibleTransactions.forEach((tx) => {
       const key = toDateKey(tx.date.toDate());
       const items = itemsMap.get(key) ?? [];
       items.push(tx);
       itemsMap.set(key, items);
+      const categoryMeta = categoryMetaMap.get(tx.categoryId);
+      if (
+        tx.type === "expense" &&
+        categoryMeta?.budgetEnabled &&
+        !tx.budgetApplied
+      ) {
+        if (
+          !categoryMeta.personalOnly ||
+          (currentUserId && tx.createdBy === currentUserId)
+        ) {
+          const colors = dotColorsByDay.get(key) ?? [];
+          colors.push(categoryMeta.dotColor);
+          dotColorsByDay.set(key, colors);
+        }
+      }
       if (
         tx.type === "expense" &&
         budgetCategoryIdSet.has(tx.categoryId) &&
@@ -366,8 +396,9 @@ export default function TransactionsPage() {
       days: daysList,
       calendarDisplayMap: displayMap,
       dailyItemsMap: itemsMap,
+      budgetDotColorsByDay: dotColorsByDay,
     };
-  }, [monthEnd, monthStart, visibleTransactions, budgetCategoryIdSet]);
+    }, [monthEnd, monthStart, visibleTransactions, budgetCategoryIdSet, categoryMetaMap, currentUserId]);
 
   const zeroAmountText = useMemo(() => formatKrw(0), []);
   const selectedKey = toDateKey(selectedDate);
@@ -773,6 +804,7 @@ export default function TransactionsPage() {
             const key = toDateKey(day);
             const display = calendarDisplayMap.get(key);
             const isActive = isSameDay(day, selectedDate);
+            const dotColors = budgetDotColorsByDay.get(key) ?? [];
             return (
               <button
                 key={key}
@@ -783,7 +815,20 @@ export default function TransactionsPage() {
                 } ${isSameMonth(day, selectedDate) ? "" : "opacity-40"}`}
                 onClick={() => setSelectedDate(day)}
               >
-                <div className="text-sm font-semibold">{format(day, "d")}</div>
+                <div className="flex items-center gap-1 text-sm font-semibold">
+                  <span>{format(day, "d")}</span>
+                  {dotColors.length > 0 ? (
+                    <span className="flex items-center gap-0.5" aria-label="예산 점 표시">
+                      {dotColors.map((color, idx) => (
+                        <span
+                          key={`${key}-dot-${idx}`}
+                          className="inline-block h-1.5 w-1.5 rounded-full"
+                          style={{ backgroundColor: color }}
+                        />
+                      ))}
+                    </span>
+                  ) : null}
+                </div>
                 <div className="mt-1 space-y-0.5 text-[9px] leading-tight text-[color:rgba(45,38,34,0.6)]">
                   <div className="text-blue-600">
                     <span className="block break-all">

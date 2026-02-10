@@ -59,6 +59,8 @@ type DragItem = {
   owner?: PaymentOwner;
 };
 
+const DEFAULT_BUDGET_DOT_COLOR = "#916652";
+
 function normalizeNumberInput(value: string) {
   return value.replace(/[^\d]/g, "");
 }
@@ -184,6 +186,7 @@ export default function CategoriesPage() {
   const [name, setName] = useState("");
   const [parentId, setParentId] = useState<string>("none");
   const [budgetEnabled, setBudgetEnabled] = useState(false);
+  const [budgetDotColor, setBudgetDotColor] = useState(DEFAULT_BUDGET_DOT_COLOR);
   const [personalOnly, setPersonalOnly] = useState(false);
   const [showAddForm, setShowAddForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -192,6 +195,7 @@ export default function CategoriesPage() {
   const [editingType, setEditingType] = useState<CategoryType>("expense");
   const [editingParentId, setEditingParentId] = useState<string>("none");
   const [editingBudgetEnabled, setEditingBudgetEnabled] = useState(false);
+  const [editingDotColor, setEditingDotColor] = useState(DEFAULT_BUDGET_DOT_COLOR);
   const [editingPersonalOnly, setEditingPersonalOnly] = useState(false);
   const [editingOwner, setEditingOwner] = useState<PaymentOwner>("our");
   const [editingGoal, setEditingGoal] = useState("");
@@ -294,10 +298,12 @@ export default function CategoriesPage() {
     setName("");
     setParentId("none");
     setBudgetEnabled(false);
+    setBudgetDotColor(DEFAULT_BUDGET_DOT_COLOR);
     setPersonalOnly(false);
     setEditingId(null);
     setEditingOriginalName("");
     setEditingBudgetEnabled(false);
+    setEditingDotColor(DEFAULT_BUDGET_DOT_COLOR);
     setEditingPersonalOnly(false);
     setEditingOwner("our");
     setEditingGoal("");
@@ -356,12 +362,17 @@ export default function CategoriesPage() {
         order: categories.length + 1,
         parentId: parentId === "none" ? null : parentId,
         budgetEnabled: activeTab === "expense" ? budgetEnabled : false,
+        dotColor:
+          activeTab === "expense" && budgetEnabled
+            ? budgetDotColor
+            : undefined,
         personalOnly: activeTab === "expense" ? personalOnly : false,
       });
     }
     setName("");
     setParentId("none");
     setBudgetEnabled(false);
+    setBudgetDotColor(DEFAULT_BUDGET_DOT_COLOR);
     setPersonalOnly(false);
     setShowAddForm(false);
   }
@@ -388,7 +399,8 @@ export default function CategoriesPage() {
     currentParentId?: string | null,
     currentOwner?: PaymentOwner,
     currentBudgetEnabled?: boolean,
-    currentPersonalOnly?: boolean
+    currentPersonalOnly?: boolean,
+    currentDotColor?: string
   ) {
     setEditingId(itemId);
     setEditingName(currentName);
@@ -406,6 +418,14 @@ export default function CategoriesPage() {
         : false
       : false;
     setEditingBudgetEnabled(Boolean(resolvedBudgetEnabled));
+    const resolvedDotColor = currentType
+      ? currentType === "expense"
+        ? currentDotColor ??
+          categories.find((category) => category.id === itemId)?.dotColor ??
+          DEFAULT_BUDGET_DOT_COLOR
+        : DEFAULT_BUDGET_DOT_COLOR
+      : DEFAULT_BUDGET_DOT_COLOR;
+    setEditingDotColor(resolvedDotColor);
     const resolvedPersonalOnly = currentType
       ? currentType === "expense"
         ? currentPersonalOnly ??
@@ -464,6 +484,10 @@ export default function CategoriesPage() {
         parentId: editingParentId === "none" ? null : editingParentId,
         imported: false,
         budgetEnabled: editingType === "expense" ? editingBudgetEnabled : false,
+        dotColor:
+          editingType === "expense" && editingBudgetEnabled
+            ? editingDotColor
+            : undefined,
         personalOnly: editingType === "expense" ? editingPersonalOnly : false,
       });
     }
@@ -813,6 +837,17 @@ export default function CategoriesPage() {
                 예산
               </label>
             ) : null}
+            {isExpenseTab && budgetEnabled ? (
+              <label className="flex items-center gap-2 text-xs text-[color:rgba(45,38,34,0.8)]">
+                점 색상
+                <input
+                  type="color"
+                  className="h-7 w-10 cursor-pointer rounded border border-[var(--border)] bg-white p-0.5"
+                  value={budgetDotColor}
+                  onChange={(event) => setBudgetDotColor(event.target.value)}
+                />
+              </label>
+            ) : null}
             {isExpenseTab ? (
               <label className="flex items-center gap-2 text-xs text-[color:rgba(45,38,34,0.8)]">
                 <input
@@ -920,6 +955,19 @@ export default function CategoriesPage() {
                             예산
                           </label>
                         ) : null}
+                        {editingType === "expense" && editingBudgetEnabled ? (
+                          <label className="flex items-center gap-2 text-xs text-[color:rgba(45,38,34,0.8)]">
+                            점 색상
+                            <input
+                              type="color"
+                              className="h-7 w-10 cursor-pointer rounded border border-[var(--border)] bg-white p-0.5"
+                              value={editingDotColor}
+                              onChange={(event) =>
+                                setEditingDotColor(event.target.value)
+                              }
+                            />
+                          </label>
+                        ) : null}
                         {editingType === "expense" ? (
                           <label className="flex items-center gap-2 text-xs text-[color:rgba(45,38,34,0.8)]">
                             <input
@@ -972,7 +1020,8 @@ export default function CategoriesPage() {
                                   parent.parentId,
                                   undefined,
                                   parent.budgetEnabled,
-                                  parent.personalOnly
+                                  parent.personalOnly,
+                                  parent.dotColor
                                 )
                               }
                             >
@@ -1047,6 +1096,22 @@ export default function CategoriesPage() {
                                             예산
                                           </label>
                                         ) : null}
+                                        {editingType === "expense" &&
+                                        editingBudgetEnabled ? (
+                                          <label className="flex items-center gap-1 text-[10px] text-[color:rgba(45,38,34,0.8)]">
+                                            점
+                                            <input
+                                              type="color"
+                                              className="h-5 w-7 cursor-pointer rounded border border-[var(--border)] bg-white p-0.5"
+                                              value={editingDotColor}
+                                              onChange={(event) =>
+                                                setEditingDotColor(
+                                                  event.target.value
+                                                )
+                                              }
+                                            />
+                                          </label>
+                                        ) : null}
                                         {editingType === "expense" ? (
                                           <label className="flex items-center gap-2 text-[10px] text-[color:rgba(45,38,34,0.8)]">
                                             <input
@@ -1090,7 +1155,8 @@ export default function CategoriesPage() {
                                                 child.parentId,
                                                 undefined,
                                                 child.budgetEnabled,
-                                                child.personalOnly
+                                                child.personalOnly,
+                                                child.dotColor
                                               )
                                             }
                                           >

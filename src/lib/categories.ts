@@ -6,6 +6,12 @@ import {
 } from "firebase/firestore";
 import { categoriesCol } from "@/lib/firebase/firestore";
 
+function stripUndefinedValues<T extends Record<string, unknown>>(input: T) {
+  return Object.fromEntries(
+    Object.entries(input).filter(([, value]) => value !== undefined)
+  ) as Partial<T>;
+}
+
 export async function addCategory(
   householdId: string,
   data: {
@@ -15,10 +21,11 @@ export async function addCategory(
     parentId?: string | null;
     imported?: boolean;
     budgetEnabled?: boolean;
+    dotColor?: string;
     personalOnly?: boolean;
   }
 ) {
-  return addDoc(categoriesCol(householdId), data);
+  return addDoc(categoriesCol(householdId), stripUndefinedValues(data));
 }
 
 export async function updateCategory(
@@ -31,10 +38,14 @@ export async function updateCategory(
     parentId?: string | null;
     imported?: boolean;
     budgetEnabled?: boolean;
+    dotColor?: string;
     personalOnly?: boolean;
   }
 ) {
-  return updateDoc(doc(categoriesCol(householdId), categoryId), data);
+  return updateDoc(
+    doc(categoriesCol(householdId), categoryId),
+    stripUndefinedValues(data)
+  );
 }
 
 export async function deleteCategory(

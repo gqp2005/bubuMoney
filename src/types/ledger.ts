@@ -30,6 +30,7 @@ export interface Category {
   parentId?: string | null;
   imported?: boolean;
   budgetEnabled?: boolean;
+  dotColor?: string;
   personalOnly?: boolean;
 }
 
