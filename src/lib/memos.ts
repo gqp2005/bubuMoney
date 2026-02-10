@@ -12,16 +12,26 @@ import {
 } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 
-type MemoEntry = {
+export type MemoEntry = {
   id: string;
   text: string;
   createdAt?: Timestamp | null;
   createdBy?: string | null;
+  visibleFrom?: Timestamp | null;
+  visibleUntil?: Timestamp | null;
+  monthKey?: string;
 };
 
-function normalizeEntries(data: { text?: string; entries?: MemoEntry[]; updatedAt?: Timestamp; updatedBy?: string }) {
+function normalizeEntries(data: {
+  text?: string;
+  entries?: MemoEntry[];
+  updatedAt?: Timestamp;
+  updatedBy?: string;
+}, monthKey?: string) {
   if (Array.isArray(data.entries)) {
-    return data.entries.filter((entry) => entry && entry.text);
+    return data.entries
+      .filter((entry) => entry && entry.text)
+      .map((entry) => ({ ...entry, monthKey: monthKey ?? entry.monthKey }));
   }
   if (data.text) {
     return [
@@ -30,6 +40,7 @@ function normalizeEntries(data: { text?: string; entries?: MemoEntry[]; updatedA
         text: data.text,
         createdAt: data.updatedAt ?? Timestamp.now(),
         createdBy: data.updatedBy ?? null,
+        monthKey: monthKey ?? undefined,
       },
     ];
   }
@@ -43,6 +54,8 @@ function createEntry(text: string, uid: string) {
     text,
     createdAt: Timestamp.now(),
     createdBy: uid,
+    visibleFrom: null,
+    visibleUntil: null,
   } as MemoEntry;
 }
 
@@ -61,39 +74,97 @@ export async function getMonthlyMemoEntries(
     updatedAt?: Timestamp;
     updatedBy?: string;
   };
-  return normalizeEntries(data);
+  return normalizeEntries(data, monthKey);
 }
 
 export async function getLatestMemoEntries(householdId: string) {
   const memosRef = collection(db, "households", householdId, "memos");
-  const snapshot = await getDocs(
-    query(memosRef, orderBy("updatedAt", "desc"), limit(1))
-  );
+  const snapshot = await getDocs(query(memosRef, orderBy("updatedAt", "desc"), limit(20)));
   if (snapshot.empty) {
     return [];
   }
-  const docSnap = snapshot.docs[0];
-  const data = docSnap.data() as {
-    text?: string;
-    entries?: MemoEntry[];
-    updatedAt?: Timestamp;
-    updatedBy?: string;
-  };
-  return normalizeEntries(data);
+  for (const docSnap of snapshot.docs) {
+    const data = docSnap.data() as {
+      text?: string;
+      entries?: MemoEntry[];
+      updatedAt?: Timestamp;
+      updatedBy?: string;
+    };
+    const entries = normalizeEntries(data, docSnap.id);
+    if (entries.length > 0) {
+      return entries;
+    }
+  }
+  return [];
+}
+
+export async function purgeExpiredMemoEntries(householdId: string, uid?: string) {
+  const memosRef = collection(db, "households", householdId, "memos");
+  const snapshot = await getDocs(memosRef);
+  if (snapshot.empty) {
+    return;
+  }
+  const now = new Date();
+  await Promise.all(
+    snapshot.docs.map(async (docSnap) => {
+      const data = docSnap.data() as {
+        text?: string;
+        entries?: MemoEntry[];
+      };
+      const entries = normalizeEntries(data, docSnap.id);
+      const nextEntries = entries.filter((entry) => {
+        const until = entry.visibleUntil?.toDate?.();
+        if (!until) {
+          return true;
+        }
+        return until >= now;
+      });
+      if (nextEntries.length === entries.length) {
+        return;
+      }
+      await setDoc(
+        doc(db, "households", householdId, "memos", docSnap.id),
+        {
+          entries: nextEntries.map((entry) => ({
+            id: entry.id,
+            text: entry.text,
+            createdAt: entry.createdAt ?? null,
+            createdBy: entry.createdBy ?? null,
+            visibleFrom: entry.visibleFrom ?? null,
+            visibleUntil: entry.visibleUntil ?? null,
+          })),
+          updatedBy: uid ?? "system",
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true }
+      );
+    })
+  );
 }
 
 export async function addMonthlyMemoEntry(
   householdId: string,
   monthKey: string,
   text: string,
-  uid: string
+  uid: string,
+  options?: {
+    visibleFrom?: Date | null;
+    visibleUntil?: Date | null;
+  }
 ) {
   const ref = doc(db, "households", householdId, "memos", monthKey);
   const snapshot = await getDoc(ref);
   const existing = snapshot.exists()
     ? normalizeEntries(snapshot.data() as { text?: string; entries?: MemoEntry[] })
     : [];
-  const next = [...existing, createEntry(text, uid)];
+  const nextEntry = createEntry(text, uid);
+  nextEntry.visibleFrom = options?.visibleFrom
+    ? Timestamp.fromDate(options.visibleFrom)
+    : null;
+  nextEntry.visibleUntil = options?.visibleUntil
+    ? Timestamp.fromDate(options.visibleUntil)
+    : null;
+  const next = [...existing, nextEntry];
   await setDoc(
     ref,
     {
@@ -110,7 +181,11 @@ export async function updateMonthlyMemoEntry(
   monthKey: string,
   entryId: string,
   text: string,
-  uid: string
+  uid: string,
+  options?: {
+    visibleFrom?: Date | null;
+    visibleUntil?: Date | null;
+  }
 ) {
   const ref = doc(db, "households", householdId, "memos", monthKey);
   const snapshot = await getDoc(ref);
@@ -119,7 +194,18 @@ export async function updateMonthlyMemoEntry(
   }
   const existing = normalizeEntries(snapshot.data() as { text?: string; entries?: MemoEntry[] });
   const next = existing.map((entry) =>
-    entry.id === entryId ? { ...entry, text } : entry
+    entry.id === entryId
+      ? {
+          ...entry,
+          text,
+          visibleFrom: options?.visibleFrom
+            ? Timestamp.fromDate(options.visibleFrom)
+            : null,
+          visibleUntil: options?.visibleUntil
+            ? Timestamp.fromDate(options.visibleUntil)
+            : null,
+        }
+      : entry
   );
   await setDoc(
     ref,

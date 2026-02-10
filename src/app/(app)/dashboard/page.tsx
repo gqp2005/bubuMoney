@@ -9,7 +9,7 @@ import { formatDate } from "@/lib/time";
 import { useCategories } from "@/hooks/use-categories";
 import { usePaymentMethods } from "@/hooks/use-payment-methods";
 import { useMonthlyTransactions } from "@/hooks/use-transactions";
-import { getLatestMemoEntries } from "@/lib/memos";
+import { getLatestMemoEntries, purgeExpiredMemoEntries } from "@/lib/memos";
 
 export default function DashboardPage() {
   const { householdId, spouseRole } = useHousehold();
@@ -17,7 +17,14 @@ export default function DashboardPage() {
   const { paymentMethods } = usePaymentMethods(householdId);
   const { transactions, loading } = useMonthlyTransactions(householdId);
   const [memoEntries, setMemoEntries] = useState<
-    { id: string; text: string; createdAt?: Date | null }[]
+    {
+      id: string;
+      text: string;
+      createdAt?: Date | null;
+      visibleFrom?: Date | null;
+      visibleUntil?: Date | null;
+      monthKey?: string;
+    }[]
   >([]);
   const [memoLoading, setMemoLoading] = useState(false);
   const [memoError, setMemoError] = useState<string | null>(null);
@@ -111,7 +118,8 @@ export default function DashboardPage() {
     }
     setMemoLoading(true);
     setMemoError(null);
-    getLatestMemoEntries(householdId)
+    purgeExpiredMemoEntries(householdId)
+      .then(() => getLatestMemoEntries(householdId))
       .then((entries) =>
         setMemoEntries(
           entries
@@ -119,7 +127,25 @@ export default function DashboardPage() {
               id: entry.id,
               text: entry.text,
               createdAt: entry.createdAt ? entry.createdAt.toDate() : null,
+              visibleFrom: entry.visibleFrom ? entry.visibleFrom.toDate() : null,
+              visibleUntil: entry.visibleUntil ? entry.visibleUntil.toDate() : null,
+              monthKey: entry.monthKey,
             }))
+            .filter((entry) => {
+              const now = new Date();
+              const from = entry.visibleFrom;
+              const until = entry.visibleUntil;
+              if (!from && !until) {
+                return true;
+              }
+              if (from && now < from) {
+                return false;
+              }
+              if (until && now > until) {
+                return false;
+              }
+              return true;
+            })
             .sort((a, b) => {
               const aTime = a.createdAt?.getTime() ?? 0;
               const bTime = b.createdAt?.getTime() ?? 0;
@@ -156,12 +182,27 @@ export default function DashboardPage() {
               >
                 <Link
                   className="flex-1 whitespace-pre-line"
-                  href={`/memos/new?entryId=${entry.id}`}
+                  href={`/memos/new?entryId=${encodeURIComponent(entry.id)}${
+                    entry.monthKey ? `&monthKey=${encodeURIComponent(entry.monthKey)}` : ""
+                  }`}
                 >
                   <span className="block text-xs text-[color:rgba(45,38,34,0.6)]">
                     {entry.createdAt
                       ? format(entry.createdAt, "yyyy.MM.dd HH:mm")
                       : "날짜 없음"}
+                  </span>
+                  <span className="block text-xs text-[color:rgba(45,38,34,0.6)]">
+                    {entry.visibleFrom || entry.visibleUntil
+                      ? `유효기간: ${
+                          entry.visibleFrom
+                            ? format(entry.visibleFrom, "yyyy.MM.dd")
+                            : "시작 제한 없음"
+                        } ~ ${
+                          entry.visibleUntil
+                            ? format(entry.visibleUntil, "yyyy.MM.dd")
+                            : "종료 제한 없음"
+                        }`
+                      : "유효기간: 상시"}
                   </span>
                   <span>{entry.text}</span>
                 </Link>

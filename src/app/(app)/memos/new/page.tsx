@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
+import { format } from "date-fns";
 import { useAuth } from "@/components/auth-provider";
 import { useHousehold } from "@/components/household-provider";
 import {
@@ -23,7 +24,13 @@ export default function NewMemoPage() {
   const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const monthKey = toMonthKey(new Date());
+  const [visibleFrom, setVisibleFrom] = useState("");
+  const [visibleUntil, setVisibleUntil] = useState("");
+  const monthKeyFromQuery = searchParams.get("monthKey");
+  const monthKey =
+    monthKeyFromQuery && /^\d{4}-\d{2}$/.test(monthKeyFromQuery)
+      ? monthKeyFromQuery
+      : toMonthKey(new Date());
   const isCreateMode = searchParams.get("mode") === "create";
   const entryId = searchParams.get("entryId");
 
@@ -43,6 +50,12 @@ export default function NewMemoPage() {
             ? entries.find((entry) => entry.id === entryId)
             : entries[0];
         setMemo(target?.text ?? "");
+        setVisibleFrom(
+          target?.visibleFrom ? format(target.visibleFrom.toDate(), "yyyy-MM-dd") : ""
+        );
+        setVisibleUntil(
+          target?.visibleUntil ? format(target.visibleUntil.toDate(), "yyyy-MM-dd") : ""
+        );
       })
       .finally(() => setLoading(false));
   }, [householdId, isCreateMode, monthKey, entryId]);
@@ -52,16 +65,25 @@ export default function NewMemoPage() {
       return;
     }
     const timeout = setTimeout(async () => {
+      const parsedFrom = visibleFrom ? new Date(`${visibleFrom}T00:00:00`) : null;
+      const parsedUntil = visibleUntil ? new Date(`${visibleUntil}T23:59:59`) : null;
+      if (parsedFrom && parsedUntil && parsedFrom > parsedUntil) {
+        setStatus("기간 설정 오류");
+        return;
+      }
       setStatus("자동 저장 중...");
       try {
-        await updateMonthlyMemoEntry(householdId, monthKey, entryId, memo, user.uid);
+        await updateMonthlyMemoEntry(householdId, monthKey, entryId, memo, user.uid, {
+          visibleFrom: parsedFrom,
+          visibleUntil: parsedUntil,
+        });
         setStatus("자동 저장됨");
-      } catch (err) {
+      } catch {
         setStatus("자동 저장 실패");
       }
     }, 800);
     return () => clearTimeout(timeout);
-  }, [householdId, memo, monthKey, user]);
+  }, [householdId, memo, monthKey, user, isCreateMode, entryId, visibleFrom, visibleUntil]);
 
   async function handleSave() {
     if (!householdId || !user) {
@@ -70,6 +92,13 @@ export default function NewMemoPage() {
     setSaving(true);
     try {
       const trimmed = memo.trim();
+      const parsedFrom = visibleFrom ? new Date(`${visibleFrom}T00:00:00`) : null;
+      const parsedUntil = visibleUntil ? new Date(`${visibleUntil}T23:59:59`) : null;
+      if (parsedFrom && parsedUntil && parsedFrom > parsedUntil) {
+        setStatus("기간 설정 오류: 시작일이 종료일보다 늦을 수 없습니다.");
+        setSaving(false);
+        return;
+      }
       if (!trimmed) {
         setSaving(false);
         return;
@@ -79,12 +108,22 @@ export default function NewMemoPage() {
           householdId,
           monthKey,
           trimmed,
-          user.uid
+          user.uid,
+          {
+            visibleFrom: parsedFrom,
+            visibleUntil: parsedUntil,
+          }
         );
       } else if (entryId) {
-        await updateMonthlyMemoEntry(householdId, monthKey, entryId, trimmed, user.uid);
+        await updateMonthlyMemoEntry(householdId, monthKey, entryId, trimmed, user.uid, {
+          visibleFrom: parsedFrom,
+          visibleUntil: parsedUntil,
+        });
       } else {
-        await addMonthlyMemoEntry(householdId, monthKey, trimmed, user.uid);
+        await addMonthlyMemoEntry(householdId, monthKey, trimmed, user.uid, {
+          visibleFrom: parsedFrom,
+          visibleUntil: parsedUntil,
+        });
       }
       router.replace("/dashboard");
     } finally {
@@ -122,6 +161,28 @@ export default function NewMemoPage() {
         </Link>
       </div>
       <section className="rounded-3xl border border-[var(--border)] bg-white p-6">
+        <div className="mb-4 grid gap-3 sm:grid-cols-2">
+          <label className="text-sm font-medium">
+            표시 시작일 (선택)
+            <input
+              type="date"
+              className="mt-2 w-full rounded-xl border border-[var(--border)] bg-white px-3 py-2 text-sm"
+              value={visibleFrom}
+              onChange={(event) => setVisibleFrom(event.target.value)}
+              disabled={loading}
+            />
+          </label>
+          <label className="text-sm font-medium">
+            표시 종료일 (선택)
+            <input
+              type="date"
+              className="mt-2 w-full rounded-xl border border-[var(--border)] bg-white px-3 py-2 text-sm"
+              value={visibleUntil}
+              onChange={(event) => setVisibleUntil(event.target.value)}
+              disabled={loading}
+            />
+          </label>
+        </div>
         <textarea
           className="min-h-[220px] w-full rounded-2xl border border-[var(--border)] px-4 py-3 text-sm"
           placeholder="예) 이번 달 식비는 40만원 이하로 유지하기"
