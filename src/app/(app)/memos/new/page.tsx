@@ -34,6 +34,20 @@ export default function NewMemoPage() {
   const isCreateMode = searchParams.get("mode") === "create";
   const entryId = searchParams.get("entryId");
 
+  function parseDateInput(value: string, endOfDay = false): Date | null {
+    if (!value) {
+      return null;
+    }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+      return null;
+    }
+    const parsed = new Date(`${value}T${endOfDay ? "23:59:59" : "00:00:00"}`);
+    if (Number.isNaN(parsed.getTime())) {
+      return null;
+    }
+    return parsed;
+  }
+
   useEffect(() => {
     if (!householdId) {
       return;
@@ -65,8 +79,12 @@ export default function NewMemoPage() {
       return;
     }
     const timeout = setTimeout(async () => {
-      const parsedFrom = visibleFrom ? new Date(`${visibleFrom}T00:00:00`) : null;
-      const parsedUntil = visibleUntil ? new Date(`${visibleUntil}T23:59:59`) : null;
+      const parsedFrom = parseDateInput(visibleFrom, false);
+      const parsedUntil = parseDateInput(visibleUntil, true);
+      if ((visibleFrom && !parsedFrom) || (visibleUntil && !parsedUntil)) {
+        setStatus("날짜 형식을 확인해주세요.");
+        return;
+      }
       if (parsedFrom && parsedUntil && parsedFrom > parsedUntil) {
         setStatus("기간 설정 오류");
         return;
@@ -92,8 +110,13 @@ export default function NewMemoPage() {
     setSaving(true);
     try {
       const trimmed = memo.trim();
-      const parsedFrom = visibleFrom ? new Date(`${visibleFrom}T00:00:00`) : null;
-      const parsedUntil = visibleUntil ? new Date(`${visibleUntil}T23:59:59`) : null;
+      const parsedFrom = parseDateInput(visibleFrom, false);
+      const parsedUntil = parseDateInput(visibleUntil, true);
+      if ((visibleFrom && !parsedFrom) || (visibleUntil && !parsedUntil)) {
+        setStatus("날짜 형식을 확인해주세요.");
+        setSaving(false);
+        return;
+      }
       if (parsedFrom && parsedUntil && parsedFrom > parsedUntil) {
         setStatus("기간 설정 오류: 시작일이 종료일보다 늦을 수 없습니다.");
         setSaving(false);
