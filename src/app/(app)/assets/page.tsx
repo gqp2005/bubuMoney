@@ -20,7 +20,6 @@ import {
   addAccount,
   addTransfer,
   deleteTransfer,
-  deleteAccount,
   updateAccount,
   updateTransfer,
 } from "@/lib/accounts";
@@ -103,7 +102,7 @@ function calcMonthlyCompoundInterest(
 
 export default function AssetsPage() {
   const { user } = useAuth();
-  const { householdId } = useHousehold();
+  const { householdId, spouseRole } = useHousehold();
   const { accounts, loading } = useAccounts(householdId);
   const { groups: accountGroups } = useAccountGroups(householdId);
   const [includeExtended, setIncludeExtended] = useState(false);
@@ -219,6 +218,41 @@ export default function AssetsPage() {
     });
   }, [accounts, includeExtended, effectiveGroupId, visibleAccountGroupIdSet]);
 
+  const accountGroupVisibilityMap = useMemo(() => {
+    return new Map(accountGroups.map((group) => [group.id, group.visibility]));
+  }, [accountGroups]);
+
+  const sharedAccounts = useMemo(() => {
+    return visibleAccounts.filter((account) => {
+      if (!account.groupId) {
+        return true;
+      }
+      return accountGroupVisibilityMap.get(account.groupId) !== "personal";
+    });
+  }, [accountGroupVisibilityMap, visibleAccounts]);
+
+  const sharedAccountIdSet = useMemo(() => {
+    return new Set(sharedAccounts.map((account) => account.id));
+  }, [sharedAccounts]);
+
+  const personalAccounts = useMemo(() => {
+    return visibleAccounts.filter((account) => !sharedAccountIdSet.has(account.id));
+  }, [sharedAccountIdSet, visibleAccounts]);
+
+  const myPersonalAccounts = useMemo(() => {
+    if (!user) {
+      return [];
+    }
+    return personalAccounts.filter((account) => account.createdBy === user.uid);
+  }, [personalAccounts, user]);
+
+  const spousePersonalAccounts = useMemo(() => {
+    if (!user) {
+      return personalAccounts;
+    }
+    return personalAccounts.filter((account) => account.createdBy !== user.uid);
+  }, [personalAccounts, user]);
+
   const accountMap = useMemo(() => {
     return new Map(accounts.map((account) => [account.id, account]));
   }, [accounts]);
@@ -266,6 +300,79 @@ export default function AssetsPage() {
   const totalBalance = useMemo(() => {
     return visibleAccounts.reduce((sum, account) => sum + account.balance, 0);
   }, [visibleAccounts]);
+
+  const myPersonalAccountIdSet = useMemo(
+    () => new Set(myPersonalAccounts.map((account) => account.id)),
+    [myPersonalAccounts]
+  );
+
+  const spousePersonalAccountIdSet = useMemo(
+    () => new Set(spousePersonalAccounts.map((account) => account.id)),
+    [spousePersonalAccounts]
+  );
+
+  const ownerComparison = useMemo(() => {
+    const summarize = (idSet: Set<string>) => {
+      const balance = visibleAccounts
+        .filter((account) => idSet.has(account.id))
+        .reduce((sum, account) => sum + account.balance, 0);
+      let increase = 0;
+      let decrease = 0;
+      let externalOutflow = 0;
+      monthTransfers.forEach((transfer) => {
+        if (transfer.toAccountId && idSet.has(transfer.toAccountId)) {
+          increase += transfer.amount;
+        }
+        if (transfer.fromAccountId && idSet.has(transfer.fromAccountId)) {
+          decrease += transfer.amount;
+        }
+        if (
+          transfer.fromAccountId &&
+          idSet.has(transfer.fromAccountId) &&
+          !transfer.toAccountId
+        ) {
+          externalOutflow += transfer.amount;
+        }
+      });
+      return { balance, increase, decrease, externalOutflow };
+    };
+
+    return {
+      mine: summarize(myPersonalAccountIdSet),
+      spouse: summarize(spousePersonalAccountIdSet),
+      total: {
+        balance: totalBalance,
+        increase: summary.increase,
+        decrease: summary.decrease,
+      },
+    };
+  }, [
+    myPersonalAccountIdSet,
+    monthTransfers,
+    spousePersonalAccountIdSet,
+    summary.decrease,
+    summary.increase,
+    totalBalance,
+    visibleAccounts,
+  ]);
+
+  const spouseLabel = spouseRole === "husband" ? "와이프" : spouseRole === "wife" ? "남편" : "배우자";
+
+  const settlementText = useMemo(() => {
+    const myOutflow = ownerComparison.mine.externalOutflow;
+    const spouseOutflow = ownerComparison.spouse.externalOutflow;
+    const diff = Math.abs(myOutflow - spouseOutflow);
+    if (myOutflow === 0 && spouseOutflow === 0) {
+      return "이번 달 외부 지출이 없어 정산이 필요하지 않습니다.";
+    }
+    if (diff === 0) {
+      return "이번 달 외부 지출 부담이 동일해 정산이 필요하지 않습니다.";
+    }
+    if (myOutflow > spouseOutflow) {
+      return `나가 ${formatKrw(diff)} 더 부담했습니다.`;
+    }
+    return `${spouseLabel}이(가) ${formatKrw(diff)} 더 부담했습니다.`;
+  }, [ownerComparison.mine.externalOutflow, ownerComparison.spouse.externalOutflow, spouseLabel]);
 
   const recentTransfers = useMemo(() => {
     return monthTransfers.slice(0, 10);
@@ -445,6 +552,55 @@ export default function AssetsPage() {
     return results;
   }, [visibleAccounts]);
 
+  const renderAccountCard = (account: (typeof visibleAccounts)[number]) => {
+    const typeLabel =
+      ACCOUNT_TYPES.find((type) => type.value === account.type)?.label ?? "계좌";
+    const kindLabel =
+      account.type === "savings"
+        ? SAVINGS_KINDS.find((kind) => kind.value === account.savingsKind)
+            ?.label
+        : null;
+    const forecast = accountForecasts.get(account.id)?.expected ?? null;
+    const startText =
+      account.type === "savings" && account.startDate
+        ? format(account.startDate.toDate(), "yyyy.MM.dd")
+        : null;
+    const maturityText =
+      account.type === "savings" && account.maturityDate
+        ? format(account.maturityDate.toDate(), "yyyy.MM.dd")
+        : null;
+
+    return (
+      <button
+        type="button"
+        key={account.id}
+        className="w-full rounded-2xl border border-[var(--border)] bg-white px-4 py-3 text-left"
+        onClick={() => setSelectedAccountId(account.id)}
+      >
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-sm font-semibold">{account.name}</p>
+            <p className="text-xs text-[color:rgba(45,38,34,0.6)]">
+              {typeLabel}
+              {kindLabel ? ` · ${kindLabel}` : ""}
+            </p>
+          </div>
+          <p className="text-sm font-semibold">{formatKrw(account.balance)}</p>
+        </div>
+        {startText || maturityText ? (
+          <p className="mt-2 text-xs text-[color:rgba(45,38,34,0.6)]">
+            {startText ? `시작 ${startText}` : ""}
+            {startText && maturityText ? " · " : ""}
+            {maturityText ? `만기 ${maturityText}` : ""}
+            {maturityText && forecast !== null
+              ? ` · 세후 예상 ${formatKrw(forecast)}`
+              : ""}
+          </p>
+        ) : null}
+      </button>
+    );
+  };
+
   const handleAddAccount = async () => {
     if (!householdId || !user) {
       return;
@@ -495,7 +651,7 @@ export default function AssetsPage() {
         accountType === "savings" && savingsKind === "compound"
           ? "monthly_compound"
           : interestType;
-      const docRef = await addAccount(householdId, {
+      await addAccount(householdId, {
         name: accountName.trim(),
         type: accountType,
         order: accounts.length + 1,
@@ -771,6 +927,41 @@ export default function AssetsPage() {
             투자·부채 포함
           </button>
         </div>
+        <div className="mt-4 grid grid-cols-3 gap-2 text-xs">
+          <div className="rounded-xl border border-[var(--border)] bg-[color:rgba(45,38,34,0.03)] px-3 py-2">
+            <p className="text-[color:rgba(45,38,34,0.6)]">나</p>
+            <p className="mt-1 font-semibold">{formatKrw(ownerComparison.mine.balance)}</p>
+            <p className="mt-1 text-[10px] text-[color:rgba(45,38,34,0.6)]">
+              +{formatKrw(ownerComparison.mine.increase)} / -{formatKrw(ownerComparison.mine.decrease)}
+            </p>
+          </div>
+          <div className="rounded-xl border border-[var(--border)] bg-[color:rgba(45,38,34,0.03)] px-3 py-2">
+            <p className="text-[color:rgba(45,38,34,0.6)]">{spouseLabel}</p>
+            <p className="mt-1 font-semibold">{formatKrw(ownerComparison.spouse.balance)}</p>
+            <p className="mt-1 text-[10px] text-[color:rgba(45,38,34,0.6)]">
+              +{formatKrw(ownerComparison.spouse.increase)} / -{formatKrw(ownerComparison.spouse.decrease)}
+            </p>
+          </div>
+          <div className="rounded-xl border border-[var(--border)] bg-[color:rgba(45,38,34,0.03)] px-3 py-2">
+            <p className="text-[color:rgba(45,38,34,0.6)]">합계</p>
+            <p className="mt-1 font-semibold">{formatKrw(ownerComparison.total.balance)}</p>
+            <p className="mt-1 text-[10px] text-[color:rgba(45,38,34,0.6)]">
+              +{formatKrw(ownerComparison.total.increase)} / -{formatKrw(ownerComparison.total.decrease)}
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section className="rounded-3xl border border-[var(--border)] bg-white p-5">
+        <div className="flex items-center justify-between">
+          <p className="text-sm font-semibold">부부 정산</p>
+          <p className="text-xs text-[color:rgba(45,38,34,0.6)]">이번 달 외부지출 기준</p>
+        </div>
+        <p className="mt-2 text-sm">{settlementText}</p>
+        <div className="mt-3 flex items-center justify-between text-xs text-[color:rgba(45,38,34,0.6)]">
+          <span>나 외부지출 {formatKrw(ownerComparison.mine.externalOutflow)}</span>
+          <span>{spouseLabel} 외부지출 {formatKrw(ownerComparison.spouse.externalOutflow)}</span>
+        </div>
       </section>
 
       <section className="rounded-3xl border border-[var(--border)] bg-white p-5">
@@ -837,7 +1028,7 @@ export default function AssetsPage() {
 
       <section className="space-y-3">
         <div className="flex items-center justify-between">
-          <p className="text-sm font-semibold">내 계좌</p>
+          <p className="text-sm font-semibold">계좌</p>
           <p className="text-xs text-[color:rgba(45,38,34,0.6)]">
             {visibleAccounts.length}개
           </p>
@@ -851,56 +1042,39 @@ export default function AssetsPage() {
             등록된 계좌가 없습니다.
           </div>
         ) : (
-          visibleAccounts.map((account) => {
-            const typeLabel =
-              ACCOUNT_TYPES.find((type) => type.value === account.type)?.label ??
-              "계좌";
-            const kindLabel =
-              account.type === "savings"
-                ? SAVINGS_KINDS.find((kind) => kind.value === account.savingsKind)
-                    ?.label
-                : null;
-            const forecast = accountForecasts.get(account.id)?.expected ?? null;
-            const startText =
-              account.type === "savings" && account.startDate
-                ? format(account.startDate.toDate(), "yyyy.MM.dd")
-                : null;
-            const maturityText =
-              account.type === "savings" && account.maturityDate
-                ? format(account.maturityDate.toDate(), "yyyy.MM.dd")
-                : null;
-            return (
-              <button
-                type="button"
-                key={account.id}
-                className="w-full rounded-2xl border border-[var(--border)] bg-white px-4 py-3 text-left"
-                onClick={() => setSelectedAccountId(account.id)}
-              >
+          <div className="space-y-4">
+            {sharedAccounts.length > 0 ? (
+              <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-semibold">{account.name}</p>
-                    <p className="text-xs text-[color:rgba(45,38,34,0.6)]">
-                      {typeLabel}
-                      {kindLabel ? ` · ${kindLabel}` : ""}
-                    </p>
-                  </div>
-                  <p className="text-sm font-semibold">
-                    {formatKrw(account.balance)}
-                  </p>
+                  <p className="text-xs font-semibold text-[color:rgba(45,38,34,0.7)]">공용 계좌</p>
+                  <p className="text-xs text-[color:rgba(45,38,34,0.5)]">{sharedAccounts.length}개</p>
                 </div>
-                {startText || maturityText ? (
-                  <p className="mt-2 text-xs text-[color:rgba(45,38,34,0.6)]">
-                    {startText ? `시작 ${startText}` : ""}
-                    {startText && maturityText ? " · " : ""}
-                    {maturityText ? `만기 ${maturityText}` : ""}
-                    {maturityText && forecast !== null
-                      ? ` · 세후 예상 ${formatKrw(forecast)}`
-                      : ""}
-                  </p>
-                ) : null}
-              </button>
-            );
-          })
+                <div className="space-y-2">{sharedAccounts.map((account) => renderAccountCard(account))}</div>
+              </div>
+            ) : null}
+            {myPersonalAccounts.length > 0 ? (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-semibold text-[color:rgba(45,38,34,0.7)]">내 개인 계좌</p>
+                  <p className="text-xs text-[color:rgba(45,38,34,0.5)]">{myPersonalAccounts.length}개</p>
+                </div>
+                <div className="space-y-2">
+                  {myPersonalAccounts.map((account) => renderAccountCard(account))}
+                </div>
+              </div>
+            ) : null}
+            {spousePersonalAccounts.length > 0 ? (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-semibold text-[color:rgba(45,38,34,0.7)]">{spouseLabel} 계좌</p>
+                  <p className="text-xs text-[color:rgba(45,38,34,0.5)]">{spousePersonalAccounts.length}개</p>
+                </div>
+                <div className="space-y-2">
+                  {spousePersonalAccounts.map((account) => renderAccountCard(account))}
+                </div>
+              </div>
+            ) : null}
+          </div>
         )}
       </section>
 

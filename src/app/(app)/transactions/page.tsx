@@ -382,7 +382,7 @@ export default function TransactionsPage() {
       if (tx.type === "income") {
         entry.income += tx.amount;
       } else if (tx.type === "expense") {
-        entry.expense += tx.amount;
+        entry.expense += getEffectiveExpenseAmount(tx);
       }
       calendarMap.set(key, entry);
     });

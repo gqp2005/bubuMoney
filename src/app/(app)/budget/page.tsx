@@ -135,14 +135,9 @@ function buildLinePath(points: MonthPoint[], width = 100, height = 160) {
 }
 
 function formatBudgetCategoryLabel(
-  category: { id: string; name: string; parentId?: string | null },
-  categoryById: Map<string, { id: string; name: string }>
+  category: { id: string; name: string; parentId?: string | null }
 ) {
-  if (!category.parentId) {
-    return category.name;
-  }
-  const parentName = categoryById.get(category.parentId)?.name;
-  return parentName ? `${parentName} > ${category.name}` : category.name;
+  return category.name;
 }
 
 export default function BudgetPage() {
@@ -878,7 +873,7 @@ export default function BudgetPage() {
               }`}
               onClick={() => setBudgetScope(category.id)}
             >
-              {formatBudgetCategoryLabel(category, categoryById)}
+              {formatBudgetCategoryLabel(category)}
             </button>
           ))}
           {hasMoreBudgetTabs ? (
@@ -1054,7 +1049,7 @@ export default function BudgetPage() {
                         className="flex-1 text-left text-sm font-medium"
                         onClick={() => setDetailCategoryId(category.id)}
                       >
-                        {formatBudgetCategoryLabel(category, categoryById)}
+                        {formatBudgetCategoryLabel(category)}
                       </button>
                       <input
                         type="text"
@@ -1146,19 +1141,37 @@ export default function BudgetPage() {
           ) : chartType === "bar" ? (
             <div className="relative h-44">
               <div className="absolute left-0 right-0 top-1/2 h-px bg-[color:rgba(45,38,34,0.2)]" />
-              <div className="flex h-full items-end gap-2">
+              <div className="flex h-full items-stretch gap-2">
                 {monthPoints.map((point) => {
                   const height = Math.round((Math.abs(point.net) / maxAbs) * 100);
                   const isPositive = point.net >= 0;
                   const monthKey = format(point.month, "yyyy-MM");
+                  const amountLabel = `${point.net > 0 ? "+" : ""}${formatKrw(point.net)}`;
                   return (
                     <button
                       key={point.month.toISOString()}
                       type="button"
                       onClick={() => setSelectedMonthKey(monthKey)}
-                      className="flex flex-1 flex-col items-center justify-end"
+                      className="flex h-full flex-1 flex-col items-center justify-end"
                     >
                       <div className="relative h-full w-full">
+                        <span
+                          className={`pointer-events-none absolute left-1/2 -translate-x-1/2 text-[9px] leading-none ${
+                            isPositive
+                              ? "text-[color:rgba(45,38,34,0.7)]"
+                              : "text-rose-600"
+                          }`}
+                          style={{
+                            bottom: isPositive
+                              ? `calc(50% + ${height}% + 4px)`
+                              : undefined,
+                            top: isPositive
+                              ? undefined
+                              : `calc(50% + ${height}% + 4px)`,
+                          }}
+                        >
+                          {amountLabel}
+                        </span>
                         <div
                           className="absolute left-1/2 w-3 -translate-x-1/2 rounded-full"
                           style={{
@@ -1187,26 +1200,6 @@ export default function BudgetPage() {
             </div>
           ) : (
             <div className="relative h-44">
-              {selectedPoint ? (
-                <div
-                  className="pointer-events-none absolute rounded-full bg-white/90 px-2 py-1 text-[11px] font-semibold text-[var(--text)] shadow-sm"
-                  style={{
-                    left: `${Math.round(
-                      (monthPoints.findIndex(
-                        (point) =>
-                          format(point.month, "yyyy-MM") ===
-                          effectiveSelectedMonthKey
-                      ) /
-                        Math.max(monthPoints.length - 1, 1)) *
-                        100
-                    )}%`,
-                    top: "18px",
-                    transform: "translateX(-50%)",
-                  }}
-                >
-                  {formatKrw(selectedPoint.net)}
-                </div>
-              ) : null}
               <svg
                 viewBox="0 0 100 160"
                 className="h-full w-full"
@@ -1227,6 +1220,33 @@ export default function BudgetPage() {
                   strokeWidth="2"
                 />
               </svg>
+              <div className="pointer-events-none absolute inset-0">
+                {monthPoints.map((point, index) => {
+                  const leftPercent =
+                    (index / Math.max(monthPoints.length - 1, 1)) * 100;
+                  const topPercent = 50 - (point.net / maxAbs) * 42.5;
+                  const amountLabel = `${point.net > 0 ? "+" : ""}${formatKrw(point.net)}`;
+                  return (
+                    <span
+                      key={`${point.month.toISOString()}-line-label`}
+                      className={`absolute -translate-x-1/2 text-[9px] leading-none ${
+                        point.net >= 0
+                          ? "text-[color:rgba(45,38,34,0.7)]"
+                          : "text-rose-600"
+                      }`}
+                      style={{
+                        left: `${leftPercent}%`,
+                        top:
+                          point.net >= 0
+                            ? `calc(${topPercent}% - 12px)`
+                            : `calc(${topPercent}% + 6px)`,
+                      }}
+                    >
+                      {amountLabel}
+                    </span>
+                  );
+                })}
+              </div>
               <div className="mt-2 flex items-center gap-2">
                 {monthPoints.map((point) => {
                   const monthKey = format(point.month, "yyyy-MM");
@@ -1286,7 +1306,7 @@ export default function BudgetPage() {
                         setIsBudgetSheetOpen(false);
                       }}
                     >
-                      {formatBudgetCategoryLabel(category, categoryById)}
+                      {formatBudgetCategoryLabel(category)}
                     </button>
                   ))}
                 </div>
@@ -1369,12 +1389,7 @@ export default function BudgetPage() {
                                   toggleBudgetCategorySelection(category.id)
                                 }
                               >
-                                <span>
-                                  {formatBudgetCategoryLabel(
-                                    category,
-                                    categoryById
-                                  )}
-                                </span>
+                                <span>{formatBudgetCategoryLabel(category)}</span>
                                 <span className="text-xs text-[color:rgba(45,38,34,0.5)]">
                                   소분류 {children.length}개
                                 </span>
@@ -1403,7 +1418,7 @@ export default function BudgetPage() {
                                     className="flex w-full items-center justify-between rounded-xl border border-[var(--border)] px-3 py-2 text-left text-sm text-[color:rgba(45,38,34,0.7)]"
                                   >
                                     <span>
-                                      {formatBudgetCategoryLabel(child, categoryById)}
+                                      {formatBudgetCategoryLabel(child)}
                                     </span>
                                     <span className="text-xs text-[color:rgba(45,38,34,0.5)]">
                                       대분류에서 선택
@@ -1437,12 +1452,7 @@ export default function BudgetPage() {
                                   toggleBudgetCategorySelection(category.id)
                                 }
                               >
-                                <span>
-                                  {formatBudgetCategoryLabel(
-                                    category,
-                                    categoryById
-                                  )}
-                                </span>
+                                <span>{formatBudgetCategoryLabel(category)}</span>
                                 <span className="text-xs text-[color:rgba(45,38,34,0.5)]">
                                   {isSelected ? "추가됨" : "미선택"}
                                 </span>
@@ -1472,7 +1482,7 @@ export default function BudgetPage() {
                 <div className="flex items-center justify-between">
                   <div className="text-base font-semibold">
                     {detailCategory
-                      ? formatBudgetCategoryLabel(detailCategory, categoryById)
+                      ? formatBudgetCategoryLabel(detailCategory)
                       : "카테고리"}
                   </div>
                   <button
