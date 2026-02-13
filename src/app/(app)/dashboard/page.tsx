@@ -253,39 +253,36 @@ export default function DashboardPage() {
               const methodTransactions =
                 expenseTransactionsByPaymentMethod.get(item.name) ?? [];
               return (
-              <div
-                key={item.id}
-                className="rounded-2xl border border-[var(--border)] bg-white p-4"
-              >
-                <button
-                  type="button"
-                  className="w-full text-left"
-                  onClick={() =>
-                    setSelectedPaymentGoalId((prev) =>
-                      prev === item.id ? null : item.id
-                    )
-                  }
+                <div
+                  key={item.id}
+                  className="rounded-2xl border border-[var(--border)] bg-white p-4"
                 >
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="font-medium">{item.name}</span>
-                    <span className="text-[color:rgba(45,38,34,0.6)]">
-                      {formatKrw(item.amount)} / {formatKrw(item.goal)}
-                    </span>
-                  </div>
-                  <div className="mt-2 flex items-center justify-between text-xs text-[color:rgba(45,38,34,0.6)]">
-                    <span>진행률</span>
-                    <span>{item.progress}%</span>
-                  </div>
-                  <div className="mt-2 h-2 w-full rounded-full bg-[color:rgba(45,38,34,0.1)]">
-                    <div
-                      className="h-full rounded-full bg-[var(--accent)]"
-                      style={{ width: `${item.progress}%` }}
-                    />
-                  </div>
-                  <div className="mt-2 text-xs text-[color:rgba(45,38,34,0.6)]">
-                    {isSelected ? "결제 내역 숨기기" : "결제 내역 보기"}
-                  </div>
-                </button>
+                  <button
+                    type="button"
+                    className="w-full text-left"
+                    onClick={() =>
+                      setSelectedPaymentGoalId((prev) =>
+                        prev === item.id ? null : item.id
+                      )
+                    }
+                  >
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="font-medium">{item.name}</span>
+                      <span className="text-[color:rgba(45,38,34,0.6)]">
+                        {formatKrw(item.amount)} / {formatKrw(item.goal)}
+                      </span>
+                    </div>
+                    <div className="mt-2 flex items-center justify-between text-xs text-[color:rgba(45,38,34,0.6)]">
+                      <span>진행률</span>
+                      <span>{item.progress}%</span>
+                    </div>
+                    <div className="mt-2 h-2 w-full rounded-full bg-[color:rgba(45,38,34,0.1)]">
+                      <div
+                        className="h-full rounded-full bg-[var(--accent)]"
+                        style={{ width: `${item.progress}%` }}
+                      />
+                    </div>
+                  </button>
                 {isSelected ? (
                   <div className="mt-3 space-y-2 border-t border-[var(--border)] pt-3">
                     {methodTransactions.length === 0 ? (
@@ -318,7 +315,7 @@ export default function DashboardPage() {
                     )}
                   </div>
                 ) : null}
-              </div>
+                </div>
               );
             })}
           </div>
