@@ -16,6 +16,7 @@ export default function DashboardPage() {
   const { categories } = useCategories(householdId);
   const { paymentMethods } = usePaymentMethods(householdId);
   const { transactions, loading } = useMonthlyTransactions(householdId);
+  const [selectedPaymentGoalId, setSelectedPaymentGoalId] = useState<string | null>(null);
   const [memoEntries, setMemoEntries] = useState<
     {
       id: string;
@@ -101,6 +102,30 @@ export default function DashboardPage() {
       })
       .sort((a, b) => b.amount - a.amount);
   }, [paymentMethods, paymentOwner, visibleTransactions]);
+  const expenseTransactionsByPaymentMethod = useMemo(() => {
+    const getSortTime = (tx: typeof transactions[number]) =>
+      tx.createdAt?.toMillis?.() ?? tx.date.toMillis();
+    const map = new Map<string, typeof transactions>();
+    for (const tx of visibleTransactions) {
+      if (tx.type !== "expense") {
+        continue;
+      }
+      const key = tx.paymentMethod || "미지정";
+      const current = map.get(key) ?? [];
+      current.push(tx);
+      map.set(key, current);
+    }
+    map.forEach((list, key) => {
+      map.set(
+        key,
+        [...list].sort((a, b) => getSortTime(b) - getSortTime(a))
+      );
+    });
+    return map;
+  }, [visibleTransactions]);
+  const categoryNameById = useMemo(() => {
+    return new Map(categories.map((category) => [category.id, category.name]));
+  }, [categories]);
   const recentTransactions = useMemo(() => {
     const getSortTime = (tx: typeof transactions[number]) =>
       tx.createdAt?.toMillis?.() ?? tx.date.toMillis();
@@ -223,29 +248,79 @@ export default function DashboardPage() {
         <section className="rounded-3xl border border-[var(--border)] bg-white p-6 shadow-sm">
           <h2 className="text-lg font-semibold">카드 실적</h2>
           <div className="mt-4 space-y-3 text-sm">
-            {paymentGoalItems.map((item) => (
+            {paymentGoalItems.map((item) => {
+              const isSelected = selectedPaymentGoalId === item.id;
+              const methodTransactions =
+                expenseTransactionsByPaymentMethod.get(item.name) ?? [];
+              return (
               <div
                 key={item.id}
                 className="rounded-2xl border border-[var(--border)] bg-white p-4"
               >
-                <div className="flex items-center justify-between text-sm">
-                  <span className="font-medium">{item.name}</span>
-                  <span className="text-[color:rgba(45,38,34,0.6)]">
-                    {formatKrw(item.amount)} / {formatKrw(item.goal)}
-                  </span>
-                </div>
-                <div className="mt-2 flex items-center justify-between text-xs text-[color:rgba(45,38,34,0.6)]">
-                  <span>진행률</span>
-                  <span>{item.progress}%</span>
-                </div>
-                <div className="mt-2 h-2 w-full rounded-full bg-[color:rgba(45,38,34,0.1)]">
-                  <div
-                    className="h-full rounded-full bg-[var(--accent)]"
-                    style={{ width: `${item.progress}%` }}
-                  />
-                </div>
+                <button
+                  type="button"
+                  className="w-full text-left"
+                  onClick={() =>
+                    setSelectedPaymentGoalId((prev) =>
+                      prev === item.id ? null : item.id
+                    )
+                  }
+                >
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="font-medium">{item.name}</span>
+                    <span className="text-[color:rgba(45,38,34,0.6)]">
+                      {formatKrw(item.amount)} / {formatKrw(item.goal)}
+                    </span>
+                  </div>
+                  <div className="mt-2 flex items-center justify-between text-xs text-[color:rgba(45,38,34,0.6)]">
+                    <span>진행률</span>
+                    <span>{item.progress}%</span>
+                  </div>
+                  <div className="mt-2 h-2 w-full rounded-full bg-[color:rgba(45,38,34,0.1)]">
+                    <div
+                      className="h-full rounded-full bg-[var(--accent)]"
+                      style={{ width: `${item.progress}%` }}
+                    />
+                  </div>
+                  <div className="mt-2 text-xs text-[color:rgba(45,38,34,0.6)]">
+                    {isSelected ? "결제 내역 숨기기" : "결제 내역 보기"}
+                  </div>
+                </button>
+                {isSelected ? (
+                  <div className="mt-3 space-y-2 border-t border-[var(--border)] pt-3">
+                    {methodTransactions.length === 0 ? (
+                      <p className="text-xs text-[color:rgba(45,38,34,0.6)]">
+                        이번 달 결제 내역이 없습니다.
+                      </p>
+                    ) : (
+                      methodTransactions.map((tx) => {
+                        const categoryName =
+                          categoryNameById.get(tx.categoryId) ?? "카테고리";
+                        return (
+                          <div
+                            key={tx.id}
+                            className="flex items-center justify-between rounded-xl border border-[var(--border)] px-3 py-2"
+                          >
+                            <div>
+                              <p className="text-xs font-medium text-[var(--foreground)]">
+                                {tx.note ?? "메모 없음"}
+                              </p>
+                              <p className="text-[11px] text-[color:rgba(45,38,34,0.6)]">
+                                {formatDate(tx.date.toDate())} · {categoryName}
+                              </p>
+                            </div>
+                            <span className="text-xs font-semibold text-red-600">
+                              -{formatKrw(tx.amount)}
+                            </span>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                ) : null}
               </div>
-            ))}
+              );
+            })}
           </div>
         </section>
       ) : null}
