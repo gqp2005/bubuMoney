@@ -96,6 +96,7 @@ export async function getLatestMemoEntries(householdId: string) {
   if (snapshot.empty) {
     return [];
   }
+  const allEntries: MemoEntry[] = [];
   for (const docSnap of snapshot.docs) {
     const data = docSnap.data() as {
       text?: string;
@@ -104,11 +105,13 @@ export async function getLatestMemoEntries(householdId: string) {
       updatedBy?: string;
     };
     const entries = normalizeEntries(data, docSnap.id);
-    if (entries.length > 0) {
-      return entries;
-    }
+    allEntries.push(...entries);
   }
-  return [];
+  return allEntries.sort((a, b) => {
+    const aTime = a.createdAt?.toMillis?.() ?? 0;
+    const bTime = b.createdAt?.toMillis?.() ?? 0;
+    return bTime - aTime;
+  });
 }
 
 export async function purgeExpiredMemoEntries(householdId: string, uid?: string) {
