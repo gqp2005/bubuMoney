@@ -10,6 +10,7 @@ import { useCategories } from "@/hooks/use-categories";
 import { usePaymentMethods } from "@/hooks/use-payment-methods";
 import { useMonthlyTransactions } from "@/hooks/use-transactions";
 import { getLatestMemoEntries, purgeExpiredMemoEntries } from "@/lib/memos";
+import { getEffectiveExpenseAmount } from "@/lib/transaction-amount";
 
 export default function DashboardPage() {
   const { householdId, spouseRole } = useHousehold();
@@ -54,7 +55,7 @@ export default function DashboardPage() {
       if (tx.type === "income") {
         income += tx.amount;
       } else if (tx.type === "expense") {
-        expense += tx.amount;
+        expense += getEffectiveExpenseAmount(tx);
       }
     });
     return { income, expense, balance: income - expense };
