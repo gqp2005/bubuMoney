@@ -26,6 +26,7 @@ export default function NewMemoPage() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [visibleFrom, setVisibleFrom] = useState("");
   const [visibleUntil, setVisibleUntil] = useState("");
+  const [isEntryLoaded, setIsEntryLoaded] = useState(false);
   const monthKeyFromQuery = searchParams.get("monthKey");
   const monthKey =
     monthKeyFromQuery && /^\d{4}-\d{2}$/.test(monthKeyFromQuery)
@@ -50,13 +51,18 @@ export default function NewMemoPage() {
 
   useEffect(() => {
     if (!householdId) {
+      setIsEntryLoaded(false);
       return;
     }
+    setIsEntryLoaded(false);
     setLoading(true);
     getMonthlyMemoEntries(householdId, monthKey)
       .then((entries) => {
         if (isCreateMode) {
           setMemo("");
+          setVisibleFrom("");
+          setVisibleUntil("");
+          setIsEntryLoaded(true);
           return;
         }
         const target =
@@ -70,12 +76,23 @@ export default function NewMemoPage() {
         setVisibleUntil(
           target?.visibleUntil ? format(target.visibleUntil.toDate(), "yyyy-MM-dd") : ""
         );
+        setIsEntryLoaded(true);
+      })
+      .catch(() => {
+        setIsEntryLoaded(false);
       })
       .finally(() => setLoading(false));
   }, [householdId, isCreateMode, monthKey, entryId]);
 
   useEffect(() => {
-    if (!householdId || !user || isCreateMode || !entryId) {
+    if (
+      !householdId ||
+      !user ||
+      isCreateMode ||
+      !entryId ||
+      loading ||
+      !isEntryLoaded
+    ) {
       return;
     }
     const timeout = setTimeout(async () => {
@@ -101,10 +118,21 @@ export default function NewMemoPage() {
       }
     }, 800);
     return () => clearTimeout(timeout);
-  }, [householdId, memo, monthKey, user, isCreateMode, entryId, visibleFrom, visibleUntil]);
+  }, [
+    entryId,
+    householdId,
+    isCreateMode,
+    isEntryLoaded,
+    loading,
+    memo,
+    monthKey,
+    user,
+    visibleFrom,
+    visibleUntil,
+  ]);
 
   async function handleSave() {
-    if (!householdId || !user) {
+    if (!householdId || !user || loading || (!isCreateMode && !isEntryLoaded)) {
       return;
     }
     setSaving(true);
@@ -219,14 +247,14 @@ export default function NewMemoPage() {
             <button
               className="rounded-full border border-[var(--border)] px-5 py-2 text-sm text-red-600 disabled:opacity-60"
               onClick={() => setShowDeleteConfirm(true)}
-              disabled={saving || !entryId}
+              disabled={loading || saving || !entryId || !isEntryLoaded}
             >
               삭제
             </button>
             <button
               className="rounded-full bg-[var(--accent)] px-5 py-2 text-sm text-white disabled:opacity-70"
               onClick={handleSave}
-              disabled={saving || !householdId || !user}
+              disabled={loading || saving || !householdId || !user || (!isCreateMode && !isEntryLoaded)}
             >
               {saving ? "저장 중..." : "저장"}
             </button>
