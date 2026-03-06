@@ -1,20 +1,31 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { format } from "date-fns";
+import UndoToast from "@/components/undo-toast";
 import { useHousehold } from "@/components/household-provider";
 import { formatKrw } from "@/lib/format";
 import { formatDate } from "@/lib/time";
 import { useCategories } from "@/hooks/use-categories";
 import { usePaymentMethods } from "@/hooks/use-payment-methods";
 import { useMonthlyTransactions } from "@/hooks/use-transactions";
-import { getLatestMemoEntries, purgeExpiredMemoEntries } from "@/lib/memos";
+import {
+  getLatestMemoEntries,
+  purgeExpiredMemoEntries,
+  restoreMonthlyMemoEntry,
+} from "@/lib/memos";
 import {
   getLegacyPaymentMethodKey,
   getTransactionPaymentMethodKey,
 } from "@/lib/payment-method-resolver";
 import { getEffectiveExpenseAmount } from "@/lib/transaction-amount";
+import {
+  clearPendingUndoAction,
+  isPendingUndoExpired,
+  loadPendingUndoAction,
+  type MemoDeleteUndoAction,
+} from "@/lib/undo-actions";
 
 export default function DashboardPage() {
   const { householdId, spouseRole } = useHousehold();
@@ -34,6 +45,10 @@ export default function DashboardPage() {
   >([]);
   const [memoLoading, setMemoLoading] = useState(false);
   const [memoError, setMemoError] = useState<string | null>(null);
+  const [pendingMemoUndo, setPendingMemoUndo] = useState<MemoDeleteUndoAction | null>(
+    null
+  );
+  const [restoringMemoUndo, setRestoringMemoUndo] = useState(false);
   const budgetCategoryIdSet = useMemo(() => {
     return new Set(
       categories
@@ -142,52 +157,117 @@ export default function DashboardPage() {
     return sorted.slice(0, 5);
   }, [visibleTransactions]);
 
-  useEffect(() => {
+  const loadMemoEntries = useCallback(async () => {
     if (!householdId) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- clear memo list when household changes
       setMemoEntries([]);
       return;
     }
     setMemoLoading(true);
     setMemoError(null);
-    purgeExpiredMemoEntries(householdId)
-      .then(() => getLatestMemoEntries(householdId))
-      .then((entries) =>
-        setMemoEntries(
-          entries
-            .map((entry) => ({
-              id: entry.id,
-              text: entry.text,
-              createdAt: entry.createdAt ? entry.createdAt.toDate() : null,
-              visibleFrom: entry.visibleFrom ? entry.visibleFrom.toDate() : null,
-              visibleUntil: entry.visibleUntil ? entry.visibleUntil.toDate() : null,
-              monthKey: entry.monthKey,
-            }))
-            .filter((entry) => {
-              const now = new Date();
-              const from = entry.visibleFrom;
-              const until = entry.visibleUntil;
-              if (!from && !until) {
-                return true;
-              }
-              if (from && now < from) {
-                return false;
-              }
-              if (until && now > until) {
-                return false;
-              }
+    try {
+      await purgeExpiredMemoEntries(householdId);
+      const entries = await getLatestMemoEntries(householdId);
+      setMemoEntries(
+        entries
+          .map((entry) => ({
+            id: entry.id,
+            text: entry.text,
+            createdAt: entry.createdAt ? entry.createdAt.toDate() : null,
+            visibleFrom: entry.visibleFrom ? entry.visibleFrom.toDate() : null,
+            visibleUntil: entry.visibleUntil ? entry.visibleUntil.toDate() : null,
+            monthKey: entry.monthKey,
+          }))
+          .filter((entry) => {
+            const now = new Date();
+            const from = entry.visibleFrom;
+            const until = entry.visibleUntil;
+            if (!from && !until) {
               return true;
-            })
-            .sort((a, b) => {
-              const aTime = a.createdAt?.getTime() ?? 0;
-              const bTime = b.createdAt?.getTime() ?? 0;
-              return bTime - aTime;
-            })
-        )
-      )
-      .catch(() => setMemoError("메모를 불러오지 못했습니다."))
-      .finally(() => setMemoLoading(false));
+            }
+            if (from && now < from) {
+              return false;
+            }
+            if (until && now > until) {
+              return false;
+            }
+            return true;
+          })
+          .sort((a, b) => {
+            const aTime = a.createdAt?.getTime() ?? 0;
+            const bTime = b.createdAt?.getTime() ?? 0;
+            return bTime - aTime;
+          })
+      );
+    } catch {
+      setMemoError("메모를 불러오지 못했습니다.");
+    } finally {
+      setMemoLoading(false);
+    }
   }, [householdId]);
+
+  useEffect(() => {
+    if (!householdId) {
+      setMemoEntries([]);
+      return;
+    }
+    void loadMemoEntries();
+  }, [householdId, loadMemoEntries]);
+
+  useEffect(() => {
+    if (!householdId) {
+      setPendingMemoUndo(null);
+      return;
+    }
+    const pendingAction = loadPendingUndoAction();
+    if (!pendingAction || pendingAction.kind !== "memo.delete") {
+      setPendingMemoUndo(null);
+      return;
+    }
+    if (pendingAction.householdId !== householdId || isPendingUndoExpired(pendingAction)) {
+      clearPendingUndoAction("memo.delete");
+      setPendingMemoUndo(null);
+      return;
+    }
+    setPendingMemoUndo(pendingAction);
+  }, [householdId, memoEntries.length]);
+
+  const dismissMemoUndo = useCallback(() => {
+    clearPendingUndoAction("memo.delete");
+    setPendingMemoUndo(null);
+  }, []);
+
+  const handleUndoMemoDelete = useCallback(async () => {
+    if (!pendingMemoUndo || restoringMemoUndo) {
+      return;
+    }
+    setRestoringMemoUndo(true);
+    try {
+      await restoreMonthlyMemoEntry(
+        pendingMemoUndo.householdId,
+        pendingMemoUndo.payload.monthKey,
+        {
+          id: pendingMemoUndo.payload.entry.id,
+          text: pendingMemoUndo.payload.entry.text,
+          createdAt: pendingMemoUndo.payload.entry.createdAtIso
+            ? new Date(pendingMemoUndo.payload.entry.createdAtIso)
+            : null,
+          createdBy: pendingMemoUndo.payload.entry.createdBy ?? null,
+          visibleFrom: pendingMemoUndo.payload.entry.visibleFromIso
+            ? new Date(pendingMemoUndo.payload.entry.visibleFromIso)
+            : null,
+          visibleUntil: pendingMemoUndo.payload.entry.visibleUntilIso
+            ? new Date(pendingMemoUndo.payload.entry.visibleUntilIso)
+            : null,
+          monthKey: pendingMemoUndo.payload.monthKey,
+        },
+        pendingMemoUndo.payload.entry.createdBy ?? undefined
+      );
+      dismissMemoUndo();
+      await loadMemoEntries();
+    } finally {
+      setRestoringMemoUndo(false);
+    }
+  }, [dismissMemoUndo, loadMemoEntries, pendingMemoUndo, restoringMemoUndo]);
 
   return (
     <div className="flex flex-col gap-6">
@@ -406,6 +486,15 @@ export default function DashboardPage() {
           </div>
         )}
       </section>
+      {pendingMemoUndo ? (
+        <UndoToast
+          message="메모를 삭제했습니다."
+          expiresAt={pendingMemoUndo.expiresAt}
+          onUndo={handleUndoMemoDelete}
+          onDismiss={dismissMemoUndo}
+          busy={restoringMemoUndo}
+        />
+      ) : null}
     </div>
   );
 }

@@ -9,6 +9,7 @@ import {
   startOfMonth,
 } from "date-fns";
 import { doc, getDoc, serverTimestamp, setDoc } from "firebase/firestore";
+import UndoToast from "@/components/undo-toast";
 import { useAuth } from "@/components/auth-provider";
 import { useHousehold } from "@/components/household-provider";
 import { useCategories } from "@/hooks/use-categories";
@@ -17,7 +18,7 @@ import { budgetsCol } from "@/lib/firebase/firestore";
 import { formatKrw } from "@/lib/format";
 import { addNotification } from "@/lib/notifications";
 import { getEffectiveExpenseAmount } from "@/lib/transaction-amount";
-import type { Category, Transaction, TransactionType } from "@/types/ledger";
+import type { Category, Transaction } from "@/types/ledger";
 
 type RangeOption = 6 | 12;
 type ChartType = "bar" | "line";
@@ -153,6 +154,15 @@ export default function BudgetPage() {
   const [categoryBudgets, setCategoryBudgets] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
+  const [loadedBudgetSnapshot, setLoadedBudgetSnapshot] = useState<BudgetDoc | null>(
+    null
+  );
+  const [pendingBudgetUndo, setPendingBudgetUndo] = useState<{
+    snapshot: BudgetDoc;
+    expiresAt: number;
+    message: string;
+  } | null>(null);
+  const [restoringBudgetUndo, setRestoringBudgetUndo] = useState(false);
   const [showAllTopCategories, setShowAllTopCategories] = useState(false);
   const [budgetScope, setBudgetScope] = useState<"common" | string>("common");
   const [isBudgetSheetOpen, setIsBudgetSheetOpen] = useState(false);
@@ -204,8 +214,10 @@ export default function BudgetPage() {
       .sort((a, b) => a.order - b.order || a.name.localeCompare(b.name));
   }, [categoriesWithId]);
   const budgetTabCategories = budgetEnabledCategories;
-  const activeSelectedCategoryIds =
-    selectedBudgetCategoryIdsByScope[budgetScope] ?? [];
+  const activeSelectedCategoryIds = useMemo(
+    () => selectedBudgetCategoryIdsByScope[budgetScope] ?? [],
+    [budgetScope, selectedBudgetCategoryIdsByScope]
+  );
   const selectedBudgetCategoryIdSet = useMemo(
     () => new Set(activeSelectedCategoryIds),
     [activeSelectedCategoryIds]
@@ -594,10 +606,9 @@ export default function BudgetPage() {
   }, [detailTransactions]);
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- reset UI state on month switch
     setSaveMessage(null);
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- reset UI state on month switch
     setShowAllTopCategories(false);
+    setPendingBudgetUndo(null);
   }, [effectiveSelectedMonthKey]);
 
   useEffect(() => {
@@ -619,11 +630,17 @@ export default function BudgetPage() {
           mapped[key] = formatNumberInput(String(value));
         });
         setCategoryBudgets(mapped);
+        setLoadedBudgetSnapshot({
+          monthKey: effectiveSelectedMonthKey,
+          total: typeof data.total === "number" ? data.total : 0,
+          byCategory,
+        });
         if (user && lastNotifiedLoadKey.current !== effectiveSelectedMonthKey) {
           lastNotifiedLoadKey.current = effectiveSelectedMonthKey;
         }
       } else {
         setCategoryBudgets({});
+        setLoadedBudgetSnapshot(null);
       }
     };
     loadBudget();
@@ -708,6 +725,7 @@ export default function BudgetPage() {
     }
     setSaving(true);
     setSaveMessage(null);
+    const previousBudgetSnapshot = loadedBudgetSnapshot;
     const byCategory: Record<string, number> = {};
     Object.entries(categoryBudgets).forEach(([key, value]) => {
       const num = Number(normalizeNumberInput(value));
@@ -730,6 +748,34 @@ export default function BudgetPage() {
       },
       { merge: true }
     );
+    const nextSnapshot = {
+      monthKey: effectiveSelectedMonthKey,
+      total,
+      byCategory,
+    };
+    setLoadedBudgetSnapshot(nextSnapshot);
+    if (
+      previousBudgetSnapshot?.monthKey === effectiveSelectedMonthKey &&
+      previousBudgetSnapshot.byCategory
+    ) {
+      const removedKeys = Object.keys(previousBudgetSnapshot.byCategory).filter(
+        (key) => !(key in byCategory)
+      );
+      if (removedKeys.length > 0) {
+        setPendingBudgetUndo({
+          snapshot: previousBudgetSnapshot,
+          expiresAt: Date.now() + 10000,
+          message:
+            removedKeys.length === 1
+              ? "예산 1개를 삭제했습니다."
+              : `예산 ${removedKeys.length}개를 삭제했습니다.`,
+        });
+      } else {
+        setPendingBudgetUndo(null);
+      }
+    } else {
+      setPendingBudgetUndo(null);
+    }
     setSaving(false);
     setSaveMessage("저장 완료");
     if (user) {
@@ -741,6 +787,43 @@ export default function BudgetPage() {
       });
     }
   };
+
+  const dismissBudgetUndo = useCallback(() => {
+    setPendingBudgetUndo(null);
+  }, []);
+
+  const handleUndoBudgetDelete = useCallback(async () => {
+    if (!householdId || !pendingBudgetUndo || restoringBudgetUndo) {
+      return;
+    }
+    setRestoringBudgetUndo(true);
+    try {
+      await setDoc(
+        doc(budgetsCol(householdId), pendingBudgetUndo.snapshot.monthKey),
+        {
+          monthKey: pendingBudgetUndo.snapshot.monthKey,
+          total: pendingBudgetUndo.snapshot.total,
+          byCategory: pendingBudgetUndo.snapshot.byCategory ?? {},
+          createdAt: serverTimestamp(),
+        },
+        { merge: true }
+      );
+      if (pendingBudgetUndo.snapshot.monthKey === effectiveSelectedMonthKey) {
+        const mapped: Record<string, string> = {};
+        Object.entries(pendingBudgetUndo.snapshot.byCategory ?? {}).forEach(
+          ([key, value]) => {
+            mapped[key] = formatNumberInput(String(value));
+          }
+        );
+        setCategoryBudgets(mapped);
+        setLoadedBudgetSnapshot(pendingBudgetUndo.snapshot);
+      }
+      setSaveMessage("삭제한 예산을 되돌렸습니다.");
+      setPendingBudgetUndo(null);
+    } finally {
+      setRestoringBudgetUndo(false);
+    }
+  }, [effectiveSelectedMonthKey, householdId, pendingBudgetUndo, restoringBudgetUndo]);
 
   const handleImportPreviousBudget = useCallback(async () => {
     if (!householdId || !effectiveSelectedMonthKey) {
@@ -1542,6 +1625,15 @@ export default function BudgetPage() {
       >
         {saving ? "..." : "저장"}
       </button>
+      {pendingBudgetUndo ? (
+        <UndoToast
+          message={pendingBudgetUndo.message}
+          expiresAt={pendingBudgetUndo.expiresAt}
+          onUndo={handleUndoBudgetDelete}
+          onDismiss={dismissBudgetUndo}
+          busy={restoringBudgetUndo}
+        />
+      ) : null}
     </div>
   );
 }

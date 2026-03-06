@@ -17,6 +17,7 @@ import {
   startOfMonth,
   startOfWeek,
 } from "date-fns";
+import UndoToast from "@/components/undo-toast";
 import { useAuth } from "@/components/auth-provider";
 import { useHousehold } from "@/components/household-provider";
 import { formatKrw } from "@/lib/format";
@@ -30,9 +31,16 @@ import {
   getEffectiveExpenseAmount,
   getExpenseDiscountAmount,
 } from "@/lib/transaction-amount";
+import {
+  clearPendingUndoAction,
+  isPendingUndoExpired,
+  loadPendingUndoAction,
+  type TransactionDeleteUndoAction,
+} from "@/lib/undo-actions";
 import { useCategories } from "@/hooks/use-categories";
 import { usePaymentMethods } from "@/hooks/use-payment-methods";
 import { useMonthlyTransactions, useTransactionsRange } from "@/hooks/use-transactions";
+import { restoreTransaction } from "@/lib/transactions";
 
 const DAY_LABELS = ["일", "월", "화", "수", "목", "금", "토"];
 
@@ -68,6 +76,7 @@ type TransactionListItemProps = {
   id: string;
   title: string;
   subtitle: string;
+  badges: { label: string; className: string }[];
   amountLines: { label?: string; text: string; className: string }[];
   highlightClass: string;
   onOpen: (id: string) => void;
@@ -77,6 +86,7 @@ const TransactionListItem = memo(function TransactionListItem({
   id,
   title,
   subtitle,
+  badges,
   amountLines,
   highlightClass,
   onOpen,
@@ -94,7 +104,17 @@ const TransactionListItem = memo(function TransactionListItem({
       }}
     >
       <div className="min-w-0">
-        <p className="truncate text-sm font-semibold">{title}</p>
+        <div className="flex flex-wrap items-center gap-1">
+          <p className="min-w-0 truncate text-sm font-semibold">{title}</p>
+          {badges.map((badge) => (
+            <span
+              key={`${id}-${badge.label}`}
+              className={`rounded-full px-1.5 py-0.5 text-[10px] leading-none ${badge.className}`}
+            >
+              {badge.label}
+            </span>
+          ))}
+        </div>
         <p className="text-xs text-[color:rgba(45,38,34,0.65)]">{subtitle}</p>
       </div>
       <div className="flex flex-col items-end gap-0.5 self-center">
@@ -126,6 +146,7 @@ type SearchResultItemProps = {
   href: string;
   title: string;
   subtitle: string;
+  badges: { label: string; className: string }[];
   amountText: string;
   amountClass: string;
   onOpen: (href: string) => void;
@@ -136,6 +157,7 @@ const SearchResultItem = memo(function SearchResultItem({
   href,
   title,
   subtitle,
+  badges,
   amountText,
   amountClass,
   onOpen,
@@ -148,7 +170,17 @@ const SearchResultItem = memo(function SearchResultItem({
       onClick={() => onOpen(href)}
     >
       <div className="min-w-0">
-        <p className="truncate font-medium">{title}</p>
+        <div className="flex flex-wrap items-center gap-1">
+          <p className="truncate font-medium">{title}</p>
+          {badges.map((badge) => (
+            <span
+              key={`${id}-${badge.label}`}
+              className={`rounded-full px-1.5 py-0.5 text-[10px] leading-none ${badge.className}`}
+            >
+              {badge.label}
+            </span>
+          ))}
+        </div>
         <p className="mt-1 text-xs text-[color:rgba(45,38,34,0.6)]">
           {subtitle}
         </p>
@@ -206,6 +238,10 @@ export default function TransactionsPage() {
   const router = useRouter();
   const [visibleCount, setVisibleCount] = useState(30);
   const [searchVisibleCount, setSearchVisibleCount] = useState(50);
+  const [pendingUndo, setPendingUndo] = useState<TransactionDeleteUndoAction | null>(
+    null
+  );
+  const [undoingDelete, setUndoingDelete] = useState(false);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -215,12 +251,10 @@ export default function TransactionsPage() {
   }, [listSortMode]);
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- reset pagination on filters
     setVisibleCount(30);
   }, [selectedDate, listSortMode]);
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- reset search pagination on filters
     setSearchVisibleCount(50);
   }, [showSearch, searchQuery, searchType, searchStart, searchEnd]);
 
@@ -290,7 +324,6 @@ export default function TransactionsPage() {
     }
     const parsed = parseDateParam(dateParam);
     if (parsed) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- URL date sync
       setSelectedDate(parsed);
       lastAppliedDateParamRef.current = dateParam;
     }
@@ -304,6 +337,85 @@ export default function TransactionsPage() {
       shouldSearchRange ? searchEnd : null
     );
   const currentUserId = user?.uid ?? null;
+  const buildStatusBadges = useCallback(
+    (tx: (typeof transactions)[number]) => {
+      const badges: { label: string; className: string }[] = [];
+      const categoryMeta = categoryMetaMap.get(tx.categoryId);
+      badges.push({
+        label: categoryMeta?.personalOnly ? "개인" : "공용",
+        className: categoryMeta?.personalOnly
+          ? "border border-rose-200 bg-rose-50 text-rose-600"
+          : "border border-stone-200 bg-stone-50 text-[color:rgba(45,38,34,0.65)]",
+      });
+      if (tx.budgetApplied) {
+        badges.push({
+          label: "예산",
+          className: "border border-emerald-200 bg-emerald-50 text-emerald-700",
+        });
+      }
+      if (tx.type === "expense" && getExpenseDiscountAmount(tx) > 0) {
+        badges.push({
+          label: "할인",
+          className: "border border-amber-200 bg-amber-50 text-amber-700",
+        });
+      }
+      return badges;
+    },
+    [categoryMetaMap]
+  );
+
+  useEffect(() => {
+    if (!householdId) {
+      setPendingUndo(null);
+      return;
+    }
+    const pendingAction = loadPendingUndoAction();
+    if (!pendingAction || pendingAction.kind !== "transaction.delete") {
+      setPendingUndo(null);
+      return;
+    }
+    if (pendingAction.householdId !== householdId || isPendingUndoExpired(pendingAction)) {
+      clearPendingUndoAction("transaction.delete");
+      setPendingUndo(null);
+      return;
+    }
+    setPendingUndo(pendingAction);
+  }, [householdId]);
+
+  const dismissPendingUndo = useCallback(() => {
+    clearPendingUndoAction("transaction.delete");
+    setPendingUndo(null);
+  }, []);
+
+  const handleUndoDelete = useCallback(async () => {
+    if (!pendingUndo || undoingDelete) {
+      return;
+    }
+    setUndoingDelete(true);
+    try {
+      await restoreTransaction({
+        householdId: pendingUndo.householdId,
+        transactionId: pendingUndo.payload.transactionId,
+        type: pendingUndo.payload.type,
+        amount: pendingUndo.payload.amount,
+        discountAmount: pendingUndo.payload.discountAmount,
+        categoryId: pendingUndo.payload.categoryId,
+        paymentMethod: pendingUndo.payload.paymentMethod,
+        paymentMethodId: pendingUndo.payload.paymentMethodId,
+        subject: pendingUndo.payload.subject,
+        date: new Date(pendingUndo.payload.dateIso),
+        note: pendingUndo.payload.note,
+        budgetApplied: pendingUndo.payload.budgetApplied,
+        createdBy: pendingUndo.payload.createdBy,
+        createdAt: pendingUndo.payload.createdAtIso
+          ? new Date(pendingUndo.payload.createdAtIso)
+          : null,
+      });
+      dismissPendingUndo();
+    } finally {
+      setUndoingDelete(false);
+    }
+  }, [dismissPendingUndo, pendingUndo, undoingDelete]);
   const visibleSearchTransactions = useMemo(() => {
     if (!shouldSearchRange) {
       return [];
@@ -632,11 +744,12 @@ export default function TransactionsPage() {
           href: `/transactions/${tx.id}`,
           title: noteText,
           subtitle,
+          badges: buildStatusBadges(tx),
           amountClass,
           amountText: `${sign}${formatKrw(tx.amount)}`,
         };
       }),
-    [filteredSearchItems, categoryMap]
+    [buildStatusBadges, categoryMap, filteredSearchItems]
   );
 
   const visibleSearchItems = useMemo(
@@ -717,11 +830,13 @@ export default function TransactionsPage() {
         subtitle: `${categoryMap.get(tx.categoryId) ?? "미분류"} · ${
           tx.subject || "주체"
         } · ${resolveTransactionPaymentMethodName(tx, paymentMethodNameMap)}`,
+        badges: buildStatusBadges(tx),
         amountLines,
         highlightClass,
       };
     });
   }, [
+    buildStatusBadges,
     budgetCategoryIdSet,
     budgetHighlightByCategory,
     categoryMap,
@@ -1031,6 +1146,7 @@ export default function TransactionsPage() {
                       href={item.href}
                       title={item.title}
                       subtitle={item.subtitle}
+                      badges={item.badges}
                       amountText={item.amountText}
                       amountClass={item.amountClass}
                       onOpen={openSearchResult}
@@ -1079,6 +1195,7 @@ export default function TransactionsPage() {
                 id={item.id}
                 title={item.title}
                 subtitle={item.subtitle}
+                badges={item.badges}
                 amountLines={item.amountLines}
                 highlightClass={item.highlightClass}
                 onOpen={openTransaction}
@@ -1108,6 +1225,15 @@ export default function TransactionsPage() {
           </Link>
         </div>
       </section>
+      {pendingUndo ? (
+        <UndoToast
+          message="내역을 삭제했습니다."
+          expiresAt={pendingUndo.expiresAt}
+          onUndo={handleUndoDelete}
+          onDismiss={dismissPendingUndo}
+          busy={undoingDelete}
+        />
+      ) : null}
     </div>
   );
 }

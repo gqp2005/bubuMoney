@@ -7,6 +7,7 @@ import {
   getDocs,
   query,
   serverTimestamp,
+  setDoc,
   updateDoc,
   where,
   writeBatch,
@@ -88,6 +89,35 @@ export async function deleteTransaction(
 ) {
   return deleteDoc(
     doc(db, "households", householdId, "transactions", transactionId)
+  );
+}
+
+export async function restoreTransaction(params: {
+  householdId: string;
+  transactionId: string;
+  type: TransactionType;
+  amount: number;
+  discountAmount?: number;
+  categoryId: string;
+  paymentMethod: string;
+  paymentMethodId?: string | null;
+  subject: string;
+  date: Date;
+  note?: string;
+  budgetApplied?: boolean;
+  createdBy: string;
+  createdAt?: Date | null;
+}) {
+  const { householdId, transactionId, date, createdAt, ...rest } = params;
+  const payload = {
+    ...stripUndefinedValues(rest),
+    date: Timestamp.fromDate(date),
+    monthKey: toMonthKey(date),
+    createdAt: createdAt ? Timestamp.fromDate(createdAt) : serverTimestamp(),
+  };
+  return setDoc(
+    doc(db, "households", householdId, "transactions", transactionId),
+    payload
   );
 }
 

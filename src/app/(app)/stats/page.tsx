@@ -69,6 +69,7 @@ const PAYMENT_COLORS = [
 ];
 
 const STATS_STORAGE_KEY = "couple-ledger.stats.filters";
+const STATS_PRESETS_STORAGE_KEY = "couple-ledger.stats.presets";
 
 type StoredStatsFilters = {
   viewType?: ViewType;
@@ -80,6 +81,15 @@ type StoredStatsFilters = {
   appliedSubjects?: string[];
   appliedPayments?: string[];
   paymentOwnerFilter?: "husband" | "wife" | "our";
+};
+
+type StatsFilterPreset = {
+  id: string;
+  name: string;
+  appliedCategoryIds: string[];
+  appliedSubjects: string[];
+  appliedPayments: string[];
+  paymentOwnerFilter: "husband" | "wife" | "our";
 };
 
 function loadStoredStatsFilters(): StoredStatsFilters | null {
@@ -135,6 +145,23 @@ function parseBudgetTotal(data: BudgetDoc) {
     return sum > 0 ? sum : null;
   }
   return null;
+}
+
+function loadStoredStatsPresets() {
+  if (typeof window === "undefined") {
+    return [] as StatsFilterPreset[];
+  }
+  try {
+    const raw = window.localStorage.getItem(STATS_PRESETS_STORAGE_KEY);
+    if (!raw) {
+      return [] as StatsFilterPreset[];
+    }
+    const parsed = JSON.parse(raw) as StatsFilterPreset[];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    window.localStorage.removeItem(STATS_PRESETS_STORAGE_KEY);
+    return [] as StatsFilterPreset[];
+  }
 }
 
 function buildBreakdown(
@@ -1268,6 +1295,11 @@ export default function StatsPage() {
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [budgetScope, setBudgetScope] = useState<"common" | string>("common");
   const [isBudgetSheetOpen, setIsBudgetSheetOpen] = useState(false);
+  const [filterPresets, setFilterPresets] = useState<StatsFilterPreset[]>(
+    () => loadStoredStatsPresets()
+  );
+  const [showPresetSheet, setShowPresetSheet] = useState(false);
+  const [presetName, setPresetName] = useState("");
 
   useEffect(() => {
     if (typeof document === "undefined") {
@@ -1340,6 +1372,16 @@ export default function StatsPage() {
     appliedPayments,
     paymentOwnerFilter,
   ]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    window.localStorage.setItem(
+      STATS_PRESETS_STORAGE_KEY,
+      JSON.stringify(filterPresets)
+    );
+  }, [filterPresets]);
 
   const categoryMap = useMemo(
     () => new Map(categories.map((cat) => [cat.id, cat.name])),
@@ -1812,6 +1854,7 @@ export default function StatsPage() {
     setAppliedCategoryIds(new Set());
     setAppliedSubjects(new Set());
     setAppliedPayments(new Set());
+    setPaymentOwnerFilter("our");
     setExpandedCategoryParents(new Set());
     setExpandedPaymentParents(new Set());
     setIsFilterSheetOpen(false);
@@ -1821,6 +1864,7 @@ export default function StatsPage() {
     setAppliedCategoryIds(new Set());
     setAppliedSubjects(new Set());
     setAppliedPayments(new Set());
+    setPaymentOwnerFilter("our");
     setDraftCategoryIds(new Set());
     setDraftSubjects(new Set());
     setDraftPayments(new Set());
@@ -1839,6 +1883,93 @@ export default function StatsPage() {
     setAppliedPayments(new Set(draftPayments));
     setIsFilterSheetOpen(false);
   }, [draftCategoryIds, draftPayments, draftSubjects]);
+
+  const activePresetId = useMemo(() => {
+    const categoriesKey = Array.from(appliedCategoryIds).sort().join("|");
+    const subjectsKey = Array.from(appliedSubjects).sort().join("|");
+    const paymentsKey = Array.from(appliedPayments).sort().join("|");
+    return (
+      filterPresets.find((preset) => {
+        return (
+          preset.paymentOwnerFilter === paymentOwnerFilter &&
+          [...preset.appliedCategoryIds].sort().join("|") === categoriesKey &&
+          [...preset.appliedSubjects].sort().join("|") === subjectsKey &&
+          [...preset.appliedPayments].sort().join("|") === paymentsKey
+        );
+      })?.id ?? null
+    );
+  }, [
+    appliedCategoryIds,
+    appliedPayments,
+    appliedSubjects,
+    filterPresets,
+    paymentOwnerFilter,
+  ]);
+
+  const openPresetSheet = useCallback(() => {
+    setPresetName("");
+    setShowPresetSheet(true);
+  }, []);
+
+  const closePresetSheet = useCallback(() => {
+    setShowPresetSheet(false);
+    setPresetName("");
+  }, []);
+
+  const handleSavePreset = useCallback(() => {
+    const trimmedName = presetName.trim();
+    if (!trimmedName) {
+      return;
+    }
+    const nextPreset: StatsFilterPreset = {
+      id:
+        typeof crypto !== "undefined" && crypto.randomUUID
+          ? crypto.randomUUID()
+          : `${Date.now()}`,
+      name: trimmedName,
+      appliedCategoryIds: Array.from(appliedCategoryIds),
+      appliedSubjects: Array.from(appliedSubjects),
+      appliedPayments: Array.from(appliedPayments),
+      paymentOwnerFilter,
+    };
+    setFilterPresets((prev) => {
+      const existingIndex = prev.findIndex(
+        (preset) => preset.name.trim().toLowerCase() === trimmedName.toLowerCase()
+      );
+      if (existingIndex === -1) {
+        return [...prev, nextPreset].slice(-8);
+      }
+      const next = [...prev];
+      next[existingIndex] = { ...nextPreset, id: prev[existingIndex].id };
+      return next;
+    });
+    closePresetSheet();
+  }, [
+    appliedCategoryIds,
+    appliedPayments,
+    appliedSubjects,
+    closePresetSheet,
+    paymentOwnerFilter,
+    presetName,
+  ]);
+
+  const applyPreset = useCallback((preset: StatsFilterPreset) => {
+    const nextCategories = new Set(preset.appliedCategoryIds);
+    const nextSubjects = new Set(preset.appliedSubjects);
+    const nextPayments = new Set(preset.appliedPayments);
+    setAppliedCategoryIds(nextCategories);
+    setAppliedSubjects(nextSubjects);
+    setAppliedPayments(nextPayments);
+    setDraftCategoryIds(new Set(nextCategories));
+    setDraftSubjects(new Set(nextSubjects));
+    setDraftPayments(new Set(nextPayments));
+    setPaymentOwnerFilter(preset.paymentOwnerFilter);
+    setIsFilterSheetOpen(false);
+  }, []);
+
+  const deletePreset = useCallback((presetId: string) => {
+    setFilterPresets((prev) => prev.filter((preset) => preset.id !== presetId));
+  }, []);
 
   const customCalendarDays = useMemo(() => {
     const calendarStart = startOfWeek(customMonthStart, { weekStartsOn: 0 });
@@ -2200,6 +2331,13 @@ export default function StatsPage() {
               >
                 ↻
               </button>
+              <button
+                type="button"
+                className="rounded-full border border-[var(--border)] px-4 py-2 text-sm text-[color:rgba(45,38,34,0.7)]"
+                onClick={openPresetSheet}
+              >
+                프리셋 저장
+              </button>
             </div>
             <div className="text-[11px] text-[color:rgba(45,38,34,0.55)]">
               <span>카테고리: {activeCategoryNames}</span>
@@ -2208,6 +2346,41 @@ export default function StatsPage() {
               <span className="mx-2">•</span>
               <span>자산: {activePaymentNames}</span>
             </div>
+            {filterPresets.length > 0 ? (
+              <div className="flex flex-wrap items-center gap-2">
+                {filterPresets.map((preset) => {
+                  const isActive = activePresetId === preset.id;
+                  return (
+                    <div
+                      key={preset.id}
+                      className={`flex items-center rounded-full border ${
+                        isActive
+                          ? "border-[var(--text)] bg-[var(--text)] text-white"
+                          : "border-[var(--border)] bg-white text-[color:rgba(45,38,34,0.7)]"
+                      }`}
+                    >
+                      <button
+                        type="button"
+                        className="px-4 py-2 text-sm"
+                        onClick={() => applyPreset(preset)}
+                      >
+                        {preset.name}
+                      </button>
+                      <button
+                        type="button"
+                        className={`pr-3 text-xs ${
+                          isActive ? "text-white/80" : "text-[color:rgba(45,38,34,0.45)]"
+                        }`}
+                        onClick={() => deletePreset(preset.id)}
+                        aria-label={`${preset.name} 삭제`}
+                      >
+                        ×
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : null}
 
             <div className="space-y-4">
               <div className="space-y-2">
@@ -2403,6 +2576,53 @@ export default function StatsPage() {
       <BudgetSheet {...budgetSheetProps} />
 
       <FilterSheet {...filterSheetProps} />
+      {showPresetSheet ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-sm rounded-3xl border border-[var(--border)] bg-white p-6">
+            <div className="flex items-center justify-between gap-3">
+              <h2 className="text-base font-semibold">프리셋 저장</h2>
+              <button
+                type="button"
+                className="text-sm text-[color:rgba(45,38,34,0.6)]"
+                onClick={closePresetSheet}
+              >
+                취소
+              </button>
+            </div>
+            <p className="mt-2 text-sm text-[color:rgba(45,38,34,0.6)]">
+              현재 카테고리, 구성원, 자산 필터 상태를 저장합니다.
+            </p>
+            <label className="mt-4 block text-sm">
+              이름
+              <input
+                type="text"
+                className="mt-2 w-full rounded-2xl border border-[var(--border)] px-4 py-3 text-sm"
+                placeholder="예: 공용만"
+                value={presetName}
+                onChange={(event) => setPresetName(event.target.value)}
+                maxLength={20}
+              />
+            </label>
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                className="rounded-full border border-[var(--border)] px-4 py-2 text-sm"
+                onClick={closePresetSheet}
+              >
+                닫기
+              </button>
+              <button
+                type="button"
+                className="rounded-full bg-[var(--text)] px-4 py-2 text-sm text-white disabled:opacity-60"
+                onClick={handleSavePreset}
+                disabled={!presetName.trim()}
+              >
+                저장
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
       <ResetConfirm
         open={showResetConfirm}
         onCancel={() => setShowResetConfirm(false)}

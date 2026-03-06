@@ -22,6 +22,16 @@ export type MemoEntry = {
   monthKey?: string;
 };
 
+export type MemoEntrySnapshot = {
+  id: string;
+  text: string;
+  createdAt?: Date | null;
+  createdBy?: string | null;
+  visibleFrom?: Date | null;
+  visibleUntil?: Date | null;
+  monthKey?: string;
+};
+
 function toFirestoreEntries(entries: MemoEntry[]) {
   return entries.map((entry) => ({
     id: entry.id,
@@ -69,6 +79,17 @@ function createEntry(text: string, uid: string) {
     createdBy: uid,
     visibleFrom: null,
     visibleUntil: null,
+  } as MemoEntry;
+}
+
+function toMemoEntry(entry: MemoEntrySnapshot) {
+  return {
+    id: entry.id,
+    text: entry.text,
+    createdAt: entry.createdAt ? Timestamp.fromDate(entry.createdAt) : Timestamp.now(),
+    createdBy: entry.createdBy ?? null,
+    visibleFrom: entry.visibleFrom ? Timestamp.fromDate(entry.visibleFrom) : null,
+    visibleUntil: entry.visibleUntil ? Timestamp.fromDate(entry.visibleUntil) : null,
   } as MemoEntry;
 }
 
@@ -245,6 +266,32 @@ export async function deleteMonthlyMemoEntry(
     {
       entries: toFirestoreEntries(next),
       updatedBy: uid,
+      updatedAt: serverTimestamp(),
+    },
+    { merge: true }
+  );
+}
+
+export async function restoreMonthlyMemoEntry(
+  householdId: string,
+  monthKey: string,
+  entry: MemoEntrySnapshot,
+  uid?: string
+) {
+  const ref = doc(db, "households", householdId, "memos", monthKey);
+  const snapshot = await getDoc(ref);
+  const existing = snapshot.exists()
+    ? normalizeEntries(snapshot.data() as { text?: string; entries?: MemoEntry[] })
+    : [];
+  if (existing.some((item) => item.id === entry.id)) {
+    return;
+  }
+  const next = [...existing, toMemoEntry(entry)];
+  await setDoc(
+    ref,
+    {
+      entries: toFirestoreEntries(next),
+      updatedBy: uid ?? entry.createdBy ?? "system",
       updatedAt: serverTimestamp(),
     },
     { merge: true }

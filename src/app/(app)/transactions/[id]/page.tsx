@@ -16,6 +16,7 @@ import {
   formatPaymentMethodLabel,
 } from "@/lib/payment-method-resolver";
 import { deleteTransaction, updateTransaction } from "@/lib/transactions";
+import { savePendingUndoAction } from "@/lib/undo-actions";
 import { toDateKey } from "@/lib/time";
 import type { TransactionType } from "@/types/ledger";
 
@@ -68,6 +69,8 @@ export default function EditTransactionPage() {
     date: string;
     note?: string;
     budgetApplied?: boolean;
+    createdBy: string;
+    createdAt?: Date | null;
   } | null>(null);
   const typeLabelMap: Record<TransactionType, string> = {
     expense: "지출",
@@ -331,6 +334,8 @@ export default function EditTransactionPage() {
           date: { toDate: () => Date };
           note?: string;
           budgetApplied?: boolean;
+          createdBy: string;
+          createdAt?: { toDate: () => Date };
         };
         setType(data.type);
         setAmount(formatAmountValue(String(data.amount)));
@@ -353,6 +358,8 @@ export default function EditTransactionPage() {
           date: toDateKey(data.date.toDate()),
           note: data.note ?? "",
           budgetApplied: data.budgetApplied,
+          createdBy: data.createdBy,
+          createdAt: data.createdAt?.toDate?.() ?? null,
         });
       })
       .catch(() => setError("거래 내역을 불러오지 못했습니다."))
@@ -591,6 +598,32 @@ export default function EditTransactionPage() {
     setSaving(true);
     try {
       await deleteTransaction(householdId, transactionId);
+      if (originalTransaction) {
+        savePendingUndoAction({
+          kind: "transaction.delete",
+          householdId,
+          expiresAt: Date.now() + 10000,
+          payload: {
+            transactionId,
+            type: originalTransaction.type,
+            amount: originalTransaction.amount,
+            discountAmount:
+              originalTransaction.type === "expense" &&
+              (originalTransaction.discountAmount ?? 0) > 0
+                ? originalTransaction.discountAmount
+                : undefined,
+            categoryId: originalTransaction.categoryId,
+            paymentMethod: originalTransaction.paymentMethod,
+            paymentMethodId: originalTransaction.paymentMethodId,
+            subject: originalTransaction.subject,
+            dateIso: new Date(originalTransaction.date).toISOString(),
+            note: originalTransaction.note,
+            budgetApplied: originalTransaction.budgetApplied,
+            createdBy: originalTransaction.createdBy,
+            createdAtIso: originalTransaction.createdAt?.toISOString() ?? null,
+          },
+        });
+      }
       if (!selectedCategory?.personalOnly) {
         await addNotification(householdId, {
           title: "내역 삭제",
@@ -601,7 +634,7 @@ export default function EditTransactionPage() {
           type: "transaction.delete",
         });
       }
-      router.replace("/transactions");
+      router.replace(`/transactions?date=${originalTransaction?.date ?? date}`);
     } catch {
       setError("삭제에 실패했습니다.");
     } finally {

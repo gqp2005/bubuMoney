@@ -10,9 +10,11 @@ import {
   addMonthlyMemoEntry,
   deleteMonthlyMemoEntry,
   getMonthlyMemoEntries,
+  type MemoEntrySnapshot,
   updateMonthlyMemoEntry,
 } from "@/lib/memos";
 import { addNotification } from "@/lib/notifications";
+import { savePendingUndoAction } from "@/lib/undo-actions";
 import { toMonthKey } from "@/lib/time";
 
 function buildMemoPreview(value: string) {
@@ -55,6 +57,8 @@ export default function NewMemoPage() {
   const [visibleFrom, setVisibleFrom] = useState("");
   const [visibleUntil, setVisibleUntil] = useState("");
   const [isEntryLoaded, setIsEntryLoaded] = useState(false);
+  const [currentEntrySnapshot, setCurrentEntrySnapshot] =
+    useState<MemoEntrySnapshot | null>(null);
   const monthKeyFromQuery = searchParams.get("monthKey");
   const monthKey =
     monthKeyFromQuery && /^\d{4}-\d{2}$/.test(monthKeyFromQuery)
@@ -90,6 +94,7 @@ export default function NewMemoPage() {
           setMemo("");
           setVisibleFrom("");
           setVisibleUntil("");
+          setCurrentEntrySnapshot(null);
           setIsEntryLoaded(true);
           return;
         }
@@ -104,9 +109,23 @@ export default function NewMemoPage() {
         setVisibleUntil(
           target?.visibleUntil ? format(target.visibleUntil.toDate(), "yyyy-MM-dd") : ""
         );
+        setCurrentEntrySnapshot(
+          target
+            ? {
+                id: target.id,
+                text: target.text,
+                createdAt: target.createdAt?.toDate?.() ?? null,
+                createdBy: target.createdBy ?? null,
+                visibleFrom: target.visibleFrom?.toDate?.() ?? null,
+                visibleUntil: target.visibleUntil?.toDate?.() ?? null,
+                monthKey,
+              }
+            : null
+        );
         setIsEntryLoaded(true);
       })
       .catch(() => {
+        setCurrentEntrySnapshot(null);
         setIsEntryLoaded(false);
       })
       .finally(() => setLoading(false));
@@ -243,9 +262,34 @@ export default function NewMemoPage() {
     }
     setSaving(true);
     try {
+      const entrySnapshot = currentEntrySnapshot ?? {
+        id: entryId,
+        text: memo,
+        createdAt: null,
+        createdBy: user.uid,
+        visibleFrom: parseDateInput(visibleFrom, false),
+        visibleUntil: parseDateInput(visibleUntil, true),
+        monthKey,
+      };
       const memoPreview = buildMemoPreview(memo);
       const memoPeriodLabel = buildMemoPeriodLabel(visibleFrom, visibleUntil);
       await deleteMonthlyMemoEntry(householdId, monthKey, entryId, user.uid);
+      savePendingUndoAction({
+        kind: "memo.delete",
+        householdId,
+        expiresAt: Date.now() + 10000,
+        payload: {
+          monthKey,
+          entry: {
+            id: entrySnapshot.id,
+            text: entrySnapshot.text,
+            createdAtIso: entrySnapshot.createdAt?.toISOString() ?? null,
+            createdBy: entrySnapshot.createdBy ?? null,
+            visibleFromIso: entrySnapshot.visibleFrom?.toISOString() ?? null,
+            visibleUntilIso: entrySnapshot.visibleUntil?.toISOString() ?? null,
+          },
+        },
+      });
       await addNotification(householdId, {
         title: "메모 삭제",
         message: `${formatMemoMonthLabel(monthKey)} • ${memoPreview}${
