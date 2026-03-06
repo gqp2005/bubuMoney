@@ -6,7 +6,8 @@
     "dev": "next dev --webpack",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "backfill:payment-method-ids": "node scripts/backfill-transaction-payment-method-ids.mjs"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

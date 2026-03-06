@@ -40,6 +40,7 @@ export interface Transaction {
   discountAmount?: number;
   categoryId: string;
   paymentMethod: string;
+  paymentMethodId?: string | null;
   subject: string;
   date: Timestamp;
   monthKey: string;

@@ -261,15 +261,17 @@ function CsvImportSection({
       const paymentMethod = mapPayment(paymentRaw);
       const paymentOwner = "our";
       const paymentKey = `${paymentOwner}:${paymentMethod}`;
+      let paymentMethodId = paymentMap.get(paymentKey) ?? null;
       if (!paymentMap.has(paymentKey)) {
-        await addPaymentMethod(householdId, {
+        const newPaymentMethod = await addPaymentMethod(householdId, {
           name: paymentMethod,
           order: nextPaymentOrder + paymentAdded,
           owner: paymentOwner,
           parentId: null,
           imported: true,
         });
-        paymentMap.set(paymentKey, paymentMethod);
+        paymentMethodId = newPaymentMethod.id;
+        paymentMap.set(paymentKey, paymentMethodId);
         paymentAdded += 1;
       }
 
@@ -297,6 +299,7 @@ function CsvImportSection({
           amount,
           categoryId,
           paymentMethod,
+          paymentMethodId,
           subject: subjectName,
           date,
           note: memo || undefined,
@@ -617,7 +620,7 @@ export default function SettingsPage() {
       setInviteCode(invite.code);
       setInviteExpiresAt(invite.expiresAt);
       showToast(`초대 코드 ${invite.code}를 생성했습니다.`, "success");
-    } catch (err) {
+    } catch {
       setError("초대 코드 생성에 실패했습니다.");
       showToast("초대 코드 생성에 실패했습니다.", "error");
     } finally {
@@ -648,7 +651,7 @@ export default function SettingsPage() {
       await syncSubjectDefaults(trimmed, partnerNickname.trim());
       setNameStatus("저장 완료");
       showToast("닉네임을 변경했습니다.", "success");
-    } catch (err) {
+    } catch {
       setNameStatus("저장 실패");
       showToast("닉네임 저장에 실패했습니다.", "error");
     } finally {
@@ -673,7 +676,7 @@ export default function SettingsPage() {
       await syncSubjectDefaults(nickname.trim(), partnerNickname.trim());
       setPartnerStatus("저장 완료");
       showToast("상대방 닉네임을 변경했습니다.", "success");
-    } catch (err) {
+    } catch {
       setPartnerStatus("저장 실패");
       showToast("상대방 닉네임 저장에 실패했습니다.", "error");
     } finally {

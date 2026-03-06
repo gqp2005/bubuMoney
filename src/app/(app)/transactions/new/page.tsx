@@ -11,6 +11,7 @@ import { useSubjects } from "@/hooks/use-subjects";
 import { formatKrw } from "@/lib/format";
 import { householdDoc } from "@/lib/firebase/firestore";
 import { addNotification } from "@/lib/notifications";
+import { formatPaymentMethodLabel } from "@/lib/payment-method-resolver";
 import { addTransaction } from "@/lib/transactions";
 import { toDateKey } from "@/lib/time";
 import type { TransactionType } from "@/types/ledger";
@@ -29,7 +30,7 @@ export default function NewTransactionPage() {
   const [error, setError] = useState<string | null>(null);
   const [type, setType] = useState<TransactionType>("expense");
   const [subject, setSubject] = useState("");
-  const [paymentMethod, setPaymentMethod] = useState("");
+  const [paymentMethodId, setPaymentMethodId] = useState("");
   const [paymentOwner, setPaymentOwner] = useState<PaymentOwner>("our");
   const [amountInput, setAmountInput] = useState("");
   const [discountInput, setDiscountInput] = useState("");
@@ -159,6 +160,12 @@ export default function NewTransactionPage() {
     });
     return byOwner;
   }, [paymentMethods]);
+  const selectedPaymentMethod = useMemo(() => {
+    return paymentMethods.find((method) => method.id === paymentMethodId) ?? null;
+  }, [paymentMethodId, paymentMethods]);
+  const selectedPaymentMethodName = selectedPaymentMethod
+    ? formatPaymentMethodLabel(selectedPaymentMethod.name)
+    : "";
 
   useEffect(() => {
     if (!householdId) {
@@ -213,23 +220,23 @@ export default function NewTransactionPage() {
 
   useEffect(() => {
     const ownerParents = paymentGrouped[paymentOwner]?.parents ?? [];
-    if (!paymentMethod && ownerParents.length > 0) {
-      setPaymentMethod(ownerParents[0].name);
+    if (!paymentMethodId && ownerParents.length > 0) {
+      setPaymentMethodId(ownerParents[0].id);
     }
-  }, [paymentGrouped, paymentMethod, paymentOwner]);
+  }, [paymentGrouped, paymentMethodId, paymentOwner]);
 
   useEffect(() => {
     const ownerMethods = [
       ...paymentGrouped[paymentOwner].parents,
       ...paymentGrouped[paymentOwner].children,
     ];
-    if (!paymentMethod) {
+    if (!paymentMethodId) {
       return;
     }
-    if (ownerMethods.length > 0 && !ownerMethods.some((m) => m.name === paymentMethod)) {
-      setPaymentMethod(ownerMethods[0].name);
+    if (ownerMethods.length > 0 && !ownerMethods.some((m) => m.id === paymentMethodId)) {
+      setPaymentMethodId(ownerMethods[0].id);
     }
-  }, [paymentGrouped, paymentMethod, paymentOwner]);
+  }, [paymentGrouped, paymentMethodId, paymentOwner]);
 
   useEffect(() => {
     if (categoryOptions.length === 0) {
@@ -267,7 +274,7 @@ export default function NewTransactionPage() {
     const date = String(formData.get("date") ?? "");
     const note = String(formData.get("note") ?? "");
     const subjectValue = subject || subjects[0]?.name || "우리";
-    const paymentValue = paymentMethod || "현금";
+    const paymentValue = selectedPaymentMethodName || "현금";
     if (!amount || !categoryId || !date) {
       setError("필수 항목을 모두 입력해주세요.");
       setLoading(false);
@@ -284,6 +291,7 @@ export default function NewTransactionPage() {
             : undefined,
         categoryId,
         paymentMethod: paymentValue,
+        paymentMethodId: selectedPaymentMethod?.id,
         subject: subjectValue,
         date: new Date(date),
         note: note.length ? note : undefined,
@@ -302,7 +310,7 @@ export default function NewTransactionPage() {
         });
       }
       router.replace(`/transactions?date=${date}`);
-    } catch (err) {
+    } catch {
       setError("저장에 실패했습니다. 입력값을 확인해주세요.");
     } finally {
       setLoading(false);
@@ -373,7 +381,7 @@ export default function NewTransactionPage() {
                 onClick={() => setIsPaymentSheetOpen(true)}
                 disabled={paymentMethods.length === 0}
               >
-                {paymentMethod || "선택"}
+                {selectedPaymentMethodName || "선택"}
               </button>
             </label>
           </div>
@@ -671,12 +679,12 @@ export default function NewTransactionPage() {
                       <button
                         type="button"
                         className={`mt-2 w-full rounded-xl border px-3 py-2 text-left text-xs ${
-                          paymentMethod === parent.name
+                          paymentMethodId === parent.id
                             ? "border-[var(--accent)] bg-[color:rgba(145,102,82,0.12)]"
                             : "border-[var(--border)] bg-white"
                         }`}
                         onClick={() => {
-                          setPaymentMethod(parent.name);
+                          setPaymentMethodId(parent.id);
                           setIsPaymentSheetOpen(false);
                         }}
                       >
@@ -690,12 +698,12 @@ export default function NewTransactionPage() {
                             key={child.id}
                             type="button"
                             className={`w-full rounded-xl border px-3 py-2 text-left text-xs ${
-                              paymentMethod === child.name
+                              paymentMethodId === child.id
                                 ? "border-[var(--accent)] bg-[color:rgba(145,102,82,0.12)]"
                                 : "border-[var(--border)] bg-white"
                             }`}
                             onClick={() => {
-                              setPaymentMethod(child.name);
+                              setPaymentMethodId(child.id);
                               setIsPaymentSheetOpen(false);
                             }}
                           >

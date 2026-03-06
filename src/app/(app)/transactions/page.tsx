@@ -20,6 +20,10 @@ import {
 import { useAuth } from "@/components/auth-provider";
 import { useHousehold } from "@/components/household-provider";
 import { formatKrw } from "@/lib/format";
+import {
+  buildPaymentMethodNameMap,
+  resolveTransactionPaymentMethodName,
+} from "@/lib/payment-method-resolver";
 import { toMonthKey } from "@/lib/time";
 import { toDateKey } from "@/lib/time";
 import {
@@ -27,6 +31,7 @@ import {
   getExpenseDiscountAmount,
 } from "@/lib/transaction-amount";
 import { useCategories } from "@/hooks/use-categories";
+import { usePaymentMethods } from "@/hooks/use-payment-methods";
 import { useMonthlyTransactions, useTransactionsRange } from "@/hooks/use-transactions";
 
 const DAY_LABELS = ["일", "월", "화", "수", "목", "금", "토"];
@@ -38,19 +43,6 @@ function parseLocalDate(value: string) {
 
 function parseDateParam(value: string) {
   return parseLocalDate(value);
-}
-
-function formatPaymentMethod(value: string) {
-  if (value === "cash") {
-    return "현금";
-  }
-  if (value === "card") {
-    return "카드";
-  }
-  if (value === "transfer") {
-    return "계좌이체";
-  }
-  return value || "결제수단";
 }
 
 function stripRecorderPrefix(note?: string) {
@@ -171,6 +163,7 @@ export default function TransactionsPage() {
   const { user } = useAuth();
   const { householdId } = useHousehold();
   const { categories } = useCategories(householdId);
+  const { paymentMethods } = usePaymentMethods(householdId);
   const [selectedDate, setSelectedDate] = useState(() => new Date());
   const monthStart = useMemo(
     () => startOfMonth(selectedDate),
@@ -234,6 +227,10 @@ export default function TransactionsPage() {
   const categoryMap = useMemo(
     () => new Map(categories.map((category) => [category.id, category.name])),
     [categories]
+  );
+  const paymentMethodNameMap = useMemo(
+    () => buildPaymentMethodNameMap(paymentMethods),
+    [paymentMethods]
   );
   const categoryMetaMap = useMemo(() => {
     return new Map(
@@ -591,22 +588,23 @@ export default function TransactionsPage() {
       }
       const categoryName = categoryMap.get(tx.categoryId) ?? "";
       const noteText = stripRecorderPrefix(tx.note);
-      const haystack = [
+        const haystack = [
         noteText,
         categoryName,
         tx.subject ?? "",
-        formatPaymentMethod(tx.paymentMethod),
+        resolveTransactionPaymentMethodName(tx, paymentMethodNameMap),
       ]
         .join(" ")
         .toLowerCase();
       return haystack.includes(normalizedQuery);
     });
   }, [
+    categoryMap,
+    paymentMethodNameMap,
+    searchQuery,
+    searchType,
     showSearch,
     visibleSearchTransactions,
-    searchType,
-    searchQuery,
-    categoryMap,
   ]);
 
   const searchTotal = useMemo(
@@ -718,12 +716,18 @@ export default function TransactionsPage() {
         title: stripRecorderPrefix(tx.note),
         subtitle: `${categoryMap.get(tx.categoryId) ?? "미분류"} · ${
           tx.subject || "주체"
-        } · ${formatPaymentMethod(tx.paymentMethod)}`,
+        } · ${resolveTransactionPaymentMethodName(tx, paymentMethodNameMap)}`,
         amountLines,
         highlightClass,
       };
     });
-  }, [sortedSelectedItems, budgetCategoryIdSet, budgetHighlightByCategory, categoryMap]);
+  }, [
+    budgetCategoryIdSet,
+    budgetHighlightByCategory,
+    categoryMap,
+    paymentMethodNameMap,
+    sortedSelectedItems,
+  ]);
 
   return (
     <div className="flex flex-col gap-0">

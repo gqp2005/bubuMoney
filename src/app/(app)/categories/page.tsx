@@ -42,7 +42,6 @@ import {
 } from "@/lib/payment-methods";
 import { addSubject, deleteSubject, updateSubject } from "@/lib/subjects";
 import {
-  updateTransactionsPaymentMethodName,
   updateTransactionsSubjectName,
 } from "@/lib/transactions";
 
@@ -472,11 +471,6 @@ export default function CategoriesPage() {
         imported: false,
         goalMonthly: Number.isNaN(parsedGoal ?? NaN) ? null : parsedGoal,
       });
-      await updateTransactionsPaymentMethodName(
-        householdId,
-        editingOriginalName,
-        trimmed
-      );
     } else {
       await updateCategory(householdId, editingId, {
         name: trimmed,

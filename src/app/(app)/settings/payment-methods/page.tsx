@@ -8,7 +8,6 @@ import { usePaymentMethods } from "@/hooks/use-payment-methods";
 import { householdDoc } from "@/lib/firebase/firestore";
 import { addNotification } from "@/lib/notifications";
 import { updatePaymentMethod } from "@/lib/payment-methods";
-import { updateTransactionsPaymentMethodName } from "@/lib/transactions";
 
 type PaymentOwner = "husband" | "wife" | "our";
 
@@ -28,7 +27,15 @@ export default function PaymentMethodsSettingsPage() {
   const router = useRouter();
   const { householdId, displayName, spouseRole } = useHousehold();
   const { paymentMethods } = usePaymentMethods(householdId);
-  const [partnerName, setPartnerName] = useState("");
+  const [householdNames, setHouseholdNames] = useState<{
+    householdId: string | null;
+    creatorDisplayName: string;
+    partnerDisplayName: string;
+  }>({
+    householdId: null,
+    creatorDisplayName: "",
+    partnerDisplayName: "",
+  });
   const [paymentOwner, setPaymentOwner] = useState<PaymentOwner>("our");
   const [expandedParentId, setExpandedParentId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -38,37 +45,52 @@ export default function PaymentMethodsSettingsPage() {
 
   useEffect(() => {
     if (!householdId) {
-      setPartnerName("");
       return;
     }
+    let isCancelled = false;
     getDoc(householdDoc(householdId)).then((snapshot) => {
+      if (isCancelled) {
+        return;
+      }
       if (!snapshot.exists()) {
+        setHouseholdNames({
+          householdId,
+          creatorDisplayName: "",
+          partnerDisplayName: "",
+        });
         return;
       }
       const data = snapshot.data() as {
         creatorDisplayName?: string | null;
         partnerDisplayName?: string | null;
       };
-      const creatorName = data.creatorDisplayName ?? "";
-      const partnerDisplayName = data.partnerDisplayName ?? "";
-      const currentName = (displayName ?? "").trim();
-      if (currentName && creatorName && currentName === creatorName) {
-        setPartnerName(partnerDisplayName);
-      } else if (
-        currentName &&
-        partnerDisplayName &&
-        currentName === partnerDisplayName
-      ) {
-        setPartnerName(creatorName);
-      } else {
-        setPartnerName(partnerDisplayName);
-      }
+      setHouseholdNames({
+        householdId,
+        creatorDisplayName: data.creatorDisplayName ?? "",
+        partnerDisplayName: data.partnerDisplayName ?? "",
+      });
     });
-  }, [displayName, householdId]);
+    return () => {
+      isCancelled = true;
+    };
+  }, [householdId]);
 
   const paymentOwnerLabels = useMemo(() => {
     const baseName = displayName?.trim() || "";
-    const partnerTrimmed = partnerName.trim();
+    const creatorName =
+      householdNames.householdId === householdId
+        ? householdNames.creatorDisplayName.trim()
+        : "";
+    const savedPartnerName =
+      householdNames.householdId === householdId
+        ? householdNames.partnerDisplayName.trim()
+        : "";
+    let partnerTrimmed = savedPartnerName;
+    if (baseName && creatorName && baseName === creatorName) {
+      partnerTrimmed = savedPartnerName;
+    } else if (baseName && savedPartnerName && baseName === savedPartnerName) {
+      partnerTrimmed = creatorName;
+    }
     const husbandLabel =
       spouseRole === "wife"
         ? partnerTrimmed || "남편"
@@ -76,7 +98,7 @@ export default function PaymentMethodsSettingsPage() {
     const wifeLabel =
       spouseRole === "wife" ? baseName || "아내" : partnerTrimmed || "아내";
     return { husbandLabel, wifeLabel };
-  }, [displayName, partnerName, spouseRole]);
+  }, [displayName, householdId, householdNames, spouseRole]);
 
   const paymentGrouped = useMemo(() => {
     const byOwner: Record<
@@ -129,11 +151,6 @@ export default function PaymentMethodsSettingsPage() {
       imported: false,
       goalMonthly: Number.isNaN(parsedGoal ?? NaN) ? null : parsedGoal,
     });
-    await updateTransactionsPaymentMethodName(
-      householdId,
-      editingOriginalName,
-      trimmed
-    );
     await addNotification(householdId, {
       title: "결제수단 변경",
       message: `${editingOriginalName} → ${trimmed}`,
@@ -146,7 +163,7 @@ export default function PaymentMethodsSettingsPage() {
     setEditingGoal("");
   }
 
-  const parents = paymentGrouped[paymentOwner].parents.sort(
+  const parents = [...paymentGrouped[paymentOwner].parents].sort(
     (a, b) => a.order - b.order
   );
   const children = paymentGrouped[paymentOwner].children;

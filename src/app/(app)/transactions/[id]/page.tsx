@@ -11,6 +11,10 @@ import { useSubjects } from "@/hooks/use-subjects";
 import { formatKrw } from "@/lib/format";
 import { householdDoc } from "@/lib/firebase/firestore";
 import { addNotification } from "@/lib/notifications";
+import {
+  findPaymentMethodByName,
+  formatPaymentMethodLabel,
+} from "@/lib/payment-method-resolver";
 import { deleteTransaction, updateTransaction } from "@/lib/transactions";
 import { toDateKey } from "@/lib/time";
 import type { TransactionType } from "@/types/ledger";
@@ -48,6 +52,7 @@ export default function EditTransactionPage() {
   const [discountAmount, setDiscountAmount] = useState("");
   const [categoryId, setCategoryId] = useState("");
   const [paymentMethod, setPaymentMethod] = useState("");
+  const [paymentMethodId, setPaymentMethodId] = useState("");
   const [subject, setSubject] = useState("");
   const [date, setDate] = useState(toDateKey(new Date()));
   const [note, setNote] = useState("");
@@ -58,6 +63,7 @@ export default function EditTransactionPage() {
     discountAmount?: number;
     categoryId: string;
     paymentMethod: string;
+    paymentMethodId?: string;
     subject: string;
     date: string;
     note?: string;
@@ -239,6 +245,41 @@ export default function EditTransactionPage() {
     });
     return byOwner;
   }, [paymentMethods]);
+  const selectedPaymentMethod = useMemo(() => {
+    return paymentMethods.find((method) => method.id === paymentMethodId) ?? null;
+  }, [paymentMethodId, paymentMethods]);
+  const selectedPaymentMethodName = selectedPaymentMethod
+    ? formatPaymentMethodLabel(selectedPaymentMethod.name)
+    : paymentMethod
+    ? formatPaymentMethodLabel(paymentMethod)
+    : "";
+  const preferredPaymentOwner = useMemo(() => {
+    const trimmedSubject = subject.trim();
+    if (trimmedSubject === "우리") {
+      return "our";
+    }
+    const selfName = displayName?.trim() || "";
+    const partnerTrimmed = partnerName.trim();
+    if (
+      selfName &&
+      trimmedSubject &&
+      trimmedSubject === selfName &&
+      (spouseRole === "husband" || spouseRole === "wife")
+    ) {
+      return spouseRole;
+    }
+    if (partnerTrimmed && trimmedSubject && trimmedSubject === partnerTrimmed) {
+      return spouseRole === "wife"
+        ? "husband"
+        : spouseRole === "husband"
+        ? "wife"
+        : null;
+    }
+    if (spouseRole === "husband" || spouseRole === "wife") {
+      return spouseRole;
+    }
+    return null;
+  }, [displayName, partnerName, spouseRole, subject]);
 
   const spouseName = displayName?.trim() || "";
   const partnerTrimmed = partnerName.trim();
@@ -266,6 +307,7 @@ export default function EditTransactionPage() {
           discountAmount?: number;
           categoryId: string;
           paymentMethod: string;
+          paymentMethodId?: string | null;
           subject: string;
           date: { toDate: () => Date };
           note?: string;
@@ -276,6 +318,7 @@ export default function EditTransactionPage() {
         setDiscountAmount(formatAmountValue(String(data.discountAmount ?? "")));
         setCategoryId(data.categoryId);
         setPaymentMethod(data.paymentMethod);
+        setPaymentMethodId(data.paymentMethodId ?? "");
         setSubject(data.subject);
         setDate(toDateKey(data.date.toDate()));
         setNote(data.note ?? "");
@@ -286,6 +329,7 @@ export default function EditTransactionPage() {
           discountAmount: data.discountAmount ?? 0,
           categoryId: data.categoryId,
           paymentMethod: data.paymentMethod,
+          paymentMethodId: data.paymentMethodId ?? "",
           subject: data.subject,
           date: toDateKey(data.date.toDate()),
           note: data.note ?? "",
@@ -333,31 +377,42 @@ export default function EditTransactionPage() {
   }, [subjects, subject]);
 
   useEffect(() => {
-    if (paymentMethod || paymentMethods.length === 0) {
+    if (paymentMethodId || paymentMethods.length === 0) {
       return;
     }
+    if (paymentMethod) {
+      const matched = findPaymentMethodByName(
+        paymentMethods,
+        paymentMethod,
+        preferredPaymentOwner
+      );
+      if (matched) {
+        if (matched.owner && matched.owner !== paymentOwner) {
+          setPaymentOwner(matched.owner);
+        }
+        setPaymentMethodId(matched.id);
+        setPaymentMethod(matched.name);
+        return;
+      }
+    }
+    setPaymentMethodId(paymentMethods[0].id);
     setPaymentMethod(paymentMethods[0].name);
-  }, [paymentMethods, paymentMethod]);
+  }, [
+    paymentMethod,
+    paymentMethodId,
+    paymentMethods,
+    paymentOwner,
+    preferredPaymentOwner,
+  ]);
 
   useEffect(() => {
-    if (!paymentMethod) {
-      return;
-    }
-    const candidates = paymentMethods.filter(
-      (method) => method.name === paymentMethod
-    );
-    if (candidates.length === 0) {
-      return;
-    }
-    const preferredOwner =
-      spouseRole === "wife" ? "wife" : spouseRole === "husband" ? "husband" : null;
-    const preferredMatch = preferredOwner
-      ? candidates.find((method) => method.owner === preferredOwner)
-      : null;
     const ownerMatch =
-      preferredMatch ??
-      candidates.find((method) => method.owner) ??
-      candidates[0];
+      selectedPaymentMethod ??
+      findPaymentMethodByName(
+        paymentMethods,
+        paymentMethod,
+        preferredPaymentOwner
+      );
     if (!ownerMatch?.owner) {
       return;
     }
@@ -370,26 +425,31 @@ export default function EditTransactionPage() {
     }
     lastDerivedOwnerRef.current = ownerMatch.owner;
     setPaymentOwner(ownerMatch.owner);
-  }, [paymentMethod, paymentMethods, spouseRole, paymentOwner]);
+  }, [
+    paymentMethod,
+    paymentMethods,
+    paymentOwner,
+    preferredPaymentOwner,
+    selectedPaymentMethod,
+  ]);
 
   useEffect(() => {
-    if (!paymentMethod) {
-      return;
-    }
-    const existsAnywhere = paymentMethods.some(
-      (method) => method.name === paymentMethod
-    );
-    if (existsAnywhere) {
+    if (paymentMethod && !paymentMethodId) {
       return;
     }
     const ownerMethods = [
       ...paymentGrouped[paymentOwner].parents,
       ...paymentGrouped[paymentOwner].children,
     ];
-    if (ownerMethods.length > 0) {
-      setPaymentMethod(ownerMethods[0].name);
+    if (ownerMethods.length === 0) {
+      return;
     }
-  }, [paymentGrouped, paymentMethod, paymentOwner, paymentMethods]);
+    if (paymentMethodId && ownerMethods.some((method) => method.id === paymentMethodId)) {
+      return;
+    }
+    setPaymentMethodId(ownerMethods[0].id);
+    setPaymentMethod(ownerMethods[0].name);
+  }, [paymentGrouped, paymentMethod, paymentMethodId, paymentOwner]);
 
   useEffect(() => {
     if (categoryOptions.length === 0) {
@@ -414,6 +474,15 @@ export default function EditTransactionPage() {
     }
   }, [selectedCategoryBudgetEnabled]);
   useEffect(() => {
+    if (!selectedPaymentMethod) {
+      return;
+    }
+    if (paymentMethod === selectedPaymentMethod.name) {
+      return;
+    }
+    setPaymentMethod(selectedPaymentMethod.name);
+  }, [paymentMethod, selectedPaymentMethod]);
+  useEffect(() => {
     if (type !== "expense" && discountAmount) {
       setDiscountAmount("");
     }
@@ -428,6 +497,8 @@ export default function EditTransactionPage() {
     try {
       const nextAmount = parseAmountValue(amount);
       const memoText = note.trim() || "메모 없음";
+      const paymentMethodValue =
+        selectedPaymentMethodName || formatPaymentMethodLabel(paymentMethod) || "현금";
       const nextSnapshot = originalTransaction
         ? {
             type,
@@ -437,7 +508,7 @@ export default function EditTransactionPage() {
                 ? effectiveDiscountAmount
                 : 0,
             categoryId,
-            paymentMethod,
+            paymentMethod: paymentMethodValue,
             subject,
             date,
             note: note || undefined,
@@ -457,7 +528,8 @@ export default function EditTransactionPage() {
             ? effectiveDiscountAmount
             : undefined,
         categoryId,
-        paymentMethod,
+        paymentMethod: paymentMethodValue,
+        paymentMethodId: selectedPaymentMethod?.id,
         subject,
         date: new Date(date),
         note: note || undefined,
@@ -474,7 +546,7 @@ export default function EditTransactionPage() {
         });
       }
       router.replace(`/transactions?date=${date}`);
-    } catch (err) {
+    } catch {
       setError("수정에 실패했습니다.");
     } finally {
       setSaving(false);
@@ -499,7 +571,7 @@ export default function EditTransactionPage() {
         });
       }
       router.replace("/transactions");
-    } catch (err) {
+    } catch {
       setError("삭제에 실패했습니다.");
     } finally {
       setSaving(false);
@@ -577,7 +649,7 @@ export default function EditTransactionPage() {
                 onClick={() => setIsPaymentSheetOpen(true)}
                 disabled={paymentMethods.length === 0}
               >
-                {paymentMethod || "선택"}
+                {selectedPaymentMethodName || "선택"}
               </button>
             </label>
           </div>
@@ -910,12 +982,13 @@ export default function EditTransactionPage() {
                       <button
                         type="button"
                         className={`mt-2 w-full rounded-xl border px-3 py-2 text-left text-xs ${
-                          paymentMethod === parent.name
+                          paymentMethodId === parent.id
                             ? "border-[var(--accent)] bg-[color:rgba(145,102,82,0.12)]"
                             : "border-[var(--border)] bg-white"
                         }`}
                         onClick={() => {
                           setPaymentMethod(parent.name);
+                          setPaymentMethodId(parent.id);
                           setIsPaymentSheetOpen(false);
                         }}
                       >
@@ -929,12 +1002,13 @@ export default function EditTransactionPage() {
                             key={child.id}
                             type="button"
                             className={`w-full rounded-xl border px-3 py-2 text-left text-xs ${
-                              paymentMethod === child.name
+                              paymentMethodId === child.id
                                 ? "border-[var(--accent)] bg-[color:rgba(145,102,82,0.12)]"
                                 : "border-[var(--border)] bg-white"
                             }`}
                             onClick={() => {
                               setPaymentMethod(child.name);
+                              setPaymentMethodId(child.id);
                               setIsPaymentSheetOpen(false);
                             }}
                           >

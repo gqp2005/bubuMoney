@@ -19,6 +19,12 @@ import {
 import { useAuth } from "@/components/auth-provider";
 import { useHousehold } from "@/components/household-provider";
 import { formatKrw } from "@/lib/format";
+import {
+  buildPaymentMethodNameMap,
+  getPaymentMethodLabelFromKey,
+  getTransactionPaymentMethodKey,
+  resolveTransactionPaymentMethodName,
+} from "@/lib/payment-method-resolver";
 import { toMonthKey } from "@/lib/time";
 import { getEffectiveExpenseAmount } from "@/lib/transaction-amount";
 import { useCategories } from "@/hooks/use-categories";
@@ -86,7 +92,7 @@ function loadStoredStatsFilters(): StoredStatsFilters | null {
       return null;
     }
     return JSON.parse(raw) as StoredStatsFilters;
-  } catch (err) {
+  } catch {
     window.localStorage.removeItem(STATS_STORAGE_KEY);
     return null;
   }
@@ -547,7 +553,7 @@ type FilterSheetProps = {
   setPaymentOwnerFilter: (owner: "husband" | "wife" | "our") => void;
   paymentParents: PaymentMethodItem[];
   paymentChildrenByParent: Map<string, PaymentMethodItem[]>;
-  allPaymentMethodNames: string[];
+  allPaymentMethodIds: string[];
   draftPayments: Set<string>;
   setDraftPayments: (next: Set<string>) => void;
   expandedPaymentParents: Set<string>;
@@ -575,7 +581,7 @@ const FilterSheet = memo(function FilterSheet({
   setPaymentOwnerFilter,
   paymentParents,
   paymentChildrenByParent,
-  allPaymentMethodNames,
+  allPaymentMethodIds,
   draftPayments,
   setDraftPayments,
   expandedPaymentParents,
@@ -605,7 +611,7 @@ const FilterSheet = memo(function FilterSheet({
       setDraftSubjects(new Set(subjects.map((subject) => subject.name)));
       return;
     }
-    setDraftPayments(new Set(allPaymentMethodNames));
+    setDraftPayments(new Set(allPaymentMethodIds));
   };
 
   return (
@@ -805,11 +811,11 @@ const FilterSheet = memo(function FilterSheet({
               </div>
               {paymentParents.map((parent) => {
                 const children = paymentChildrenByParent.get(parent.id) ?? [];
-                const childNames = children.map((child) => child.name);
+                const childIds = children.map((child) => child.id);
                 const isParentSelected =
-                  childNames.length > 0
-                    ? childNames.every((name) => draftPayments.has(name))
-                    : draftPayments.has(parent.name);
+                  childIds.length > 0
+                    ? childIds.every((id) => draftPayments.has(id))
+                    : draftPayments.has(parent.id);
                 const isExpanded = expandedPaymentParents.has(parent.id);
                 return (
                   <div
@@ -826,16 +832,16 @@ const FilterSheet = memo(function FilterSheet({
                         className="text-left"
                         onClick={() => {
                           const next = new Set(draftPayments);
-                          if (childNames.length === 0) {
-                            if (next.has(parent.name)) {
-                              next.delete(parent.name);
+                          if (childIds.length === 0) {
+                            if (next.has(parent.id)) {
+                              next.delete(parent.id);
                             } else {
-                              next.add(parent.name);
+                              next.add(parent.id);
                             }
                           } else if (isParentSelected) {
-                            childNames.forEach((name) => next.delete(name));
+                            childIds.forEach((id) => next.delete(id));
                           } else {
-                            childNames.forEach((name) => next.add(name));
+                            childIds.forEach((id) => next.add(id));
                           }
                           setDraftPayments(next);
                         }}
@@ -874,16 +880,16 @@ const FilterSheet = memo(function FilterSheet({
                             key={child.id}
                             type="button"
                             className={`w-full rounded-xl border px-3 py-2 text-left text-sm ${
-                              draftPayments.has(child.name)
+                              draftPayments.has(child.id)
                                 ? "border-[var(--text)] bg-[color:rgba(45,38,34,0.08)] font-semibold"
                                 : "border-[var(--border)] text-[color:rgba(45,38,34,0.7)]"
                             }`}
                             onClick={() => {
                               const next = new Set(draftPayments);
-                              if (next.has(child.name)) {
-                                next.delete(child.name);
+                              if (next.has(child.id)) {
+                                next.delete(child.id);
                               } else {
-                                next.add(child.name);
+                                next.add(child.id);
                               }
                               setDraftPayments(next);
                             }}
@@ -1076,6 +1082,14 @@ export default function StatsPage() {
   const { categories } = useCategories(householdId);
   const { subjects } = useSubjects(householdId);
   const { paymentMethods } = usePaymentMethods(householdId);
+  const paymentMethodNameMap = useMemo(
+    () => buildPaymentMethodNameMap(paymentMethods),
+    [paymentMethods]
+  );
+  const paymentMethodIdByName = useMemo(
+    () => new Map(paymentMethods.map((method) => [method.name, method.id])),
+    [paymentMethods]
+  );
   const personalCategoryIdSet = useMemo(() => {
     return new Set(
       categories
@@ -1112,8 +1126,6 @@ export default function StatsPage() {
   const [customMonthDate, setCustomMonthDate] = useState(() =>
     startOfMonth(new Date())
   );
-  const monthStart = useMemo(() => startOfMonth(monthDate), [monthDate]);
-  const monthEnd = useMemo(() => endOfMonth(monthDate), [monthDate]);
   const customMonthStart = useMemo(
     () => startOfMonth(customMonthDate),
     [customMonthDate]
@@ -1408,9 +1420,19 @@ export default function StatsPage() {
       if (appliedSubjects.size > 0 && !appliedSubjects.has(subjectKey)) {
         continue;
       }
-      const paymentKey = tx.paymentMethod ?? "";
-      if (appliedPayments.size > 0 && !appliedPayments.has(paymentKey)) {
-        continue;
+      const paymentKey = getTransactionPaymentMethodKey(tx);
+      if (appliedPayments.size > 0) {
+        const paymentLabel = resolveTransactionPaymentMethodName(
+          tx,
+          paymentMethodNameMap
+        );
+        if (
+          !appliedPayments.has(paymentKey) &&
+          !appliedPayments.has(paymentLabel) &&
+          !appliedPayments.has(tx.paymentMethod ?? "")
+        ) {
+          continue;
+        }
       }
       items.push(tx);
     }
@@ -1420,6 +1442,7 @@ export default function StatsPage() {
     appliedPayments,
     appliedSubjects,
     effectiveBudgetScope,
+    paymentMethodNameMap,
     viewType,
     visibleTransactions,
   ]);
@@ -1450,10 +1473,10 @@ export default function StatsPage() {
         subjectLabel,
         (subjectTotals.get(subjectLabel) ?? 0) + amount
       );
-      const paymentLabel = tx.paymentMethod || "미지정";
+      const paymentKey = getTransactionPaymentMethodKey(tx);
       paymentTotals.set(
-        paymentLabel,
-        (paymentTotals.get(paymentLabel) ?? 0) + amount
+        paymentKey,
+        (paymentTotals.get(paymentKey) ?? 0) + amount
       );
     }
 
@@ -1474,9 +1497,9 @@ export default function StatsPage() {
       totalAmount
     );
     const paymentBreakdown = buildBreakdown(
-      Array.from(paymentTotals.entries()).map(([name, amount]) => ({
-        id: name,
-        name,
+      Array.from(paymentTotals.entries()).map(([id, amount]) => ({
+        id,
+        name: getPaymentMethodLabelFromKey(id, paymentMethodNameMap),
         amount,
       })),
       totalAmount
@@ -1493,15 +1516,11 @@ export default function StatsPage() {
     filteredForBreakdown,
     viewType,
     categoryMap,
+    paymentMethodNameMap,
   ]);
 
-  const {
-    totalAmount,
-    summary: activeSummary,
-    categoryBreakdown,
-    subjectBreakdown,
-    paymentBreakdown,
-  } = statsData;
+  const { summary: activeSummary, categoryBreakdown, subjectBreakdown, paymentBreakdown } =
+    statsData;
 
   const shownCategoryItems = expanded
     ? categoryBreakdown
@@ -1522,8 +1541,11 @@ export default function StatsPage() {
     [appliedSubjects]
   );
   const appliedPaymentNameList = useMemo(
-    () => Array.from(appliedPayments),
-    [appliedPayments]
+    () =>
+      Array.from(appliedPayments).map((key) =>
+        getPaymentMethodLabelFromKey(key, paymentMethodNameMap)
+      ),
+    [appliedPayments, paymentMethodNameMap]
   );
   const activeCategoryNames = useMemo(
     () => formatSelectionSummary(appliedCategoryNameList),
@@ -1548,7 +1570,7 @@ export default function StatsPage() {
       if (detailSheet.type === "subject") {
         return (tx.subject || "미지정") === detailSheet.id;
       }
-      return (tx.paymentMethod || "미지정") === detailSheet.id;
+      return getTransactionPaymentMethodKey(tx) === detailSheet.id;
     });
     const toMillis = (value: unknown) => {
       if (!value) {
@@ -1582,7 +1604,10 @@ export default function StatsPage() {
       const dateLabel = dateValue ? format(dateValue, "yy.MM.dd") : "";
       const categoryLabel = categoryMap.get(tx.categoryId) ?? "미분류";
       const subjectLabel = tx.subject || "미지정";
-      const paymentLabel = tx.paymentMethod || "미지정";
+      const paymentLabel = resolveTransactionPaymentMethodName(
+        tx,
+        paymentMethodNameMap
+      );
       const subtitleParts = [dateLabel, categoryLabel, subjectLabel, paymentLabel]
         .filter(Boolean)
         .join(" · ");
@@ -1594,7 +1619,7 @@ export default function StatsPage() {
         amount: tx.type === "expense" ? getEffectiveExpenseAmount(tx) : tx.amount,
       };
     });
-  }, [categoryMap, detailSheetTransactions]);
+  }, [categoryMap, detailSheetTransactions, paymentMethodNameMap]);
   const detailSheetTotal = useMemo(() => {
     return detailSheetTransactions.reduce(
       (acc, tx) =>
@@ -1646,15 +1671,28 @@ export default function StatsPage() {
     map.forEach((list) => list.sort((a, b) => a.order - b.order));
     return map;
   }, [paymentMethods, paymentOwnerFilter]);
-  const allPaymentMethodNames = useMemo(() => {
-    return Array.from(
-      new Set(
-        paymentMethods
-          .map((method) => method.name)
-          .filter((name) => typeof name === "string" && name.length > 0)
-      )
-    );
-  }, [paymentMethods]);
+  const allPaymentMethodIds = useMemo(() => {
+    return paymentMethods
+      .filter((method) => (method.owner ?? "our") === paymentOwnerFilter)
+      .map((method) => method.id);
+  }, [paymentMethods, paymentOwnerFilter]);
+  const normalizePaymentSelection = useCallback(
+    (values: Set<string>) => {
+      const next = new Set<string>();
+      values.forEach((value) => {
+        if (paymentMethodNameMap.has(value)) {
+          next.add(value);
+          return;
+        }
+        const matchedId = paymentMethodIdByName.get(value);
+        if (matchedId) {
+          next.add(matchedId);
+        }
+      });
+      return next;
+    },
+    [paymentMethodIdByName, paymentMethodNameMap]
+  );
 
   const paymentOwnerLabels = useMemo(() => {
     const baseName = displayName?.trim() || "";
@@ -1763,9 +1801,9 @@ export default function StatsPage() {
     setFilterTab(tab);
     setDraftCategoryIds(new Set(appliedCategoryIds));
     setDraftSubjects(new Set(appliedSubjects));
-    setDraftPayments(new Set(appliedPayments));
+    setDraftPayments(normalizePaymentSelection(appliedPayments));
     setIsFilterSheetOpen(true);
-  }, [appliedCategoryIds, appliedPayments, appliedSubjects]);
+  }, [appliedCategoryIds, appliedPayments, appliedSubjects, normalizePaymentSelection]);
 
   const resetFilters = useCallback(() => {
     setDraftCategoryIds(new Set());
@@ -1955,7 +1993,7 @@ export default function StatsPage() {
       setPaymentOwnerFilter,
       paymentParents,
       paymentChildrenByParent,
-      allPaymentMethodNames,
+      allPaymentMethodIds,
       draftPayments,
       setDraftPayments,
       expandedPaymentParents,
@@ -1976,7 +2014,7 @@ export default function StatsPage() {
       filterTab,
       isFilterSheetOpen,
       paymentChildrenByParent,
-      allPaymentMethodNames,
+      allPaymentMethodIds,
       paymentOwnerFilter,
       paymentOwnerLabels,
       paymentParents,

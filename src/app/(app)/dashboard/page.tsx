@@ -10,6 +10,10 @@ import { useCategories } from "@/hooks/use-categories";
 import { usePaymentMethods } from "@/hooks/use-payment-methods";
 import { useMonthlyTransactions } from "@/hooks/use-transactions";
 import { getLatestMemoEntries, purgeExpiredMemoEntries } from "@/lib/memos";
+import {
+  getLegacyPaymentMethodKey,
+  getTransactionPaymentMethodKey,
+} from "@/lib/payment-method-resolver";
 import { getEffectiveExpenseAmount } from "@/lib/transaction-amount";
 
 export default function DashboardPage() {
@@ -84,13 +88,15 @@ export default function DashboardPage() {
       if (tx.type !== "expense") {
         continue;
       }
-      const key = tx.paymentMethod || "미지정";
+      const key = getTransactionPaymentMethodKey(tx);
       totals.set(key, (totals.get(key) ?? 0) + tx.amount);
     }
     return goalMethods
       .map((method) => {
         const goal = method.goalMonthly ?? 0;
-        const amount = totals.get(method.name) ?? 0;
+        const amount =
+          (totals.get(method.id) ?? 0) +
+          (totals.get(getLegacyPaymentMethodKey(method.name)) ?? 0);
         const progress =
           goal > 0 ? Math.min(100, Math.round((amount / goal) * 100)) : 0;
         return {
@@ -111,7 +117,7 @@ export default function DashboardPage() {
       if (tx.type !== "expense") {
         continue;
       }
-      const key = tx.paymentMethod || "미지정";
+      const key = getTransactionPaymentMethodKey(tx);
       const current = map.get(key) ?? [];
       current.push(tx);
       map.set(key, current);
@@ -251,8 +257,15 @@ export default function DashboardPage() {
           <div className="mt-4 space-y-3 text-sm">
             {paymentGoalItems.map((item) => {
               const isSelected = selectedPaymentGoalId === item.id;
-              const methodTransactions =
-                expenseTransactionsByPaymentMethod.get(item.name) ?? [];
+              const methodTransactions = [
+                ...(expenseTransactionsByPaymentMethod.get(item.id) ?? []),
+                ...(expenseTransactionsByPaymentMethod.get(
+                  getLegacyPaymentMethodKey(item.name)
+                ) ?? []),
+              ].filter(
+                (tx, index, list) =>
+                  list.findIndex((candidate) => candidate.id === tx.id) === index
+              );
               return (
                 <div
                   key={item.id}

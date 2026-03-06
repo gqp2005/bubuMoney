@@ -29,6 +29,7 @@ export async function addTransaction(params: {
   discountAmount?: number;
   categoryId: string;
   paymentMethod: string;
+  paymentMethodId?: string | null;
   subject: string;
   date: Date;
   note?: string;
@@ -54,6 +55,7 @@ export async function updateTransaction(params: {
   discountAmount?: number;
   categoryId: string;
   paymentMethod: string;
+  paymentMethodId?: string | null;
   subject: string;
   date: Date;
   note?: string;
@@ -70,6 +72,9 @@ export async function updateTransaction(params: {
   }
   if (rest.discountAmount === undefined) {
     payload.discountAmount = deleteField();
+  }
+  if (rest.paymentMethodId === undefined) {
+    payload.paymentMethodId = deleteField();
   }
   return updateDoc(
     doc(db, "households", householdId, "transactions", transactionId),
@@ -88,7 +93,7 @@ export async function deleteTransaction(
 
 async function updateTransactionsFieldValue(
   householdId: string,
-  field: "subject" | "paymentMethod",
+  field: "subject",
   oldValue: string,
   newValue: string
 ) {
@@ -120,17 +125,4 @@ export async function updateTransactionsSubjectName(
   newName: string
 ) {
   return updateTransactionsFieldValue(householdId, "subject", oldName, newName);
-}
-
-export async function updateTransactionsPaymentMethodName(
-  householdId: string,
-  oldName: string,
-  newName: string
-) {
-  return updateTransactionsFieldValue(
-    householdId,
-    "paymentMethod",
-    oldName,
-    newName
-  );
 }
