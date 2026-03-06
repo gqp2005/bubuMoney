@@ -28,13 +28,13 @@ import {
 } from "@dnd-kit/sortable";
 import type { DraggableAttributes } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
-import { getDoc } from "firebase/firestore";
+import { getDoc, onSnapshot } from "firebase/firestore";
 import { useHousehold } from "@/components/household-provider";
 import { useCategories } from "@/hooks/use-categories";
 import { usePaymentMethods } from "@/hooks/use-payment-methods";
 import { useSubjects } from "@/hooks/use-subjects";
 import { addCategory, deleteCategory, updateCategory } from "@/lib/categories";
-import { householdDoc } from "@/lib/firebase/firestore";
+import { householdDoc, transactionsCol } from "@/lib/firebase/firestore";
 import {
   addPaymentMethod,
   deletePaymentMethod,
@@ -44,6 +44,7 @@ import { addSubject, deleteSubject, updateSubject } from "@/lib/subjects";
 import {
   updateTransactionsSubjectName,
 } from "@/lib/transactions";
+import type { Transaction } from "@/types/ledger";
 
 type CategoryType = "income" | "expense" | "transfer";
 type TabKey = CategoryType | "subject" | "payment";
@@ -198,6 +199,13 @@ export default function CategoriesPage() {
   const [editingPersonalOnly, setEditingPersonalOnly] = useState(false);
   const [editingOwner, setEditingOwner] = useState<PaymentOwner>("our");
   const [editingGoal, setEditingGoal] = useState("");
+  const [paymentMethodUsageState, setPaymentMethodUsageState] = useState<{
+    householdId: string | null;
+    counts: Record<string, number>;
+  }>({
+    householdId: null,
+    counts: {},
+  });
   const [expandedParentId, setExpandedParentId] = useState<string | null>(null);
   const [expandedPaymentParentId, setExpandedPaymentParentId] = useState<
     string | null
@@ -242,6 +250,14 @@ export default function CategoriesPage() {
     });
     return byOwner;
   }, [paymentMethods]);
+  const paymentMethodUsageCounts = useMemo(() => {
+    if (paymentMethodUsageState.householdId !== householdId) {
+      return {};
+    }
+    return paymentMethodUsageState.counts;
+  }, [householdId, paymentMethodUsageState]);
+  const getLinkedTransactionCount = (paymentMethodId: string) =>
+    paymentMethodUsageCounts[paymentMethodId] ?? 0;
 
   const isCategoryTab = activeTab !== "subject" && activeTab !== "payment";
   const parentOptions = useMemo(() => {
@@ -285,6 +301,42 @@ export default function CategoriesPage() {
       }
     });
   }, [displayName, householdId]);
+
+  useEffect(() => {
+    if (!householdId) {
+      setPaymentMethodUsageState({ householdId: null, counts: {} });
+      return;
+    }
+    const paymentMethodIdsByName = new Map<string, string[]>();
+    paymentMethods.forEach((method) => {
+      const name = method.name.trim();
+      const bucket = paymentMethodIdsByName.get(name) ?? [];
+      bucket.push(method.id);
+      paymentMethodIdsByName.set(name, bucket);
+    });
+    return onSnapshot(transactionsCol(householdId), (snapshot) => {
+      const counts: Record<string, number> = {};
+      snapshot.docs.forEach((doc) => {
+        const data = doc.data() as Transaction;
+        const paymentMethodId = data.paymentMethodId?.trim();
+        if (paymentMethodId) {
+          counts[paymentMethodId] = (counts[paymentMethodId] ?? 0) + 1;
+          return;
+        }
+        const paymentMethodName = data.paymentMethod?.trim();
+        if (!paymentMethodName) {
+          return;
+        }
+        const matchedIds = paymentMethodIdsByName.get(paymentMethodName) ?? [];
+        if (matchedIds.length !== 1) {
+          return;
+        }
+        const matchedId = matchedIds[0];
+        counts[matchedId] = (counts[matchedId] ?? 0) + 1;
+      });
+      setPaymentMethodUsageState({ householdId, counts });
+    });
+  }, [householdId, paymentMethods]);
 
   useEffect(() => {
     if (showAddForm) {
@@ -1265,6 +1317,12 @@ export default function CategoriesPage() {
                             }
                           />
                         </div>
+                        <p className="text-xs text-[color:rgba(45,38,34,0.6)]">
+                          이 카드에 연결된 거래{" "}
+                          {getLinkedTransactionCount(parent.id).toLocaleString(
+                            "en-US"
+                          )}건
+                        </p>
                         <div className="flex items-center gap-2">
                           <button
                             className="rounded-full bg-[var(--accent)] px-3 py-1 text-xs text-white"
@@ -1290,6 +1348,12 @@ export default function CategoriesPage() {
                             <p className="font-medium">{parent.name}</p>
                             <p className="text-xs text-[color:rgba(45,38,34,0.7)]">
                               소분류 {childItems.length}개
+                            </p>
+                            <p className="text-xs text-[color:rgba(45,38,34,0.6)]">
+                              이 카드에 연결된 거래{" "}
+                              {getLinkedTransactionCount(parent.id).toLocaleString(
+                                "en-US"
+                              )}건
                             </p>
                           </div>
                           <div
@@ -1400,10 +1464,26 @@ export default function CategoriesPage() {
                                             }
                                           />
                                         </div>
+                                        <p className="text-[10px] text-[color:rgba(45,38,34,0.6)]">
+                                          이 카드에 연결된 거래{" "}
+                                          {getLinkedTransactionCount(
+                                            child.id
+                                          ).toLocaleString("en-US")}건
+                                        </p>
                                       </div>
                                     ) : (
                                       <>
-                                        <span className="font-medium">{child.name}</span>
+                                        <div>
+                                          <span className="font-medium">
+                                            {child.name}
+                                          </span>
+                                          <p className="text-[10px] text-[color:rgba(45,38,34,0.6)]">
+                                            이 카드에 연결된 거래{" "}
+                                            {getLinkedTransactionCount(
+                                              child.id
+                                            ).toLocaleString("en-US")}건
+                                          </p>
+                                        </div>
                                         <div className="flex items-center gap-2">
                                           <DragHandle className="text-[10px] text-[color:rgba(45,38,34,0.45)]" />
                                           <button

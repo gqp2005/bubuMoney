@@ -290,6 +290,25 @@ export default function EditTransactionPage() {
   const wifeLabel =
     spouseRole === "wife" ? spouseName || "아내" : partnerTrimmed || "아내";
 
+  function handlePaymentOwnerChange(nextOwner: PaymentOwner) {
+    if (nextOwner === paymentOwner) {
+      return;
+    }
+    setPaymentOwner(nextOwner);
+    const ownerMethods = [
+      ...paymentGrouped[nextOwner].parents,
+      ...paymentGrouped[nextOwner].children,
+    ];
+    if (ownerMethods.length === 0) {
+      return;
+    }
+    if (ownerMethods.some((method) => method.id === paymentMethodId)) {
+      return;
+    }
+    setPaymentMethodId(ownerMethods[0].id);
+    setPaymentMethod(ownerMethods[0].name);
+  }
+
   useEffect(() => {
     if (!householdId || !transactionId) {
       return;
@@ -437,6 +456,12 @@ export default function EditTransactionPage() {
     if (paymentMethod && !paymentMethodId) {
       return;
     }
+    if (
+      selectedPaymentMethod?.owner &&
+      selectedPaymentMethod.owner !== paymentOwner
+    ) {
+      return;
+    }
     const ownerMethods = [
       ...paymentGrouped[paymentOwner].parents,
       ...paymentGrouped[paymentOwner].children,
@@ -449,7 +474,13 @@ export default function EditTransactionPage() {
     }
     setPaymentMethodId(ownerMethods[0].id);
     setPaymentMethod(ownerMethods[0].name);
-  }, [paymentGrouped, paymentMethod, paymentMethodId, paymentOwner]);
+  }, [
+    paymentGrouped,
+    paymentMethod,
+    paymentMethodId,
+    paymentOwner,
+    selectedPaymentMethod,
+  ]);
 
   useEffect(() => {
     if (categoryOptions.length === 0) {
@@ -947,7 +978,9 @@ export default function EditTransactionPage() {
                       ? "border-b-2 border-[var(--accent)] text-[var(--accent)]"
                       : "text-[color:rgba(45,38,34,0.5)]"
                   }`}
-                  onClick={() => setPaymentOwner(tab.key as PaymentOwner)}
+                  onClick={() =>
+                    handlePaymentOwnerChange(tab.key as PaymentOwner)
+                  }
                 >
                   {tab.label}
                 </button>

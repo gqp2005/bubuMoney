@@ -12,7 +12,35 @@ import {
   getMonthlyMemoEntries,
   updateMonthlyMemoEntry,
 } from "@/lib/memos";
+import { addNotification } from "@/lib/notifications";
 import { toMonthKey } from "@/lib/time";
+
+function buildMemoPreview(value: string) {
+  const normalized = value.trim().replace(/\s+/g, " ");
+  if (!normalized) {
+    return "메모 없음";
+  }
+  return normalized.length > 30 ? `${normalized.slice(0, 30)}...` : normalized;
+}
+
+function buildMemoPeriodLabel(visibleFrom: string, visibleUntil: string) {
+  const parts: string[] = [];
+  if (visibleFrom) {
+    parts.push(`시작 ${visibleFrom}`);
+  }
+  if (visibleUntil) {
+    parts.push(`종료 ${visibleUntil}`);
+  }
+  return parts.join(" • ");
+}
+
+function formatMemoMonthLabel(monthKey: string) {
+  const parsed = new Date(`${monthKey}-01T00:00:00`);
+  if (Number.isNaN(parsed.getTime())) {
+    return monthKey;
+  }
+  return format(parsed, "yyyy년 M월");
+}
 
 export default function NewMemoPage() {
   const router = useRouter();
@@ -154,6 +182,9 @@ export default function NewMemoPage() {
         setSaving(false);
         return;
       }
+      const memoPreview = buildMemoPreview(trimmed);
+      const memoPeriodLabel = buildMemoPeriodLabel(visibleFrom, visibleUntil);
+      const monthLabel = formatMemoMonthLabel(monthKey);
       if (isCreateMode) {
         await addMonthlyMemoEntry(
           householdId,
@@ -165,15 +196,39 @@ export default function NewMemoPage() {
             visibleUntil: parsedUntil,
           }
         );
+        await addNotification(householdId, {
+          title: "메모 추가",
+          message: `${monthLabel} • ${memoPreview}${
+            memoPeriodLabel ? ` • ${memoPeriodLabel}` : ""
+          }`,
+          level: "success",
+          type: "memo.create",
+        });
       } else if (entryId) {
         await updateMonthlyMemoEntry(householdId, monthKey, entryId, trimmed, user.uid, {
           visibleFrom: parsedFrom,
           visibleUntil: parsedUntil,
         });
+        await addNotification(householdId, {
+          title: "메모 수정",
+          message: `${monthLabel} • ${memoPreview}${
+            memoPeriodLabel ? ` • ${memoPeriodLabel}` : ""
+          }`,
+          level: "info",
+          type: "memo.update",
+        });
       } else {
         await addMonthlyMemoEntry(householdId, monthKey, trimmed, user.uid, {
           visibleFrom: parsedFrom,
           visibleUntil: parsedUntil,
+        });
+        await addNotification(householdId, {
+          title: "메모 추가",
+          message: `${monthLabel} • ${memoPreview}${
+            memoPeriodLabel ? ` • ${memoPeriodLabel}` : ""
+          }`,
+          level: "success",
+          type: "memo.create",
         });
       }
       router.replace("/dashboard");
@@ -188,7 +243,17 @@ export default function NewMemoPage() {
     }
     setSaving(true);
     try {
+      const memoPreview = buildMemoPreview(memo);
+      const memoPeriodLabel = buildMemoPeriodLabel(visibleFrom, visibleUntil);
       await deleteMonthlyMemoEntry(householdId, monthKey, entryId, user.uid);
+      await addNotification(householdId, {
+        title: "메모 삭제",
+        message: `${formatMemoMonthLabel(monthKey)} • ${memoPreview}${
+          memoPeriodLabel ? ` • ${memoPeriodLabel}` : ""
+        }`,
+        level: "error",
+        type: "memo.delete",
+      });
       router.replace("/dashboard");
     } finally {
       setSaving(false);
