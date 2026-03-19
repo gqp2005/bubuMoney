@@ -28,7 +28,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           </Link>
         </div>
       </header>
-      <main className="flex w-full flex-col gap-6 px-0 py-8 ios-no-zoom">
+      <main className="flex w-full flex-col gap-6 px-0 py-6 ios-no-zoom md:py-8">
         <AppGuard>{children}</AppGuard>
       </main>
     </div>

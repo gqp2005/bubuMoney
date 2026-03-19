@@ -807,7 +807,7 @@ export default function SettingsPage() {
 
   return (
     <div className="flex flex-col gap-6 ios-no-zoom">
-      <section className="rounded-3xl border border-[var(--border)] bg-white p-6">
+      <section className="rounded-3xl border border-[var(--border)] bg-white p-4 sm:p-6">
         <div className="mb-4 rounded-2xl border border-[var(--border)] px-4 py-3">
           <p className="text-xs text-[color:rgba(45,38,34,0.6)]">
             내 아이디: {user?.email ?? "-"}
@@ -907,7 +907,7 @@ export default function SettingsPage() {
           </div>
         </div>
       </section>
-      <section className="rounded-3xl border border-[var(--border)] bg-white p-6">
+      <section className="rounded-3xl border border-[var(--border)] bg-white p-4 sm:p-6">
         <div className="flex items-center justify-between gap-4">
           <div>
             <h2 className="text-sm font-semibold">CSV 가져오기</h2>
@@ -938,7 +938,7 @@ export default function SettingsPage() {
           </div>
         ) : null}
       </section>
-      <section className="rounded-3xl border border-[var(--border)] bg-white p-6">
+      <section className="rounded-3xl border border-[var(--border)] bg-white p-4 sm:p-6">
         <h2 className="text-sm font-semibold">카테고리 편집</h2>
         <p className="mt-2 text-xs text-[color:rgba(45,38,34,0.7)]">
           수입/지출/이체/주체/결제수단을 편집합니다.
@@ -950,7 +950,7 @@ export default function SettingsPage() {
           카테고리 편집 열기
         </a>
       </section>
-      <section className="rounded-3xl border border-[var(--border)] bg-white p-6">
+      <section className="rounded-3xl border border-[var(--border)] bg-white p-4 sm:p-6">
         <h2 className="text-sm font-semibold">데이터 초기화</h2>
         <p className="mt-2 text-xs text-[color:rgba(45,38,34,0.7)]">
           선택한 항목만 초기화하거나 전체 가계부 삭제를 진행할 수 있습니다.
@@ -1059,7 +1059,7 @@ export default function SettingsPage() {
         </div>
       ) : null}
       {toast ? (
-        <div className="fixed bottom-6 left-1/2 z-50 w-[min(360px,90vw)] -translate-x-1/2 rounded-full px-4 py-2 text-center text-sm text-white shadow-lg">
+        <div className="fixed bottom-[calc(1.5rem+env(safe-area-inset-bottom))] left-1/2 z-50 w-[min(360px,90vw)] -translate-x-1/2 rounded-full px-4 py-2 text-center text-sm text-white shadow-lg">
           <span
             className={`block rounded-full px-4 py-2 ${
               toast.level === "error"

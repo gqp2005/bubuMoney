@@ -320,7 +320,7 @@ export default function NewMemoPage() {
           취소
         </Link>
       </div>
-      <section className="rounded-3xl border border-[var(--border)] bg-white p-6">
+      <section className="rounded-3xl border border-[var(--border)] bg-white p-4 sm:p-6">
         <div className="mb-4 grid gap-3 sm:grid-cols-2">
           <label className="text-sm font-medium">
             표시 시작일 (선택)
@@ -372,7 +372,7 @@ export default function NewMemoPage() {
       </section>
       {showDeleteConfirm ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-          <div className="w-full max-w-sm rounded-2xl border border-[var(--border)] bg-white p-6">
+          <div className="w-full max-w-sm rounded-2xl border border-[var(--border)] bg-white p-5 sm:p-6">
             <h2 className="text-base font-semibold">메모 삭제</h2>
             <p className="mt-2 text-sm text-[color:rgba(45,38,34,0.7)]">
               이 메모를 삭제할까요?

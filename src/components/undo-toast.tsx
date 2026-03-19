@@ -37,7 +37,7 @@ export default function UndoToast({
   }, [expiresAt, onDismiss]);
 
   return (
-    <div className="fixed bottom-6 left-1/2 z-50 w-[min(420px,92vw)] -translate-x-1/2 rounded-2xl bg-[var(--text)] px-4 py-3 text-white shadow-xl">
+    <div className="fixed bottom-[calc(1.5rem+env(safe-area-inset-bottom))] left-1/2 z-50 w-[min(420px,92vw)] -translate-x-1/2 rounded-2xl bg-[var(--text)] px-4 py-3 text-white shadow-xl">
       <div className="flex items-center justify-between gap-3">
         <p className="min-w-0 flex-1 text-sm">{message}</p>
         <div className="flex items-center gap-2">

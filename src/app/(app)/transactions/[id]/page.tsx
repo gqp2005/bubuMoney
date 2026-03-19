@@ -645,7 +645,7 @@ export default function EditTransactionPage() {
 
   if (loading) {
     return (
-      <div className="rounded-2xl border border-[var(--border)] bg-white p-6 text-sm">
+      <div className="rounded-2xl border border-[var(--border)] bg-white p-5 text-sm sm:p-6">
         불러오는 중...
       </div>
     );
@@ -654,7 +654,7 @@ export default function EditTransactionPage() {
   return (
     <div className="flex flex-col gap-6 ios-no-zoom">
       <form
-        className="rounded-3xl border border-[var(--border)] bg-white p-6"
+        className="rounded-3xl border border-[var(--border)] bg-white p-4 sm:p-6"
         onSubmit={(event) => {
           event.preventDefault();
           handleSave();
@@ -842,7 +842,7 @@ export default function EditTransactionPage() {
             onClick={() => setIsTypeSheetOpen(false)}
             aria-label="닫기"
           />
-          <div className="absolute bottom-0 left-0 right-0 max-h-[70vh] rounded-t-3xl bg-white p-6">
+          <div className="absolute bottom-0 left-0 right-0 max-h-[70svh] overflow-y-auto rounded-t-3xl bg-white px-5 pt-6 pb-[calc(1.5rem+env(safe-area-inset-bottom))] sm:px-6">
             <h2 className="text-sm font-semibold">유형 선택</h2>
             <div className="mt-4 grid gap-2">
               {typeOptions.map((option) => (
@@ -874,7 +874,7 @@ export default function EditTransactionPage() {
             onClick={() => setIsSubjectSheetOpen(false)}
             aria-label="닫기"
           />
-          <div className="absolute bottom-0 left-0 right-0 max-h-[70vh] rounded-t-3xl bg-white p-6">
+          <div className="absolute bottom-0 left-0 right-0 max-h-[70svh] overflow-y-auto rounded-t-3xl bg-white px-5 pt-6 pb-[calc(1.5rem+env(safe-area-inset-bottom))] sm:px-6">
             <h2 className="text-sm font-semibold">주체 선택</h2>
             <div className="mt-4 max-h-[55vh] grid gap-2 overflow-y-auto pr-1">
               {subjectOptions.map((name) => (
@@ -906,7 +906,7 @@ export default function EditTransactionPage() {
             onClick={() => setIsCategorySheetOpen(false)}
             aria-label="닫기"
           />
-          <div className="absolute bottom-0 left-0 right-0 max-h-[70vh] rounded-t-3xl bg-white p-6">
+          <div className="absolute bottom-0 left-0 right-0 max-h-[70svh] overflow-y-auto rounded-t-3xl bg-white px-5 pt-6 pb-[calc(1.5rem+env(safe-area-inset-bottom))] sm:px-6">
             <h2 className="text-sm font-semibold">카테고리 선택</h2>
             <div className="mt-4 max-h-[55vh] space-y-3 overflow-y-auto pr-1">
               {categoryParents.map((parent) => {
@@ -995,7 +995,7 @@ export default function EditTransactionPage() {
             onClick={() => setIsPaymentSheetOpen(false)}
             aria-label="닫기"
           />
-          <div className="absolute bottom-0 left-0 right-0 max-h-[70vh] rounded-t-3xl bg-white p-6">
+          <div className="absolute bottom-0 left-0 right-0 max-h-[70svh] overflow-y-auto rounded-t-3xl bg-white px-5 pt-6 pb-[calc(1.5rem+env(safe-area-inset-bottom))] sm:px-6">
             <h2 className="text-sm font-semibold">결제수단 선택</h2>
             <div className="mt-4 flex items-center justify-center gap-6 border-b border-[var(--border)] text-sm">
               {[

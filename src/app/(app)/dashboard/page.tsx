@@ -271,7 +271,7 @@ export default function DashboardPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <section className="rounded-3xl border border-[var(--border)] bg-white p-6">
+      <section className="rounded-3xl border border-[var(--border)] bg-white p-4 sm:p-6">
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold">메모</h2>
           <Link
@@ -332,7 +332,7 @@ export default function DashboardPage() {
       </section>
 
       {paymentGoalItems.length > 0 ? (
-        <section className="rounded-3xl border border-[var(--border)] bg-white p-6 shadow-sm">
+        <section className="rounded-3xl border border-[var(--border)] bg-white p-4 shadow-sm sm:p-6">
           <h2 className="text-lg font-semibold">카드 실적</h2>
           <div className="mt-4 space-y-3 text-sm">
             {paymentGoalItems.map((item) => {
@@ -416,7 +416,7 @@ export default function DashboardPage() {
         </section>
       ) : null}
 
-      <section className="rounded-3xl border border-[var(--border)] bg-white p-6 shadow-sm">
+      <section className="rounded-3xl border border-[var(--border)] bg-white p-4 shadow-sm sm:p-6">
         <h1 className="text-2xl font-semibold">이번 달 요약</h1>
         <p className="mt-2 text-sm text-[color:rgba(45,38,34,0.7)]">
           수입, 지출, 잔액을 한눈에 확인하세요.
@@ -442,7 +442,7 @@ export default function DashboardPage() {
         </div>
       </section>
 
-      <section className="rounded-3xl border border-[var(--border)] bg-white p-6">
+      <section className="rounded-3xl border border-[var(--border)] bg-white p-4 sm:p-6">
         <h2 className="text-lg font-semibold">최근 내역</h2>
         {loading ? (
           <div className="mt-4 text-sm text-[color:rgba(45,38,34,0.7)]">

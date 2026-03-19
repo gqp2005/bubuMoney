@@ -284,8 +284,8 @@ const RangeSheet = memo(function RangeSheet({
         onClick={onClose}
         aria-label="닫기"
       />
-      <div className="absolute bottom-0 left-0 right-0 flex max-h-[80vh] flex-col rounded-t-3xl bg-white">
-        <div className="flex-1 overflow-y-auto p-6">
+      <div className="absolute bottom-0 left-0 right-0 flex max-h-[80svh] flex-col rounded-t-3xl bg-white">
+        <div className="flex-1 overflow-y-auto px-5 pt-6 pb-[calc(1.5rem+env(safe-area-inset-bottom))] sm:px-6">
           <div className="mx-auto mb-6 h-1.5 w-12 rounded-full bg-[color:rgba(45,38,34,0.15)]" />
           <div className="flex items-center justify-between">
             <h2 className="text-base font-semibold">조회 기간 선택</h2>
@@ -505,8 +505,8 @@ const BudgetSheet = memo(function BudgetSheet({
         onClick={onClose}
         aria-label="닫기"
       />
-      <div className="absolute bottom-0 left-0 right-0 flex max-h-[70vh] flex-col rounded-t-3xl bg-white">
-        <div className="flex-1 overflow-y-auto p-6">
+      <div className="absolute bottom-0 left-0 right-0 flex max-h-[70svh] flex-col rounded-t-3xl bg-white">
+        <div className="flex-1 overflow-y-auto px-5 pt-6 pb-[calc(1.5rem+env(safe-area-inset-bottom))] sm:px-6">
           <div className="mx-auto mb-6 h-1.5 w-12 rounded-full bg-[color:rgba(45,38,34,0.15)]" />
           <div className="flex items-center justify-between">
             <div className="text-base font-semibold">카테고리 선택</div>
@@ -649,8 +649,8 @@ const FilterSheet = memo(function FilterSheet({
         onClick={onClose}
         aria-label="닫기"
       />
-      <div className="absolute bottom-0 left-0 right-0 flex max-h-[80vh] flex-col rounded-t-3xl bg-white">
-        <div className="flex-1 overflow-y-auto p-6">
+      <div className="absolute bottom-0 left-0 right-0 flex max-h-[80svh] flex-col rounded-t-3xl bg-white">
+        <div className="flex-1 overflow-y-auto px-5 pt-6 pb-[calc(1.5rem+env(safe-area-inset-bottom))] sm:px-6">
           <div className="mx-auto mb-6 h-1.5 w-12 rounded-full bg-[color:rgba(45,38,34,0.15)]" />
           <div className="flex items-center justify-between">
             <div className="text-base font-semibold">필터 선택</div>
@@ -1041,8 +1041,8 @@ const BreakdownSheet = memo(function BreakdownSheet({
         onClick={onClose}
         aria-label="닫기"
       />
-      <div className="absolute bottom-0 left-0 right-0 flex max-h-[80vh] flex-col rounded-t-3xl bg-white">
-        <div className="flex-1 overflow-y-auto px-6 pb-6 pt-4">
+      <div className="absolute bottom-0 left-0 right-0 flex max-h-[80svh] flex-col rounded-t-3xl bg-white">
+        <div className="flex-1 overflow-y-auto px-5 pb-[calc(1.5rem+env(safe-area-inset-bottom))] pt-4 sm:px-6">
           <div className="mx-auto mb-4 h-1.5 w-12 rounded-full bg-[color:rgba(45,38,34,0.15)]" />
           <div className="text-center">
             <div className="text-base font-semibold">{title}</div>
@@ -2190,7 +2190,7 @@ export default function StatsPage() {
         </button>
       </div>
 
-      <section className="rounded-3xl border border-[var(--border)] bg-white p-6">
+      <section className="rounded-3xl border border-[var(--border)] bg-white p-4 sm:p-6">
         <div className="mb-4 flex flex-wrap items-center gap-2">
           <button
             type="button"
@@ -2347,7 +2347,8 @@ export default function StatsPage() {
               <span>자산: {activePaymentNames}</span>
             </div>
             {filterPresets.length > 0 ? (
-              <div className="flex flex-wrap items-center gap-2">
+              <div className="-mx-1 overflow-x-auto px-1 pb-1">
+                <div className="flex w-max items-center gap-2 sm:w-auto sm:flex-wrap">
                 {filterPresets.map((preset) => {
                   const isActive = activePresetId === preset.id;
                   return (
@@ -2361,7 +2362,7 @@ export default function StatsPage() {
                     >
                       <button
                         type="button"
-                        className="px-4 py-2 text-sm"
+                        className="whitespace-nowrap px-4 py-2 text-sm"
                         onClick={() => applyPreset(preset)}
                       >
                         {preset.name}
@@ -2379,6 +2380,7 @@ export default function StatsPage() {
                     </div>
                   );
                 })}
+                </div>
               </div>
             ) : null}
 
@@ -2578,7 +2580,7 @@ export default function StatsPage() {
       <FilterSheet {...filterSheetProps} />
       {showPresetSheet ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="w-full max-w-sm rounded-3xl border border-[var(--border)] bg-white p-6">
+          <div className="w-full max-w-sm rounded-3xl border border-[var(--border)] bg-white p-5 sm:p-6">
             <div className="flex items-center justify-between gap-3">
               <h2 className="text-base font-semibold">프리셋 저장</h2>
               <button

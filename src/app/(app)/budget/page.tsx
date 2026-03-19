@@ -893,7 +893,7 @@ export default function BudgetPage() {
         </button>
       </div>
 
-      <section className="rounded-3xl border border-[var(--border)] bg-white p-6">
+      <section className="rounded-3xl border border-[var(--border)] bg-white p-4 sm:p-6">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h1 className="text-xl font-semibold">예산</h1>
@@ -1361,8 +1361,8 @@ export default function BudgetPage() {
               onClick={() => setIsBudgetSheetOpen(false)}
               aria-label="닫기"
             />
-            <div className="absolute bottom-0 left-0 right-0 flex max-h-[70vh] flex-col rounded-t-3xl bg-white">
-              <div className="flex-1 overflow-y-auto p-6">
+            <div className="absolute bottom-0 left-0 right-0 flex max-h-[70svh] flex-col rounded-t-3xl bg-white">
+              <div className="flex-1 overflow-y-auto px-5 pt-6 pb-[calc(1.5rem+env(safe-area-inset-bottom))] sm:px-6">
                 <div className="mx-auto mb-6 h-1.5 w-12 rounded-full bg-[color:rgba(45,38,34,0.15)]" />
                 <div className="flex items-center justify-between">
                   <div className="text-base font-semibold">카테고리 선택</div>
@@ -1405,8 +1405,8 @@ export default function BudgetPage() {
               onClick={() => setIsCategorySelectOpen(false)}
               aria-label="닫기"
             />
-            <div className="absolute bottom-0 left-0 right-0 flex max-h-[70vh] flex-col rounded-t-3xl bg-white">
-              <div className="flex-1 overflow-y-auto p-6">
+            <div className="absolute bottom-0 left-0 right-0 flex max-h-[70svh] flex-col rounded-t-3xl bg-white">
+              <div className="flex-1 overflow-y-auto px-5 pt-6 pb-[calc(1.5rem+env(safe-area-inset-bottom))] sm:px-6">
                 <div className="mx-auto mb-6 h-1.5 w-12 rounded-full bg-[color:rgba(45,38,34,0.15)]" />
                 <div className="flex items-center justify-between">
                   <div className="text-base font-semibold">
@@ -1559,8 +1559,8 @@ export default function BudgetPage() {
               onClick={() => setDetailCategoryId(null)}
               aria-label="닫기"
             />
-            <div className="absolute bottom-0 left-0 right-0 flex max-h-[75vh] flex-col rounded-t-3xl bg-white">
-              <div className="flex-1 overflow-y-auto p-6">
+            <div className="absolute bottom-0 left-0 right-0 flex max-h-[75svh] flex-col rounded-t-3xl bg-white">
+              <div className="flex-1 overflow-y-auto px-5 pt-6 pb-[calc(1.5rem+env(safe-area-inset-bottom))] sm:px-6">
                 <div className="mx-auto mb-6 h-1.5 w-12 rounded-full bg-[color:rgba(45,38,34,0.15)]" />
                 <div className="flex items-center justify-between">
                   <div className="text-base font-semibold">
@@ -1619,7 +1619,7 @@ export default function BudgetPage() {
       <button
         type="button"
         onClick={handleSaveBudget}
-        className="fixed bottom-6 right-6 z-40 flex h-12 w-12 items-center justify-center rounded-full bg-[var(--text)] text-sm text-white shadow-lg"
+        className="fixed bottom-[calc(1.5rem+env(safe-area-inset-bottom))] right-6 z-40 flex h-12 w-12 items-center justify-center rounded-full bg-[var(--text)] text-sm text-white shadow-lg"
         aria-label="예산 저장"
         disabled={saving}
       >

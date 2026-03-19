@@ -892,7 +892,7 @@ export default function AssetsPage() {
         })}
       </div>
 
-      <section className="rounded-3xl border border-[var(--border)] bg-white p-5">
+      <section className="rounded-3xl border border-[var(--border)] bg-white p-4 sm:p-5">
         <div className="flex items-center justify-between gap-2">
           <div>
             <p className="text-xs text-[color:rgba(45,38,34,0.6)]">현재 자산</p>
@@ -927,7 +927,7 @@ export default function AssetsPage() {
             투자·부채 포함
           </button>
         </div>
-        <div className="mt-4 grid grid-cols-3 gap-2 text-xs">
+        <div className="mt-4 grid grid-cols-1 gap-2 text-xs sm:grid-cols-3">
           <div className="rounded-xl border border-[var(--border)] bg-[color:rgba(45,38,34,0.03)] px-3 py-2">
             <p className="text-[color:rgba(45,38,34,0.6)]">나</p>
             <p className="mt-1 font-semibold">{formatKrw(ownerComparison.mine.balance)}</p>
@@ -952,7 +952,7 @@ export default function AssetsPage() {
         </div>
       </section>
 
-      <section className="rounded-3xl border border-[var(--border)] bg-white p-5">
+      <section className="rounded-3xl border border-[var(--border)] bg-white p-4 sm:p-5">
         <div className="flex items-center justify-between">
           <p className="text-sm font-semibold">부부 정산</p>
           <p className="text-xs text-[color:rgba(45,38,34,0.6)]">이번 달 외부지출 기준</p>
@@ -964,7 +964,7 @@ export default function AssetsPage() {
         </div>
       </section>
 
-      <section className="rounded-3xl border border-[var(--border)] bg-white p-5">
+      <section className="rounded-3xl border border-[var(--border)] bg-white p-4 sm:p-5">
         <div className="flex items-center justify-between">
           <div>
             <p className="text-sm font-semibold">월간 순증감</p>
@@ -1139,8 +1139,8 @@ export default function AssetsPage() {
             onClick={() => setSelectedAccountId(null)}
             aria-label="닫기"
           />
-          <div className="absolute bottom-0 left-0 right-0 max-h-[80vh] overflow-hidden rounded-t-3xl bg-white">
-            <div className="p-6">
+          <div className="absolute bottom-0 left-0 right-0 max-h-[80svh] overflow-hidden rounded-t-3xl bg-white">
+            <div className="px-5 pt-6 pb-[calc(1.5rem+env(safe-area-inset-bottom))] sm:px-6">
               <div className="mx-auto mb-4 h-1.5 w-12 rounded-full bg-[color:rgba(45,38,34,0.15)]" />
               <div className="flex items-center justify-between">
                 <div>
@@ -1253,7 +1253,7 @@ export default function AssetsPage() {
                 </div>
               ) : null}
             </div>
-            <div className="max-h-[50vh] overflow-y-auto px-6 pb-6">
+            <div className="max-h-[50svh] overflow-y-auto px-5 pb-[calc(1.5rem+env(safe-area-inset-bottom))] sm:px-6">
               {selectedAccount.type === "investment" ? (
                 <div className="mb-4 space-y-2">
                   <div className="flex items-center justify-between">
@@ -1389,7 +1389,7 @@ export default function AssetsPage() {
             onClick={() => setShowAccountSheet(false)}
             aria-label="닫기"
           />
-          <div className="absolute bottom-0 left-0 right-0 max-h-[85vh] overflow-y-auto rounded-t-3xl bg-white p-6">
+          <div className="absolute bottom-0 left-0 right-0 max-h-[85svh] overflow-y-auto rounded-t-3xl bg-white px-5 pt-6 pb-[calc(1.5rem+env(safe-area-inset-bottom))] sm:px-6">
             <div className="mx-auto mb-4 h-1.5 w-12 rounded-full bg-[color:rgba(45,38,34,0.15)]" />
             <h2 className="text-base font-semibold">계좌 추가</h2>
             <div className="mt-4 space-y-3">
@@ -1577,7 +1577,7 @@ export default function AssetsPage() {
             }}
             aria-label="닫기"
           />
-          <div className="absolute bottom-0 left-0 right-0 max-h-[85vh] overflow-y-auto rounded-t-3xl bg-white p-6">
+          <div className="absolute bottom-0 left-0 right-0 max-h-[85svh] overflow-y-auto rounded-t-3xl bg-white px-5 pt-6 pb-[calc(1.5rem+env(safe-area-inset-bottom))] sm:px-6">
             <div className="mx-auto mb-4 h-1.5 w-12 rounded-full bg-[color:rgba(45,38,34,0.15)]" />
             <h2 className="text-base font-semibold">이체 기록</h2>
             <div className="mt-4 space-y-3">
@@ -1684,7 +1684,7 @@ export default function AssetsPage() {
             onClick={() => setShowTradeSheet(false)}
             aria-label="닫기"
           />
-          <div className="absolute bottom-0 left-0 right-0 max-h-[85vh] overflow-y-auto rounded-t-3xl bg-white p-6">
+          <div className="absolute bottom-0 left-0 right-0 max-h-[85svh] overflow-y-auto rounded-t-3xl bg-white px-5 pt-6 pb-[calc(1.5rem+env(safe-area-inset-bottom))] sm:px-6">
             <div className="mx-auto mb-4 h-1.5 w-12 rounded-full bg-[color:rgba(45,38,34,0.15)]" />
             <h2 className="text-base font-semibold">투자 거래 추가</h2>
             <div className="mt-4 space-y-3">
