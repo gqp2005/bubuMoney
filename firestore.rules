@@ -32,6 +32,11 @@ service cloud.firestore {
         allow update, delete: if isMember(householdId);
       }
 
+      match /recurringTransactionRules/{ruleId} {
+        allow read: if isMember(householdId);
+        allow create, update, delete: if isMember(householdId);
+      }
+
       match /categories/{categoryId} {
         allow read: if isMember(householdId);
         allow create, update, delete: if isMember(householdId);

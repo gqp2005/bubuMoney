@@ -31,6 +31,9 @@ export async function addTransaction(params: {
   categoryId: string;
   paymentMethod: string;
   paymentMethodId?: string | null;
+  recurringRuleId?: string | null;
+  generatedFromRecurringRuleId?: string | null;
+  recurringOccurrenceDateKey?: string | null;
   subject: string;
   date: Date;
   note?: string;
@@ -57,6 +60,9 @@ export async function updateTransaction(params: {
   categoryId: string;
   paymentMethod: string;
   paymentMethodId?: string | null;
+  recurringRuleId?: string | null;
+  generatedFromRecurringRuleId?: string | null;
+  recurringOccurrenceDateKey?: string | null;
   subject: string;
   date: Date;
   note?: string;
@@ -76,6 +82,15 @@ export async function updateTransaction(params: {
   }
   if (rest.paymentMethodId === undefined) {
     payload.paymentMethodId = deleteField();
+  }
+  if (rest.recurringRuleId === undefined) {
+    payload.recurringRuleId = deleteField();
+  }
+  if (rest.generatedFromRecurringRuleId === undefined) {
+    payload.generatedFromRecurringRuleId = deleteField();
+  }
+  if (rest.recurringOccurrenceDateKey === undefined) {
+    payload.recurringOccurrenceDateKey = deleteField();
   }
   return updateDoc(
     doc(db, "households", householdId, "transactions", transactionId),
@@ -101,6 +116,9 @@ export async function restoreTransaction(params: {
   categoryId: string;
   paymentMethod: string;
   paymentMethodId?: string | null;
+  recurringRuleId?: string | null;
+  generatedFromRecurringRuleId?: string | null;
+  recurringOccurrenceDateKey?: string | null;
   subject: string;
   date: Date;
   note?: string;

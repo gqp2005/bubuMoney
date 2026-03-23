@@ -4,6 +4,8 @@ import { useParams, useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { doc, getDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
+import { useAuth } from "@/components/auth-provider";
+import TransactionRecurringSection from "@/components/transaction-recurring-section";
 import { useHousehold } from "@/components/household-provider";
 import { useCategories } from "@/hooks/use-categories";
 import { usePaymentMethods } from "@/hooks/use-payment-methods";
@@ -15,6 +17,12 @@ import {
   findPaymentMethodByName,
   formatPaymentMethodLabel,
 } from "@/lib/payment-method-resolver";
+import {
+  createRecurringTransactionRule,
+  deleteRecurringTransactionRule,
+  getRecurringTransactionRule,
+  updateRecurringTransactionRule,
+} from "@/lib/recurring-transactions";
 import { deleteTransaction, updateTransaction } from "@/lib/transactions";
 import { savePendingUndoAction } from "@/lib/undo-actions";
 import { toDateKey } from "@/lib/time";
@@ -22,10 +30,22 @@ import type { TransactionType } from "@/types/ledger";
 
 type PaymentOwner = "husband" | "wife" | "our";
 
+function parseDateInput(value: string) {
+  const [yearText, monthText, dayText] = value.split("-");
+  const year = Number(yearText);
+  const month = Number(monthText);
+  const day = Number(dayText);
+  if (!year || !month || !day) {
+    return null;
+  }
+  return new Date(year, month - 1, day);
+}
+
 export default function EditTransactionPage() {
   const router = useRouter();
   const params = useParams();
   const transactionId = String(params?.id ?? "");
+  const { user } = useAuth();
   const { householdId, displayName, spouseRole } = useHousehold();
   const { categories } = useCategories(householdId);
   const { subjects } = useSubjects(householdId);
@@ -54,6 +74,16 @@ export default function EditTransactionPage() {
   const [categoryId, setCategoryId] = useState("");
   const [paymentMethod, setPaymentMethod] = useState("");
   const [paymentMethodId, setPaymentMethodId] = useState("");
+  const [recurringRuleId, setRecurringRuleId] = useState("");
+  const [generatedFromRecurringRuleId, setGeneratedFromRecurringRuleId] =
+    useState("");
+  const [recurringOccurrenceDateKey, setRecurringOccurrenceDateKey] =
+    useState("");
+  const [isRecurringSectionOpen, setIsRecurringSectionOpen] = useState(false);
+  const [isRecurringEnabled, setIsRecurringEnabled] = useState(false);
+  const [recurringDayOfMonth, setRecurringDayOfMonth] = useState("1");
+  const [recurringStartDate, setRecurringStartDate] = useState(toDateKey(new Date()));
+  const [recurringEndDate, setRecurringEndDate] = useState("");
   const [subject, setSubject] = useState("");
   const [date, setDate] = useState(toDateKey(new Date()));
   const [note, setNote] = useState("");
@@ -65,6 +95,9 @@ export default function EditTransactionPage() {
     categoryId: string;
     paymentMethod: string;
     paymentMethodId?: string;
+    recurringRuleId?: string;
+    generatedFromRecurringRuleId?: string;
+    recurringOccurrenceDateKey?: string;
     subject: string;
     date: string;
     note?: string;
@@ -256,6 +289,9 @@ export default function EditTransactionPage() {
     : paymentMethod
     ? formatPaymentMethodLabel(paymentMethod)
     : "";
+  const isGeneratedRecurringTransaction = Boolean(
+    generatedFromRecurringRuleId && !recurringRuleId
+  );
   const preferredPaymentOwner = useMemo(() => {
     const trimmedSubject = subject.trim();
     if (trimmedSubject === "우리") {
@@ -330,6 +366,9 @@ export default function EditTransactionPage() {
           categoryId: string;
           paymentMethod: string;
           paymentMethodId?: string | null;
+          recurringRuleId?: string | null;
+          generatedFromRecurringRuleId?: string | null;
+          recurringOccurrenceDateKey?: string | null;
           subject: string;
           date: { toDate: () => Date };
           note?: string;
@@ -343,10 +382,20 @@ export default function EditTransactionPage() {
         setCategoryId(data.categoryId);
         setPaymentMethod(data.paymentMethod);
         setPaymentMethodId(data.paymentMethodId ?? "");
+        setRecurringRuleId(data.recurringRuleId ?? "");
+        setGeneratedFromRecurringRuleId(data.generatedFromRecurringRuleId ?? "");
+        setRecurringOccurrenceDateKey(data.recurringOccurrenceDateKey ?? "");
         setSubject(data.subject);
         setDate(toDateKey(data.date.toDate()));
         setNote(data.note ?? "");
         setBudgetApplied(Boolean(data.budgetApplied));
+        setIsRecurringEnabled(Boolean(data.recurringRuleId));
+        setRecurringDayOfMonth(
+          String(data.date.toDate().getDate())
+        );
+        setRecurringStartDate(toDateKey(data.date.toDate()));
+        setRecurringEndDate("");
+        setIsRecurringSectionOpen(Boolean(data.recurringRuleId));
         setOriginalTransaction({
           type: data.type,
           amount: data.amount,
@@ -354,6 +403,9 @@ export default function EditTransactionPage() {
           categoryId: data.categoryId,
           paymentMethod: data.paymentMethod,
           paymentMethodId: data.paymentMethodId ?? "",
+          recurringRuleId: data.recurringRuleId ?? "",
+          generatedFromRecurringRuleId: data.generatedFromRecurringRuleId ?? "",
+          recurringOccurrenceDateKey: data.recurringOccurrenceDateKey ?? "",
           subject: data.subject,
           date: toDateKey(data.date.toDate()),
           note: data.note ?? "",
@@ -365,6 +417,38 @@ export default function EditTransactionPage() {
       .catch(() => setError("거래 내역을 불러오지 못했습니다."))
       .finally(() => setLoading(false));
   }, [householdId, transactionId]);
+
+  useEffect(() => {
+    if (!householdId || !recurringRuleId) {
+      return;
+    }
+    let active = true;
+    getRecurringTransactionRule(householdId, recurringRuleId)
+      .then((rule) => {
+        if (!active) {
+          return;
+        }
+        if (!rule) {
+          setRecurringRuleId("");
+          setIsRecurringEnabled(false);
+          return;
+        }
+        setIsRecurringEnabled(true);
+        setRecurringDayOfMonth(String(rule.dayOfMonth));
+        setRecurringStartDate(toDateKey(rule.startDate.toDate()));
+        setRecurringEndDate(rule.endDate ? toDateKey(rule.endDate.toDate()) : "");
+      })
+      .catch(() => {
+        if (!active) {
+          return;
+        }
+        setRecurringRuleId("");
+        setIsRecurringEnabled(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [householdId, recurringRuleId]);
 
   useEffect(() => {
     if (!householdId) {
@@ -512,6 +596,17 @@ export default function EditTransactionPage() {
     }
   }, [selectedCategoryBudgetEnabled]);
   useEffect(() => {
+    if (isRecurringEnabled || recurringRuleId || generatedFromRecurringRuleId) {
+      return;
+    }
+    const parsedDate = parseDateInput(date);
+    if (!parsedDate) {
+      return;
+    }
+    setRecurringDayOfMonth(String(parsedDate.getDate()));
+    setRecurringStartDate(date);
+  }, [date, generatedFromRecurringRuleId, isRecurringEnabled, recurringRuleId]);
+  useEffect(() => {
     if (!selectedPaymentMethod) {
       return;
     }
@@ -532,11 +627,50 @@ export default function EditTransactionPage() {
     }
     setSaving(true);
     setError(null);
+    const nextAmount = parseAmountValue(amount);
+    const parsedDate = parseDateInput(date);
+    const recurringDay = Number(recurringDayOfMonth);
+    const parsedRecurringStartDate = parseDateInput(recurringStartDate);
+    const parsedRecurringEndDate = recurringEndDate
+      ? parseDateInput(recurringEndDate)
+      : null;
+    if (!nextAmount || !categoryId || !parsedDate) {
+      setError("필수 항목을 모두 입력해주세요.");
+      setSaving(false);
+      return;
+    }
+    if (
+      !isGeneratedRecurringTransaction &&
+      isRecurringEnabled &&
+      (!Number.isInteger(recurringDay) ||
+        recurringDay < 1 ||
+        recurringDay > 31 ||
+        !parsedRecurringStartDate)
+    ) {
+      setError("자동 등록 시작일과 등록일(1~31일)을 확인해주세요.");
+      setSaving(false);
+      return;
+    }
+    if (
+      !isGeneratedRecurringTransaction &&
+      isRecurringEnabled &&
+      parsedRecurringStartDate &&
+      parsedRecurringEndDate &&
+      parsedRecurringEndDate < parsedRecurringStartDate
+    ) {
+      setError("자동 등록 종료일은 시작일 이후여야 합니다.");
+      setSaving(false);
+      return;
+    }
+    let createdRecurringRuleId: string | null = null;
+    const hadRecurringRuleId = Boolean(recurringRuleId);
     try {
-      const nextAmount = parseAmountValue(amount);
       const memoText = note.trim() || "메모 없음";
       const paymentMethodValue =
         selectedPaymentMethodName || formatPaymentMethodLabel(paymentMethod) || "현금";
+      let nextRecurringRuleId: string | null = recurringRuleId || null;
+      const shouldDeleteRecurringRule =
+        !isGeneratedRecurringTransaction && !isRecurringEnabled && recurringRuleId;
       const nextSnapshot = originalTransaction
         ? {
             type,
@@ -556,6 +690,55 @@ export default function EditTransactionPage() {
       const changeSummary = nextSnapshot && originalTransaction
         ? buildUpdateSummary(originalTransaction, nextSnapshot)
         : "";
+      if (!isGeneratedRecurringTransaction && isRecurringEnabled && parsedRecurringStartDate) {
+        if (recurringRuleId) {
+          await updateRecurringTransactionRule({
+            householdId,
+            ruleId: recurringRuleId,
+            type,
+            amount: nextAmount,
+            discountAmount:
+              type === "expense" && effectiveDiscountAmount > 0
+                ? effectiveDiscountAmount
+                : undefined,
+            categoryId,
+            paymentMethod: paymentMethodValue,
+            paymentMethodId: selectedPaymentMethod?.id,
+            subject,
+            note: note || undefined,
+            budgetApplied,
+            dayOfMonth: recurringDay,
+            startDate: parsedRecurringStartDate,
+            endDate: parsedRecurringEndDate ?? undefined,
+          });
+        } else {
+          const createdRule = await createRecurringTransactionRule({
+            householdId,
+            type,
+            amount: nextAmount,
+            discountAmount:
+              type === "expense" && effectiveDiscountAmount > 0
+                ? effectiveDiscountAmount
+                : undefined,
+            categoryId,
+            paymentMethod: paymentMethodValue,
+            paymentMethodId: selectedPaymentMethod?.id,
+            subject,
+            note: note || undefined,
+            budgetApplied,
+            dayOfMonth: recurringDay,
+            startDate: parsedRecurringStartDate,
+            endDate: parsedRecurringEndDate ?? undefined,
+            lastGeneratedDateKey: date,
+            createdBy: user?.uid ?? originalTransaction?.createdBy ?? "",
+          });
+          nextRecurringRuleId = createdRule.id;
+          createdRecurringRuleId = createdRule.id;
+          setRecurringRuleId(createdRule.id);
+        }
+      } else if (shouldDeleteRecurringRule) {
+        nextRecurringRuleId = null;
+      }
       await updateTransaction({
         householdId,
         transactionId,
@@ -568,11 +751,18 @@ export default function EditTransactionPage() {
         categoryId,
         paymentMethod: paymentMethodValue,
         paymentMethodId: selectedPaymentMethod?.id,
+        recurringRuleId: nextRecurringRuleId ?? undefined,
+        generatedFromRecurringRuleId: generatedFromRecurringRuleId || undefined,
+        recurringOccurrenceDateKey: recurringOccurrenceDateKey || undefined,
         subject,
-        date: new Date(date),
+        date: parsedDate,
         note: note || undefined,
         budgetApplied,
       });
+      if (shouldDeleteRecurringRule) {
+        await deleteRecurringTransactionRule(householdId, shouldDeleteRecurringRule);
+        setRecurringRuleId("");
+      }
       if (!selectedCategory?.personalOnly) {
         await addNotification(householdId, {
           title: "내역 수정",
@@ -585,6 +775,14 @@ export default function EditTransactionPage() {
       }
       router.replace(`/transactions?date=${date}`);
     } catch {
+      if (!hadRecurringRuleId && isRecurringEnabled) {
+        setRecurringRuleId("");
+      }
+      if (createdRecurringRuleId) {
+        await deleteRecurringTransactionRule(householdId, createdRecurringRuleId).catch(
+          () => undefined
+        );
+      }
       setError("수정에 실패했습니다.");
     } finally {
       setSaving(false);
@@ -593,6 +791,11 @@ export default function EditTransactionPage() {
 
   async function handleDelete() {
     if (!householdId || !transactionId) {
+      return;
+    }
+    if (recurringRuleId && !generatedFromRecurringRuleId) {
+      setError("자동 내역이 연결된 원본입니다. 먼저 자동 등록을 끄고 저장한 뒤 삭제해주세요.");
+      setConfirmDelete(false);
       return;
     }
     setSaving(true);
@@ -615,6 +818,11 @@ export default function EditTransactionPage() {
             categoryId: originalTransaction.categoryId,
             paymentMethod: originalTransaction.paymentMethod,
             paymentMethodId: originalTransaction.paymentMethodId,
+            recurringRuleId: originalTransaction.recurringRuleId,
+            generatedFromRecurringRuleId:
+              originalTransaction.generatedFromRecurringRuleId,
+            recurringOccurrenceDateKey:
+              originalTransaction.recurringOccurrenceDateKey,
             subject: originalTransaction.subject,
             dateIso: new Date(originalTransaction.date).toISOString(),
             note: originalTransaction.note,
@@ -790,12 +998,33 @@ export default function EditTransactionPage() {
             className="mt-2 w-full rounded-xl border border-[var(--border)] bg-white px-4 py-3"
             value={note}
             onChange={(event) => setNote(event.target.value)}
+            placeholder="선택 입력"
           />
         </label>
+        {isGeneratedRecurringTransaction ? (
+          <div className="mt-4 rounded-2xl border border-[var(--border)] bg-[color:rgba(45,38,34,0.02)] px-4 py-4">
+            <p className="text-sm font-semibold">추가 기능</p>
+            <p className="mt-1 text-xs text-[color:rgba(45,38,34,0.6)]">
+              이 내역은 자동으로 생성된 항목입니다. 반복 설정은 원본 내역에서 수정하세요.
+            </p>
+          </div>
+        ) : isRecurringSectionOpen ? (
+          <TransactionRecurringSection
+            enabled={isRecurringEnabled}
+            onEnabledChange={setIsRecurringEnabled}
+            dayOfMonth={recurringDayOfMonth}
+            onDayOfMonthChange={setRecurringDayOfMonth}
+            startDate={recurringStartDate}
+            onStartDateChange={setRecurringStartDate}
+            endDate={recurringEndDate}
+            onEndDateChange={setRecurringEndDate}
+            disabled={saving}
+          />
+        ) : null}
         {error ? (
           <p className="mt-3 text-sm text-red-600">{error}</p>
         ) : null}
-        <div className="mt-6 flex items-center justify-end gap-2">
+        <div className="mt-6 flex flex-wrap items-center justify-end gap-2">
           <button
             type="button"
             className="mr-auto inline-flex h-9 w-9 items-center justify-center rounded-full border border-[var(--border)] text-[color:rgba(45,38,34,0.7)] hover:text-red-600"
@@ -817,6 +1046,20 @@ export default function EditTransactionPage() {
               <path d="M6 6l1 14h10l1-14" />
             </svg>
           </button>
+          {!isGeneratedRecurringTransaction ? (
+            <button
+              type="button"
+              className={`rounded-xl border px-4 py-2 text-sm disabled:opacity-70 ${
+                isRecurringSectionOpen || isRecurringEnabled
+                  ? "border-[var(--accent)] text-[var(--accent)]"
+                  : "border-[var(--border)] text-[color:rgba(45,38,34,0.7)]"
+              }`}
+              onClick={() => setIsRecurringSectionOpen((prev) => !prev)}
+              disabled={saving}
+            >
+              추가 기능
+            </button>
+          ) : null}
           <button
             type="button"
             className="rounded-xl border border-[var(--border)] px-4 py-2 text-sm"
@@ -1093,7 +1336,11 @@ export default function EditTransactionPage() {
       {confirmDelete ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
           <div className="w-full max-w-xs rounded-2xl border border-[var(--border)] bg-white p-6">
-            <p className="text-sm">삭제하시겠습니까?</p>
+            <p className="text-sm">
+              {recurringRuleId && !generatedFromRecurringRuleId
+                ? "자동 내역이 연결된 원본입니다. 먼저 자동 등록을 끄고 저장하세요."
+                : "삭제하시겠습니까?"}
+            </p>
             <div className="mt-4 flex justify-end gap-2">
               <button
                 className="rounded-xl border border-[var(--border)] px-4 py-2 text-sm"
@@ -1105,7 +1352,7 @@ export default function EditTransactionPage() {
               <button
                 className="rounded-xl bg-[var(--accent)] px-4 py-2 text-sm text-white disabled:opacity-70"
                 onClick={handleDelete}
-                disabled={saving}
+                disabled={saving || Boolean(recurringRuleId && !generatedFromRecurringRuleId)}
               >
                 예
               </button>

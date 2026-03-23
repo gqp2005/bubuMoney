@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Timestamp,
@@ -15,11 +16,13 @@ import {
 import { useAuth } from "@/components/auth-provider";
 import { useHousehold } from "@/components/household-provider";
 import { useCategories } from "@/hooks/use-categories";
+import { useRecurringTransactionRules } from "@/hooks/use-recurring-transaction-rules";
 import { useSubjects } from "@/hooks/use-subjects";
 import { usePaymentMethods } from "@/hooks/use-payment-methods";
 import { addCategory } from "@/lib/categories";
 import { signOutUser } from "@/lib/firebase/auth";
 import { db } from "@/lib/firebase/client";
+import { formatKrw } from "@/lib/format";
 import {
   budgetsCol,
   categoriesCol,
@@ -33,8 +36,17 @@ import {
 import { updateUserDisplayName } from "@/lib/firebase/user";
 import { createInvite, resetHouseholdData } from "@/lib/household";
 import { addPaymentMethod } from "@/lib/payment-methods";
+import { formatPaymentMethodLabel } from "@/lib/payment-method-resolver";
+import {
+  deleteRecurringTransactionRule,
+  findSourceTransactionIdByRecurringRuleId,
+  stopRecurringTransactionRule,
+} from "@/lib/recurring-transactions";
+import { getEffectiveExpenseAmount, getExpenseDiscountAmount } from "@/lib/transaction-amount";
+import { formatDate } from "@/lib/time";
 import { addTransaction, updateTransactionsSubjectName } from "@/lib/transactions";
 import { addSubject, updateSubject } from "@/lib/subjects";
+import type { RecurringTransactionRule, TransactionType } from "@/types/ledger";
 
 type InviteSnapshot = {
   code: string;
@@ -43,6 +55,29 @@ type InviteSnapshot = {
 };
 
 type ToastLevel = "success" | "error" | "info";
+
+const transactionTypeLabelMap: Record<TransactionType, string> = {
+  income: "수입",
+  expense: "지출",
+  transfer: "이체",
+};
+
+function toStartOfDay(date: Date) {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+}
+
+function getRecurringRuleStatus(rule: RecurringTransactionRule, now: Date) {
+  const today = toStartOfDay(now);
+  const startDate = toStartOfDay(rule.startDate.toDate());
+  const endDate = rule.endDate ? toStartOfDay(rule.endDate.toDate()) : null;
+  if (startDate > today) {
+    return "예정";
+  }
+  if (endDate && endDate < today) {
+    return "종료";
+  }
+  return "진행 중";
+}
 
 function parseDate(raw: string) {
   const normalized = raw.trim().replace(/\./g, "-").replace(/\//g, "-");
@@ -362,9 +397,14 @@ function CsvImportSection({
   );
 }
 export default function SettingsPage() {
+  const router = useRouter();
   const { user } = useAuth();
   const { householdId, displayName, spouseRole } = useHousehold();
+  const { categories } = useCategories(householdId);
   const { subjects } = useSubjects(householdId);
+  const { paymentMethods } = usePaymentMethods(householdId);
+  const { recurringRules, loading: recurringRulesLoading } =
+    useRecurringTransactionRules(householdId);
   const [nickname, setNickname] = useState(displayName ?? "");
   const [partnerNickname, setPartnerNickname] = useState("");
   const [isOwner, setIsOwner] = useState<boolean | null>(null);
@@ -380,6 +420,14 @@ export default function SettingsPage() {
   const [savingPartner, setSavingPartner] = useState(false);
   const [partnerStatus, setPartnerStatus] = useState<string | null>(null);
   const [csvOpen, setCsvOpen] = useState(false);
+  const [recurringRulesOpen, setRecurringRulesOpen] = useState(true);
+  const [showOnlyMineRecurringRules, setShowOnlyMineRecurringRules] = useState(false);
+  const [activeRecurringActionId, setActiveRecurringActionId] = useState<string | null>(
+    null
+  );
+  const [activeRecurringNavigateId, setActiveRecurringNavigateId] = useState<
+    string | null
+  >(null);
   const [resetOpen, setResetOpen] = useState(false);
   const [resetLoading, setResetLoading] = useState(false);
   const [resetStatus, setResetStatus] = useState<string | null>(null);
@@ -411,6 +459,57 @@ export default function SettingsPage() {
     null
   );
   const toastTimerRef = useRef<number | null>(null);
+  const currentDate = useMemo(() => new Date(nowTick), [nowTick]);
+  const categoryNameMap = useMemo(
+    () => new Map(categories.map((category) => [category.id, category.name])),
+    [categories]
+  );
+  const paymentMethodNameMap = useMemo(
+    () =>
+      new Map(
+        paymentMethods.map((method) => [
+          method.id,
+          formatPaymentMethodLabel(method.name),
+        ])
+      ),
+    [paymentMethods]
+  );
+  const recurringRuleItems = useMemo(() => {
+    return recurringRules.map((rule) => {
+      const discountAmount = getExpenseDiscountAmount(rule);
+      const effectiveAmount =
+        rule.type === "expense" ? getEffectiveExpenseAmount(rule) : rule.amount;
+      return {
+        ...rule,
+        title: rule.note?.trim() || categoryNameMap.get(rule.categoryId) || "자동 내역",
+        categoryName: categoryNameMap.get(rule.categoryId) || "미분류",
+        paymentMethodName:
+          (rule.paymentMethodId
+            ? paymentMethodNameMap.get(rule.paymentMethodId)
+            : null) ?? formatPaymentMethodLabel(rule.paymentMethod),
+        status: getRecurringRuleStatus(rule, currentDate),
+        creatorLabel:
+          user?.uid && rule.createdBy === user.uid ? "내가 등록" : "상대가 등록",
+        typeLabel: transactionTypeLabelMap[rule.type],
+        startDateLabel: formatDate(rule.startDate.toDate()),
+        endDateLabel: rule.endDate ? formatDate(rule.endDate.toDate()) : "계속",
+        amountLabel: formatKrw(effectiveAmount),
+        discountAmount,
+      };
+    });
+  }, [
+    categoryNameMap,
+    currentDate,
+    paymentMethodNameMap,
+    recurringRules,
+    user?.uid,
+  ]);
+  const visibleRecurringRuleItems = useMemo(() => {
+    if (!showOnlyMineRecurringRules || !user?.uid) {
+      return recurringRuleItems;
+    }
+    return recurringRuleItems.filter((rule) => rule.createdBy === user.uid);
+  }, [recurringRuleItems, showOnlyMineRecurringRules, user?.uid]);
   const showToast = useCallback((message: string, level: ToastLevel = "info") => {
     if (toastTimerRef.current) {
       window.clearTimeout(toastTimerRef.current);
@@ -603,6 +702,65 @@ export default function SettingsPage() {
     lastInviteExpiredCodeRef.current = inviteCode;
     showToast(`초대 코드 ${inviteCode}가 만료되었습니다.`, "info");
   }, [householdId, inviteCode, inviteExpiresAt, nowTick, showToast]);
+
+  async function handleOpenRecurringRule(ruleId: string) {
+    if (!householdId) {
+      return;
+    }
+    setActiveRecurringNavigateId(ruleId);
+    try {
+      const sourceTransactionId = await findSourceTransactionIdByRecurringRuleId(
+        householdId,
+        ruleId
+      );
+      if (!sourceTransactionId) {
+        showToast("원본 내역을 찾을 수 없습니다. 자동 내역 설정만 남아있습니다.", "error");
+        return;
+      }
+      router.push(`/transactions/${sourceTransactionId}`);
+    } catch {
+      showToast("자동 내역 원본을 찾지 못했습니다.", "error");
+    } finally {
+      setActiveRecurringNavigateId(null);
+    }
+  }
+
+  async function handleStopRecurringRule(
+    ruleId: string,
+    title: string,
+    status: string
+  ) {
+    if (!householdId || status === "종료") {
+      return;
+    }
+    setActiveRecurringActionId(ruleId);
+    try {
+      await stopRecurringTransactionRule(householdId, ruleId, currentDate);
+      showToast(`${title} 자동 내역을 중지했습니다.`, "success");
+    } catch {
+      showToast("자동 내역 중지에 실패했습니다.", "error");
+    } finally {
+      setActiveRecurringActionId(null);
+    }
+  }
+
+  async function handleDeleteRecurringRule(ruleId: string, title: string) {
+    if (!householdId) {
+      return;
+    }
+    if (!window.confirm(`"${title}" 자동 내역 설정을 삭제할까요?`)) {
+      return;
+    }
+    setActiveRecurringActionId(ruleId);
+    try {
+      await deleteRecurringTransactionRule(householdId, ruleId);
+      showToast(`${title} 자동 내역 설정을 삭제했습니다.`, "success");
+    } catch {
+      showToast("자동 내역 삭제에 실패했습니다.", "error");
+    } finally {
+      setActiveRecurringActionId(null);
+    }
+  }
 
   async function handleInvite() {
     if (!user || !householdId) {
@@ -949,6 +1107,160 @@ export default function SettingsPage() {
         >
           카테고리 편집 열기
         </a>
+      </section>
+      <section className="rounded-3xl border border-[var(--border)] bg-white p-4 sm:p-6">
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <h2 className="text-sm font-semibold">자동 내역 설정</h2>
+            <p className="mt-2 text-xs text-[color:rgba(45,38,34,0.7)]">
+              등록한 월 자동 내역 규칙을 확인합니다.
+              {recurringRulesLoading
+                ? " 불러오는 중입니다."
+                : ` 현재 ${visibleRecurringRuleItems.length}건 표시 중입니다.`}
+            </p>
+          </div>
+          <button
+            className="flex h-9 w-9 items-center justify-center rounded-full border border-[var(--border)] text-base"
+            onClick={() => setRecurringRulesOpen((prev) => !prev)}
+            aria-label={recurringRulesOpen ? "자동 내역 접기" : "자동 내역 펼치기"}
+          >
+            {recurringRulesOpen ? "⌃" : "⌄"}
+          </button>
+        </div>
+        {recurringRulesOpen ? (
+          <div className="mt-4 space-y-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                className={`rounded-full border px-3 py-1.5 text-xs ${
+                  !showOnlyMineRecurringRules
+                    ? "border-[var(--text)] bg-[var(--text)] text-white"
+                    : "border-[var(--border)] text-[color:rgba(45,38,34,0.7)]"
+                }`}
+                onClick={() => setShowOnlyMineRecurringRules(false)}
+              >
+                전체
+              </button>
+              <button
+                type="button"
+                className={`rounded-full border px-3 py-1.5 text-xs ${
+                  showOnlyMineRecurringRules
+                    ? "border-[var(--text)] bg-[var(--text)] text-white"
+                    : "border-[var(--border)] text-[color:rgba(45,38,34,0.7)]"
+                }`}
+                onClick={() => setShowOnlyMineRecurringRules(true)}
+              >
+                내 것만
+              </button>
+            </div>
+            {recurringRulesLoading ? (
+              <div className="rounded-2xl border border-[var(--border)] bg-[color:rgba(45,38,34,0.02)] px-4 py-4 text-sm text-[color:rgba(45,38,34,0.65)]">
+                자동 내역을 불러오는 중입니다.
+              </div>
+            ) : visibleRecurringRuleItems.length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-[var(--border)] bg-[color:rgba(45,38,34,0.02)] px-4 py-4 text-sm text-[color:rgba(45,38,34,0.65)]">
+                {showOnlyMineRecurringRules
+                  ? "내가 등록한 자동 내역이 없습니다."
+                  : "등록된 자동 내역이 없습니다."}
+              </div>
+            ) : (
+              visibleRecurringRuleItems.map((rule) => (
+                <div
+                  key={rule.id}
+                  className="rounded-2xl border border-[var(--border)] px-4 py-4"
+                >
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="min-w-0">
+                      <button
+                        type="button"
+                        className="w-full text-left"
+                        onClick={() => handleOpenRecurringRule(rule.id)}
+                        disabled={activeRecurringNavigateId === rule.id}
+                      >
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="truncate text-sm font-semibold">{rule.title}</p>
+                          <span
+                            className={`rounded-full px-2 py-0.5 text-[11px] ${
+                              rule.status === "진행 중"
+                                ? "bg-[color:rgba(16,185,129,0.12)] text-emerald-700"
+                                : rule.status === "예정"
+                                  ? "bg-[color:rgba(59,130,246,0.12)] text-blue-700"
+                                  : "bg-[color:rgba(45,38,34,0.08)] text-[color:rgba(45,38,34,0.7)]"
+                            }`}
+                          >
+                            {rule.status}
+                          </span>
+                          <span className="rounded-full border border-[var(--border)] px-2 py-0.5 text-[11px] text-[color:rgba(45,38,34,0.65)]">
+                            {rule.creatorLabel}
+                          </span>
+                        </div>
+                        <p className="mt-2 text-xs text-[color:rgba(45,38,34,0.65)]">
+                          매달 {rule.dayOfMonth}일 · {rule.typeLabel} · {rule.subject} ·{" "}
+                          {rule.categoryName} · {rule.paymentMethodName}
+                        </p>
+                        <p className="mt-1 text-xs text-[color:rgba(45,38,34,0.65)]">
+                          기간 {rule.startDateLabel} ~ {rule.endDateLabel}
+                        </p>
+                        <p className="mt-1 text-[11px] text-[color:rgba(45,38,34,0.5)]">
+                          최근 생성: {rule.lastGeneratedDateKey || "아직 없음"}
+                        </p>
+                        <p className="mt-2 text-[11px] text-[color:rgba(45,38,34,0.5)]">
+                          {activeRecurringNavigateId === rule.id
+                            ? "원본 내역 여는 중..."
+                            : "눌러서 원본 내역 수정"}
+                        </p>
+                      </button>
+                    </div>
+                    <div className="shrink-0 text-right">
+                      <p
+                        className={`text-sm font-semibold ${
+                          rule.type === "income"
+                            ? "text-emerald-600"
+                            : rule.type === "expense"
+                              ? "text-red-500"
+                              : "text-[var(--text)]"
+                        }`}
+                      >
+                        {rule.type === "income"
+                          ? `+${rule.amountLabel}`
+                          : rule.type === "expense"
+                            ? rule.amountLabel
+                            : formatKrw(rule.amount)}
+                      </p>
+                      {rule.type === "expense" && rule.discountAmount > 0 ? (
+                        <p className="mt-1 text-[11px] text-[color:rgba(45,38,34,0.55)]">
+                          할인 {formatKrw(rule.discountAmount)} · 결제 {formatKrw(rule.amount)}
+                        </p>
+                      ) : null}
+                      <div className="mt-3 flex flex-col items-end gap-2">
+                        <button
+                          type="button"
+                          className="rounded-full border border-[var(--border)] px-3 py-1.5 text-[11px] text-[color:rgba(45,38,34,0.75)] disabled:opacity-60"
+                          onClick={() =>
+                            handleStopRecurringRule(rule.id, rule.title, rule.status)
+                          }
+                          disabled={
+                            activeRecurringActionId === rule.id || rule.status === "종료"
+                          }
+                        >
+                          {rule.status === "종료" ? "중지됨" : "중지"}
+                        </button>
+                        <button
+                          type="button"
+                          className="rounded-full border border-red-200 px-3 py-1.5 text-[11px] text-red-600 disabled:opacity-60"
+                          onClick={() => handleDeleteRecurringRule(rule.id, rule.title)}
+                          disabled={activeRecurringActionId === rule.id}
+                        >
+                          삭제
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        ) : null}
       </section>
       <section className="rounded-3xl border border-[var(--border)] bg-white p-4 sm:p-6">
         <h2 className="text-sm font-semibold">데이터 초기화</h2>

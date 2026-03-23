@@ -402,6 +402,11 @@ export default function TransactionsPage() {
         categoryId: pendingUndo.payload.categoryId,
         paymentMethod: pendingUndo.payload.paymentMethod,
         paymentMethodId: pendingUndo.payload.paymentMethodId,
+        recurringRuleId: pendingUndo.payload.recurringRuleId,
+        generatedFromRecurringRuleId:
+          pendingUndo.payload.generatedFromRecurringRuleId,
+        recurringOccurrenceDateKey:
+          pendingUndo.payload.recurringOccurrenceDateKey,
         subject: pendingUndo.payload.subject,
         date: new Date(pendingUndo.payload.dateIso),
         note: pendingUndo.payload.note,

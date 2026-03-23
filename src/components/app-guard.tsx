@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 import { useAuth } from "@/components/auth-provider";
 import { useHousehold } from "@/components/household-provider";
+import RecurringTransactionsSync from "@/components/recurring-transactions-sync";
 
 export default function AppGuard({
   children,
@@ -35,5 +36,10 @@ export default function AppGuard({
     );
   }
 
-  return <>{children}</>;
+  return (
+    <>
+      <RecurringTransactionsSync />
+      {children}
+    </>
+  );
 }

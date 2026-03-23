@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { getDoc } from "firebase/firestore";
 import { useAuth } from "@/components/auth-provider";
 import { useHousehold } from "@/components/household-provider";
+import TransactionRecurringSection from "@/components/transaction-recurring-section";
 import { useCategories } from "@/hooks/use-categories";
 import { usePaymentMethods } from "@/hooks/use-payment-methods";
 import { useSubjects } from "@/hooks/use-subjects";
@@ -12,11 +13,26 @@ import { formatKrw } from "@/lib/format";
 import { householdDoc } from "@/lib/firebase/firestore";
 import { addNotification } from "@/lib/notifications";
 import { formatPaymentMethodLabel } from "@/lib/payment-method-resolver";
+import {
+  createRecurringTransactionRule,
+  deleteRecurringTransactionRule,
+} from "@/lib/recurring-transactions";
 import { addTransaction } from "@/lib/transactions";
 import { toDateKey } from "@/lib/time";
 import type { TransactionType } from "@/types/ledger";
 
 type PaymentOwner = "husband" | "wife" | "our";
+
+function parseDateInput(value: string) {
+  const [yearText, monthText, dayText] = value.split("-");
+  const year = Number(yearText);
+  const month = Number(monthText);
+  const day = Number(dayText);
+  if (!year || !month || !day) {
+    return null;
+  }
+  return new Date(year, month - 1, day);
+}
 
 export default function NewTransactionPage() {
   const router = useRouter();
@@ -50,6 +66,14 @@ export default function NewTransactionPage() {
   >(null);
   const today = toDateKey(new Date());
   const defaultDate = searchParams.get("date") ?? today;
+  const [date, setDate] = useState(defaultDate);
+  const [isRecurringSectionOpen, setIsRecurringSectionOpen] = useState(false);
+  const [isRecurringEnabled, setIsRecurringEnabled] = useState(false);
+  const [recurringDayOfMonth, setRecurringDayOfMonth] = useState(
+    String(parseDateInput(defaultDate)?.getDate() ?? 1)
+  );
+  const [recurringStartDate, setRecurringStartDate] = useState(defaultDate);
+  const [recurringEndDate, setRecurringEndDate] = useState("");
   const hasCategories = categories.length > 0;
   const typeLabelMap: Record<TransactionType, string> = {
     expense: "지출",
@@ -271,16 +295,67 @@ export default function NewTransactionPage() {
     setError(null);
     const formData = new FormData(event.currentTarget);
     const amount = parseAmountValue(amountInput);
-    const date = String(formData.get("date") ?? "");
     const note = String(formData.get("note") ?? "");
     const subjectValue = subject || subjects[0]?.name || "우리";
     const paymentValue = selectedPaymentMethodName || "현금";
-    if (!amount || !categoryId || !date) {
+    const parsedDate = parseDateInput(date);
+    const recurringDay = Number(recurringDayOfMonth);
+    const parsedRecurringStartDate = parseDateInput(recurringStartDate);
+    const parsedRecurringEndDate = recurringEndDate
+      ? parseDateInput(recurringEndDate)
+      : null;
+    if (!amount || !categoryId || !parsedDate) {
       setError("필수 항목을 모두 입력해주세요.");
       setLoading(false);
       return;
     }
+    if (
+      isRecurringEnabled &&
+      (!Number.isInteger(recurringDay) ||
+        recurringDay < 1 ||
+        recurringDay > 31 ||
+        !parsedRecurringStartDate)
+    ) {
+      setError("자동 등록 시작일과 등록일(1~31일)을 확인해주세요.");
+      setLoading(false);
+      return;
+    }
+    if (
+      isRecurringEnabled &&
+      parsedRecurringStartDate &&
+      parsedRecurringEndDate &&
+      parsedRecurringEndDate < parsedRecurringStartDate
+    ) {
+      setError("자동 등록 종료일은 시작일 이후여야 합니다.");
+      setLoading(false);
+      return;
+    }
+    let recurringRuleId: string | null = null;
+    let transactionCreated = false;
     try {
+      if (isRecurringEnabled && parsedRecurringStartDate) {
+        const recurringRule = await createRecurringTransactionRule({
+          householdId,
+          type,
+          amount,
+          discountAmount:
+            type === "expense" && effectiveDiscountAmount > 0
+              ? effectiveDiscountAmount
+              : undefined,
+          categoryId,
+          paymentMethod: paymentValue,
+          paymentMethodId: selectedPaymentMethod?.id,
+          subject: subjectValue,
+          note: note.length ? note : undefined,
+          budgetApplied,
+          dayOfMonth: recurringDay,
+          startDate: parsedRecurringStartDate,
+          endDate: parsedRecurringEndDate ?? undefined,
+          lastGeneratedDateKey: date,
+          createdBy: user.uid,
+        });
+        recurringRuleId = recurringRule.id;
+      }
       await addTransaction({
         householdId,
         type,
@@ -292,25 +367,32 @@ export default function NewTransactionPage() {
         categoryId,
         paymentMethod: paymentValue,
         paymentMethodId: selectedPaymentMethod?.id,
+        recurringRuleId,
         subject: subjectValue,
-        date: new Date(date),
+        date: parsedDate,
         note: note.length ? note : undefined,
         budgetApplied,
         createdBy: user.uid,
       });
+      transactionCreated = true;
       const memoText = note.trim() || "메모 없음";
       if (!selectedCategory?.personalOnly) {
         await addNotification(householdId, {
           title: "내역 추가",
-          message: `${typeLabelMap[type]} ${formatKrw(amount)} • ${
+          message: `${typeLabelMap[type]} ${formatKrw(amount)} · ${
             selectedCategoryName || "미분류"
-          } • ${memoText} • ${date}`,
+          } · ${memoText} · ${date}`,
           level: "success",
           type: "transaction.create",
         });
       }
       router.replace(`/transactions?date=${date}`);
     } catch {
+      if (recurringRuleId && !transactionCreated) {
+        await deleteRecurringTransactionRule(householdId, recurringRuleId).catch(
+          () => undefined
+        );
+      }
       setError("저장에 실패했습니다. 입력값을 확인해주세요.");
     } finally {
       setLoading(false);
@@ -330,7 +412,8 @@ export default function NewTransactionPage() {
               type="date"
               name="date"
               className="mt-2 w-full rounded-xl border border-[var(--border)] bg-white px-4 py-3"
-              defaultValue={defaultDate}
+              value={date}
+              onChange={(event) => setDate(event.target.value)}
             />
           </label>
           <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-3 [&>*]:min-w-0">
@@ -459,13 +542,40 @@ export default function NewTransactionPage() {
             placeholder="선택 입력"
           />
         </label>
-        <button
-          type="submit"
-          className="mt-6 rounded-xl bg-[var(--accent)] px-4 py-3 text-white disabled:opacity-70"
-          disabled={loading}
-        >
-          {loading ? "저장 중.." : "저장"}
-        </button>
+        {isRecurringSectionOpen ? (
+          <TransactionRecurringSection
+            enabled={isRecurringEnabled}
+            onEnabledChange={setIsRecurringEnabled}
+            dayOfMonth={recurringDayOfMonth}
+            onDayOfMonthChange={setRecurringDayOfMonth}
+            startDate={recurringStartDate}
+            onStartDateChange={setRecurringStartDate}
+            endDate={recurringEndDate}
+            onEndDateChange={setRecurringEndDate}
+            disabled={loading}
+          />
+        ) : null}
+        <div className="mt-6 flex items-center justify-between gap-3">
+          <button
+            type="submit"
+            className="rounded-xl bg-[var(--accent)] px-4 py-3 text-white disabled:opacity-70"
+            disabled={loading}
+          >
+            {loading ? "저장 중.." : "저장"}
+          </button>
+          <button
+            type="button"
+            className={`rounded-xl border px-4 py-3 text-sm disabled:opacity-70 ${
+              isRecurringSectionOpen || isRecurringEnabled
+                ? "border-[var(--accent)] text-[var(--accent)]"
+                : "border-[var(--border)] text-[color:rgba(45,38,34,0.7)]"
+            }`}
+            onClick={() => setIsRecurringSectionOpen((prev) => !prev)}
+            disabled={loading}
+          >
+            추가 기능
+          </button>
+        </div>
       </form>
       {isTypeSheetOpen ? (
         <div className="fixed inset-0 z-50">

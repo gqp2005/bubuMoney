@@ -41,6 +41,9 @@ export interface Transaction {
   categoryId: string;
   paymentMethod: string;
   paymentMethodId?: string | null;
+  recurringRuleId?: string | null;
+  generatedFromRecurringRuleId?: string | null;
+  recurringOccurrenceDateKey?: string | null;
   subject: string;
   date: Timestamp;
   monthKey: string;
@@ -48,6 +51,25 @@ export interface Transaction {
   budgetApplied?: boolean;
   createdBy: string;
   createdAt: Timestamp;
+}
+
+export interface RecurringTransactionRule {
+  type: TransactionType;
+  amount: number;
+  discountAmount?: number;
+  categoryId: string;
+  paymentMethod: string;
+  paymentMethodId?: string | null;
+  subject: string;
+  note?: string;
+  budgetApplied?: boolean;
+  dayOfMonth: number;
+  startDate: Timestamp;
+  endDate?: Timestamp;
+  lastGeneratedDateKey?: string;
+  createdBy: string;
+  createdAt: Timestamp;
+  updatedAt?: Timestamp;
 }
 
 export interface Subject {

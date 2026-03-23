@@ -10,6 +10,9 @@ type TransactionDeleteUndoPayload = {
   categoryId: string;
   paymentMethod: string;
   paymentMethodId?: string | null;
+  recurringRuleId?: string | null;
+  generatedFromRecurringRuleId?: string | null;
+  recurringOccurrenceDateKey?: string | null;
   subject: string;
   dateIso: string;
   note?: string;
