@@ -347,6 +347,12 @@ export default function TransactionsPage() {
           ? "border border-rose-200 bg-rose-50 text-rose-600"
           : "border border-stone-200 bg-stone-50 text-[color:rgba(45,38,34,0.65)]",
       });
+      if (tx.generatedFromRecurringRuleId) {
+        badges.push({
+          label: "자동",
+          className: "border border-sky-200 bg-sky-50 text-sky-700",
+        });
+      }
       if (tx.budgetApplied) {
         badges.push({
           label: "예산",

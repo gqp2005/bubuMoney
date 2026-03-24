@@ -1008,6 +1008,7 @@ type BreakdownSheetItem = {
   title: string;
   subtitle: string;
   amount: number;
+  badges?: { label: string; className: string }[];
 };
 
 type BreakdownSheetProps = {
@@ -1063,7 +1064,17 @@ const BreakdownSheet = memo(function BreakdownSheet({
                 const content = (
                   <>
                     <div className="min-w-0">
-                      <p className="truncate text-sm font-medium">{item.title}</p>
+                      <div className="flex flex-wrap items-center gap-1">
+                        <p className="truncate text-sm font-medium">{item.title}</p>
+                        {(item.badges ?? []).map((badge) => (
+                          <span
+                            key={`${item.id}-${badge.label}`}
+                            className={`rounded-full px-1.5 py-0.5 text-[10px] leading-none ${badge.className}`}
+                          >
+                            {badge.label}
+                          </span>
+                        ))}
+                      </div>
                       <p className="mt-1 truncate text-xs text-[color:rgba(45,38,34,0.45)]">
                         {item.subtitle}
                       </p>
@@ -1659,6 +1670,14 @@ export default function StatsPage() {
         title: tx.note?.trim() || categoryLabel,
         subtitle: subtitleParts,
         amount: tx.type === "expense" ? getEffectiveExpenseAmount(tx) : tx.amount,
+        badges: tx.generatedFromRecurringRuleId
+          ? [
+              {
+                label: "자동",
+                className: "border border-sky-200 bg-sky-50 text-sky-700",
+              },
+            ]
+          : [],
       };
     });
   }, [categoryMap, detailSheetTransactions, paymentMethodNameMap]);

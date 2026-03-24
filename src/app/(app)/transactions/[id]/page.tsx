@@ -2,7 +2,14 @@
 
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { doc, getDoc } from "firebase/firestore";
+import {
+  Timestamp,
+  deleteField,
+  doc,
+  getDoc,
+  serverTimestamp,
+  writeBatch,
+} from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import { useAuth } from "@/components/auth-provider";
 import TransactionRecurringSection from "@/components/transaction-recurring-section";
@@ -25,7 +32,7 @@ import {
 } from "@/lib/recurring-transactions";
 import { deleteTransaction, updateTransaction } from "@/lib/transactions";
 import { savePendingUndoAction } from "@/lib/undo-actions";
-import { toDateKey } from "@/lib/time";
+import { toDateKey, toMonthKey } from "@/lib/time";
 import type { TransactionType } from "@/types/ledger";
 
 type PaymentOwner = "husband" | "wife" | "our";
@@ -81,6 +88,9 @@ export default function EditTransactionPage() {
     useState("");
   const [isRecurringSectionOpen, setIsRecurringSectionOpen] = useState(false);
   const [isRecurringEnabled, setIsRecurringEnabled] = useState(false);
+  const [generatedEditScope, setGeneratedEditScope] = useState<"single" | "future">(
+    "single"
+  );
   const [recurringDayOfMonth, setRecurringDayOfMonth] = useState("1");
   const [recurringStartDate, setRecurringStartDate] = useState(toDateKey(new Date()));
   const [recurringEndDate, setRecurringEndDate] = useState("");
@@ -396,6 +406,7 @@ export default function EditTransactionPage() {
         setRecurringStartDate(toDateKey(data.date.toDate()));
         setRecurringEndDate("");
         setIsRecurringSectionOpen(Boolean(data.recurringRuleId));
+        setGeneratedEditScope("single");
         setOriginalTransaction({
           type: data.type,
           amount: data.amount,
@@ -668,6 +679,10 @@ export default function EditTransactionPage() {
       const memoText = note.trim() || "메모 없음";
       const paymentMethodValue =
         selectedPaymentMethodName || formatPaymentMethodLabel(paymentMethod) || "현금";
+      const nextDiscountAmount =
+        type === "expense" && effectiveDiscountAmount > 0
+          ? effectiveDiscountAmount
+          : undefined;
       let nextRecurringRuleId: string | null = recurringRuleId || null;
       const shouldDeleteRecurringRule =
         !isGeneratedRecurringTransaction && !isRecurringEnabled && recurringRuleId;
@@ -676,9 +691,7 @@ export default function EditTransactionPage() {
             type,
             amount: nextAmount,
             discountAmount:
-              type === "expense" && effectiveDiscountAmount > 0
-                ? effectiveDiscountAmount
-                : 0,
+              nextDiscountAmount ?? 0,
             categoryId,
             paymentMethod: paymentMethodValue,
             subject,
@@ -697,10 +710,7 @@ export default function EditTransactionPage() {
             ruleId: recurringRuleId,
             type,
             amount: nextAmount,
-            discountAmount:
-              type === "expense" && effectiveDiscountAmount > 0
-                ? effectiveDiscountAmount
-                : undefined,
+            discountAmount: nextDiscountAmount,
             categoryId,
             paymentMethod: paymentMethodValue,
             paymentMethodId: selectedPaymentMethod?.id,
@@ -716,10 +726,7 @@ export default function EditTransactionPage() {
             householdId,
             type,
             amount: nextAmount,
-            discountAmount:
-              type === "expense" && effectiveDiscountAmount > 0
-                ? effectiveDiscountAmount
-                : undefined,
+            discountAmount: nextDiscountAmount,
             categoryId,
             paymentMethod: paymentMethodValue,
             paymentMethodId: selectedPaymentMethod?.id,
@@ -736,6 +743,59 @@ export default function EditTransactionPage() {
           createdRecurringRuleId = createdRule.id;
           setRecurringRuleId(createdRule.id);
         }
+      } else if (
+        isGeneratedRecurringTransaction &&
+        generatedEditScope === "future" &&
+        generatedFromRecurringRuleId
+      ) {
+        const batch = writeBatch(db);
+        batch.update(doc(db, "households", householdId, "transactions", transactionId), {
+          type,
+          amount: nextAmount,
+          categoryId,
+          paymentMethod: paymentMethodValue,
+          paymentMethodId: selectedPaymentMethod?.id ?? deleteField(),
+          subject,
+          date: Timestamp.fromDate(parsedDate),
+          monthKey: toMonthKey(parsedDate),
+          note: note || deleteField(),
+          budgetApplied,
+          discountAmount: nextDiscountAmount ?? deleteField(),
+        });
+        batch.update(
+          doc(
+            db,
+            "households",
+            householdId,
+            "recurringTransactionRules",
+            generatedFromRecurringRuleId
+          ),
+          {
+            type,
+            amount: nextAmount,
+            categoryId,
+            paymentMethod: paymentMethodValue,
+            paymentMethodId: selectedPaymentMethod?.id ?? deleteField(),
+            subject,
+            note: note || deleteField(),
+            budgetApplied,
+            discountAmount: nextDiscountAmount ?? deleteField(),
+            updatedAt: serverTimestamp(),
+          }
+        );
+        await batch.commit();
+        if (!selectedCategory?.personalOnly) {
+          await addNotification(householdId, {
+            title: "자동 내역 수정",
+            message: `${typeLabelMap[type]} ${formatKrw(nextAmount)} • ${
+              categoryNameMap.get(categoryId) ?? "미분류"
+            } • ${memoText} • ${date} • 이후 자동 내역에도 반영`,
+            level: "info",
+            type: "transaction.update",
+          });
+        }
+        router.replace(`/transactions?date=${date}`);
+        return;
       } else if (shouldDeleteRecurringRule) {
         nextRecurringRuleId = null;
       }
@@ -744,10 +804,7 @@ export default function EditTransactionPage() {
         transactionId,
         type,
         amount: nextAmount,
-        discountAmount:
-          type === "expense" && effectiveDiscountAmount > 0
-            ? effectiveDiscountAmount
-            : undefined,
+        discountAmount: nextDiscountAmount,
         categoryId,
         paymentMethod: paymentMethodValue,
         paymentMethodId: selectedPaymentMethod?.id,
@@ -1005,7 +1062,36 @@ export default function EditTransactionPage() {
           <div className="mt-4 rounded-2xl border border-[var(--border)] bg-[color:rgba(45,38,34,0.02)] px-4 py-4">
             <p className="text-sm font-semibold">추가 기능</p>
             <p className="mt-1 text-xs text-[color:rgba(45,38,34,0.6)]">
-              이 내역은 자동으로 생성된 항목입니다. 반복 설정은 원본 내역에서 수정하세요.
+              자동으로 생성된 내역입니다. 수정 범위를 선택하세요.
+            </p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button
+                type="button"
+                className={`rounded-full border px-3 py-1.5 text-xs ${
+                  generatedEditScope === "single"
+                    ? "border-[var(--accent)] bg-[var(--accent)] text-white"
+                    : "border-[var(--border)] text-[color:rgba(45,38,34,0.7)]"
+                }`}
+                onClick={() => setGeneratedEditScope("single")}
+              >
+                이번만 수정
+              </button>
+              <button
+                type="button"
+                className={`rounded-full border px-3 py-1.5 text-xs ${
+                  generatedEditScope === "future"
+                    ? "border-[var(--accent)] bg-[var(--accent)] text-white"
+                    : "border-[var(--border)] text-[color:rgba(45,38,34,0.7)]"
+                }`}
+                onClick={() => setGeneratedEditScope("future")}
+              >
+                앞으로도 같이 수정
+              </button>
+            </div>
+            <p className="mt-1 text-xs text-[color:rgba(45,38,34,0.6)]">
+              {generatedEditScope === "future"
+                ? "금액, 카테고리, 결제수단, 메모 변경을 이후 자동 내역에도 반영합니다. 등록일과 기간은 원본 내역에서 수정하세요."
+                : "이번 내역만 수정합니다. 반복 설정은 원본 내역에서 수정하세요."}
             </p>
           </div>
         ) : isRecurringSectionOpen ? (
