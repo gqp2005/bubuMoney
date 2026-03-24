@@ -467,7 +467,10 @@ export default function TransactionsPage() {
       string,
       { income: number; expense: number; items: typeof transactions }
     >();
-    const displayMap = new Map<string, { incomeText: string; expenseText: string }>();
+    const displayMap = new Map<
+      string,
+      { incomeText?: string; expenseText?: string }
+    >();
     const itemsMap = new Map<string, typeof transactions>();
     const dotColorsByDay = new Map<string, string[]>();
     visibleTransactions.forEach((tx) => {
@@ -508,8 +511,9 @@ export default function TransactionsPage() {
     });
     calendarMap.forEach((entry, key) => {
       displayMap.set(key, {
-        incomeText: formatKrw(entry.income),
-        expenseText: formatKrw(entry.expense),
+        incomeText: entry.income === 0 ? undefined : formatKrw(entry.income),
+        expenseText:
+          entry.expense === 0 ? undefined : formatKrw(entry.expense),
       });
     });
     return {
@@ -520,7 +524,6 @@ export default function TransactionsPage() {
     };
     }, [monthEnd, monthStart, visibleTransactions, budgetCategoryIdSet, categoryMetaMap, currentUserId]);
 
-  const zeroAmountText = useMemo(() => formatKrw(0), []);
   const selectedKey = toDateKey(selectedDate);
   const selectedDateParam = useMemo(
     () => format(selectedDate, "yyyy-MM-dd"),
@@ -938,14 +941,14 @@ export default function TransactionsPage() {
             return (
               <button
                 key={key}
-                className={`border px-2 py-2 text-left text-xs ${
+                className={`flex h-[3.75rem] flex-col justify-start overflow-hidden border px-1.5 py-1 text-left text-xs md:h-[4.5rem] md:px-2 md:py-2 ${
                   isActive
                     ? "border-[var(--accent)] bg-[rgba(59,47,47,0.08)]"
                     : "border-[var(--border)]"
                 } ${isSameMonth(day, selectedDate) ? "" : "opacity-40"}`}
                 onClick={() => setSelectedDate(day)}
               >
-                <div className="flex items-center gap-1 text-sm font-semibold">
+                <div className="flex items-center gap-1 text-[13px] font-semibold md:text-sm">
                   <span>{format(day, "d")}</span>
                   {dotColors.length > 0 ? (
                     <span className="flex items-center gap-0.5" aria-label="예산 점 표시">
@@ -959,15 +962,15 @@ export default function TransactionsPage() {
                     </span>
                   ) : null}
                 </div>
-                <div className="mt-1 space-y-0.5 text-[9px] leading-tight text-[color:rgba(45,38,34,0.6)]">
+                <div className="mt-0.5 space-y-0 text-[9px] leading-tight text-[color:rgba(45,38,34,0.6)] md:mt-1 md:space-y-0.5">
                   <div className="text-blue-600">
                     <span className="block break-all">
-                      {display?.incomeText ?? zeroAmountText}
+                      {display?.incomeText ?? ""}
                     </span>
                   </div>
                   <div className="text-red-600">
                     <span className="block break-all">
-                      {display?.expenseText ?? zeroAmountText}
+                      {display?.expenseText ?? ""}
                     </span>
                   </div>
                 </div>

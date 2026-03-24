@@ -3,6 +3,7 @@
 import {
   createContext,
   useContext,
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -154,6 +155,7 @@ function DragHandle({
   if (!ctx) {
     return null;
   }
+  /* eslint-disable react-hooks/refs */
   return (
     <span
       ref={ctx.setActivatorNodeRef}
@@ -164,6 +166,7 @@ function DragHandle({
       {label}
     </span>
   );
+  /* eslint-enable react-hooks/refs */
 }
 
 const TAB_ITEMS: { key: TabKey; label: string }[] = [
@@ -182,7 +185,15 @@ export default function CategoriesPage() {
     usePaymentMethods(householdId);
   const [activeTab, setActiveTab] = useState<TabKey>("expense");
   const [paymentOwner, setPaymentOwner] = useState<PaymentOwner>("our");
-  const [partnerName, setPartnerName] = useState("");
+  const [householdDisplayNames, setHouseholdDisplayNames] = useState<{
+    householdId: string | null;
+    creatorName: string;
+    partnerName: string;
+  }>({
+    householdId: null,
+    creatorName: "",
+    partnerName: "",
+  });
   const [name, setName] = useState("");
   const [parentId, setParentId] = useState<string>("none");
   const [budgetEnabled, setBudgetEnabled] = useState(false);
@@ -274,7 +285,6 @@ export default function CategoriesPage() {
 
   useEffect(() => {
     if (!householdId) {
-      setPartnerName("");
       return;
     }
     getDoc(householdDoc(householdId)).then((snapshot) => {
@@ -285,26 +295,16 @@ export default function CategoriesPage() {
         creatorDisplayName?: string | null;
         partnerDisplayName?: string | null;
       };
-      const creatorName = data.creatorDisplayName ?? "";
-      const partnerDisplayName = data.partnerDisplayName ?? "";
-      const currentName = (displayName ?? "").trim();
-      if (currentName && creatorName && currentName === creatorName) {
-        setPartnerName(partnerDisplayName);
-      } else if (
-        currentName &&
-        partnerDisplayName &&
-        currentName === partnerDisplayName
-      ) {
-        setPartnerName(creatorName);
-      } else {
-        setPartnerName(partnerDisplayName);
-      }
+      setHouseholdDisplayNames({
+        householdId,
+        creatorName: data.creatorDisplayName ?? "",
+        partnerName: data.partnerDisplayName ?? "",
+      });
     });
-  }, [displayName, householdId]);
+  }, [householdId]);
 
   useEffect(() => {
     if (!householdId) {
-      setPaymentMethodUsageState({ householdId: null, counts: {} });
       return;
     }
     const paymentMethodIdsByName = new Map<string, string[]>();
@@ -344,7 +344,7 @@ export default function CategoriesPage() {
     }
   }, [showAddForm]);
 
-  useEffect(() => {
+  const resetNewItemForm = useCallback(() => {
     setShowAddForm(false);
     setName("");
     setParentId("none");
@@ -360,28 +360,38 @@ export default function CategoriesPage() {
     setEditingGoal("");
     setExpandedParentId(null);
     setExpandedPaymentParentId(null);
-  }, [activeTab]);
+  }, []);
 
-  useEffect(() => {
-    if (activeTab === "payment") {
-      if (parentId === "none") {
-        return;
-      }
-      if (!paymentParentOptions.some((parent) => parent.id === parentId)) {
-        setParentId("none");
-      }
-      return;
-    }
-    if (!isCategoryTab) {
-      return;
-    }
+  const normalizedParentId = useMemo(() => {
     if (parentId === "none") {
-      return;
+      return "none";
     }
-    if (!parentOptions.some((parent) => parent.id === parentId)) {
-      setParentId("none");
+    const availableParents =
+      activeTab === "payment"
+        ? paymentParentOptions
+        : isCategoryTab
+        ? parentOptions
+        : [];
+    return availableParents.some((parent) => parent.id === parentId)
+      ? parentId
+      : "none";
+  }, [activeTab, isCategoryTab, parentId, parentOptions, paymentParentOptions]);
+
+  const partnerName = useMemo(() => {
+    if (householdDisplayNames.householdId !== householdId) {
+      return "";
     }
-  }, [activeTab, parentId, parentOptions, paymentParentOptions, isCategoryTab]);
+    const creatorName = householdDisplayNames.creatorName.trim();
+    const partnerDisplayName = householdDisplayNames.partnerName.trim();
+    const currentName = (displayName ?? "").trim();
+    if (currentName && creatorName && currentName === creatorName) {
+      return partnerDisplayName;
+    }
+    if (currentName && partnerDisplayName && currentName === partnerDisplayName) {
+      return creatorName;
+    }
+    return partnerDisplayName;
+  }, [displayName, householdDisplayNames, householdId]);
 
   async function handleAdd() {
     if (!householdId || !name.trim()) {
@@ -395,23 +405,23 @@ export default function CategoriesPage() {
       });
     } else if (activeTab === "payment") {
       const paymentOrderBase =
-        parentId === "none"
+        normalizedParentId === "none"
           ? paymentGrouped[paymentOwner].parents.length
           : paymentGrouped[paymentOwner].children.filter(
-              (method) => method.parentId === parentId
+              (method) => method.parentId === normalizedParentId
             ).length;
       await addPaymentMethod(householdId, {
         name: trimmed,
         order: paymentOrderBase + 1,
         owner: paymentOwner,
-        parentId: parentId === "none" ? null : parentId,
+        parentId: normalizedParentId === "none" ? null : normalizedParentId,
       });
     } else {
       await addCategory(householdId, {
         name: trimmed,
         type: activeTab,
         order: categories.length + 1,
-        parentId: parentId === "none" ? null : parentId,
+        parentId: normalizedParentId === "none" ? null : normalizedParentId,
         budgetEnabled: activeTab === "expense" ? budgetEnabled : false,
         dotColor:
           activeTab === "expense" && budgetEnabled
@@ -420,12 +430,7 @@ export default function CategoriesPage() {
         personalOnly: activeTab === "expense" ? personalOnly : false,
       });
     }
-    setName("");
-    setParentId("none");
-    setBudgetEnabled(false);
-    setBudgetDotColor(DEFAULT_BUDGET_DOT_COLOR);
-    setPersonalOnly(false);
-    setShowAddForm(false);
+    resetNewItemForm();
   }
 
   async function handleDelete(itemId: string) {
@@ -755,18 +760,11 @@ export default function CategoriesPage() {
     : [];
   const paymentParents = paymentGrouped[paymentOwner].parents;
   const paymentChildren = paymentGrouped[paymentOwner].children;
-  const sortedParents = useMemo(
-    () => [...parents].sort((a, b) => a.order - b.order),
-    [parents]
+  const sortedParents = [...parents].sort((a, b) => a.order - b.order);
+  const sortedPaymentParents = [...paymentParents].sort(
+    (a, b) => a.order - b.order
   );
-  const sortedPaymentParents = useMemo(
-    () => [...paymentParents].sort((a, b) => a.order - b.order),
-    [paymentParents]
-  );
-  const sortedSubjects = useMemo(
-    () => [...subjects].sort((a, b) => a.order - b.order),
-    [subjects]
-  );
+  const sortedSubjects = [...subjects].sort((a, b) => a.order - b.order);
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
     useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 6 } })
@@ -804,7 +802,10 @@ export default function CategoriesPage() {
                 ? "border-b-2 border-[var(--accent)] text-[var(--accent)]"
                 : "text-[color:rgba(45,38,34,0.5)]"
             }`}
-            onClick={() => setActiveTab(tab.key)}
+            onClick={() => {
+              resetNewItemForm();
+              setActiveTab(tab.key);
+            }}
           >
             {tab.label}
           </button>
@@ -845,11 +846,11 @@ export default function CategoriesPage() {
               placeholder="이름 입력"
             />
             {activeTab === "payment" ? (
-              <select
-                className="w-full rounded-xl border border-[var(--border)] px-3 py-2 text-sm"
-                value={parentId}
-                onChange={(event) => setParentId(event.target.value)}
-              >
+                <select
+                  className="w-full rounded-xl border border-[var(--border)] px-3 py-2 text-sm"
+                  value={normalizedParentId}
+                  onChange={(event) => setParentId(event.target.value)}
+                >
                 <option value="none">대분류 없음</option>
                 {paymentParentOptions.map((option) => (
                   <option key={option.id} value={option.id}>
@@ -859,11 +860,11 @@ export default function CategoriesPage() {
               </select>
             ) : null}
             {isCategoryTab ? (
-              <select
-                className="w-full rounded-xl border border-[var(--border)] px-3 py-2 text-sm"
-                value={parentId}
-                onChange={(event) => setParentId(event.target.value)}
-              >
+                <select
+                  className="w-full rounded-xl border border-[var(--border)] px-3 py-2 text-sm"
+                  value={normalizedParentId}
+                  onChange={(event) => setParentId(event.target.value)}
+                >
                 <option value="none">대분류 없음</option>
                 {parentOptions.map((option) => (
                   <option key={option.id} value={option.id}>
