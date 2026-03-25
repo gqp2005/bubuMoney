@@ -40,6 +40,8 @@ export default function DashboardPage() {
       createdAt?: Date | null;
       visibleFrom?: Date | null;
       visibleUntil?: Date | null;
+      linkUrl?: string | null;
+      sourceKey?: string | null;
       monthKey?: string;
     }[]
   >([]);
@@ -175,6 +177,8 @@ export default function DashboardPage() {
             createdAt: entry.createdAt ? entry.createdAt.toDate() : null,
             visibleFrom: entry.visibleFrom ? entry.visibleFrom.toDate() : null,
             visibleUntil: entry.visibleUntil ? entry.visibleUntil.toDate() : null,
+            linkUrl: entry.linkUrl ?? null,
+            sourceKey: entry.sourceKey ?? null,
             monthKey: entry.monthKey,
           }))
           .filter((entry) => {
@@ -258,6 +262,8 @@ export default function DashboardPage() {
           visibleUntil: pendingMemoUndo.payload.entry.visibleUntilIso
             ? new Date(pendingMemoUndo.payload.entry.visibleUntilIso)
             : null,
+          linkUrl: pendingMemoUndo.payload.entry.linkUrl ?? null,
+          sourceKey: pendingMemoUndo.payload.entry.sourceKey ?? null,
           monthKey: pendingMemoUndo.payload.monthKey,
         },
         pendingMemoUndo.payload.entry.createdBy ?? undefined
@@ -292,32 +298,69 @@ export default function DashboardPage() {
                 key={entry.id}
                 className="flex items-start justify-between gap-3 rounded-2xl border border-[var(--border)] px-4 py-3"
               >
-                <Link
-                  className="flex-1 whitespace-pre-line"
-                  href={`/memos/new?entryId=${encodeURIComponent(entry.id)}${
-                    entry.monthKey ? `&monthKey=${encodeURIComponent(entry.monthKey)}` : ""
-                  }`}
-                >
-                  <span className="block text-xs text-[color:rgba(45,38,34,0.6)]">
-                    {entry.createdAt
-                      ? format(entry.createdAt, "yyyy.MM.dd HH:mm")
-                      : "날짜 없음"}
-                  </span>
-                  <span className="block text-xs text-[color:rgba(45,38,34,0.6)]">
-                    {entry.visibleFrom || entry.visibleUntil
-                      ? `유효기간: ${
-                          entry.visibleFrom
-                            ? format(entry.visibleFrom, "yyyy.MM.dd")
-                            : "시작 제한 없음"
-                        } ~ ${
-                          entry.visibleUntil
-                            ? format(entry.visibleUntil, "yyyy.MM.dd")
-                            : "종료 제한 없음"
-                        }`
-                      : "유효기간: 상시"}
-                  </span>
-                  <span>{entry.text}</span>
-                </Link>
+                {entry.linkUrl ? (
+                  <a
+                    className="flex-1 whitespace-pre-line"
+                    href={entry.linkUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    <span className="block text-xs text-[color:rgba(45,38,34,0.6)]">
+                      {entry.createdAt
+                        ? format(entry.createdAt, "yyyy.MM.dd HH:mm")
+                        : "날짜 없음"}
+                    </span>
+                    <span className="block text-xs text-[color:rgba(45,38,34,0.6)]">
+                      {entry.visibleFrom || entry.visibleUntil
+                        ? `유효기간: ${
+                            entry.visibleFrom
+                              ? format(entry.visibleFrom, "yyyy.MM.dd")
+                              : "시작 제한 없음"
+                          } ~ ${
+                            entry.visibleUntil
+                              ? format(entry.visibleUntil, "yyyy.MM.dd")
+                              : "종료 제한 없음"
+                          }`
+                        : "유효기간: 상시"}
+                    </span>
+                    {entry.sourceKey ? (
+                      <span className="mb-1 inline-flex rounded-full bg-[color:rgba(203,83,41,0.12)] px-2 py-1 text-[11px] font-medium text-[var(--accent)]">
+                        자동 등록
+                      </span>
+                    ) : null}
+                    <span className="block">{entry.text}</span>
+                    <span className="mt-1 block break-all text-xs text-[color:rgba(45,38,34,0.6)]">
+                      {entry.linkUrl}
+                    </span>
+                  </a>
+                ) : (
+                  <Link
+                    className="flex-1 whitespace-pre-line"
+                    href={`/memos/new?entryId=${encodeURIComponent(entry.id)}${
+                      entry.monthKey ? `&monthKey=${encodeURIComponent(entry.monthKey)}` : ""
+                    }`}
+                  >
+                    <span className="block text-xs text-[color:rgba(45,38,34,0.6)]">
+                      {entry.createdAt
+                        ? format(entry.createdAt, "yyyy.MM.dd HH:mm")
+                        : "날짜 없음"}
+                    </span>
+                    <span className="block text-xs text-[color:rgba(45,38,34,0.6)]">
+                      {entry.visibleFrom || entry.visibleUntil
+                        ? `유효기간: ${
+                            entry.visibleFrom
+                              ? format(entry.visibleFrom, "yyyy.MM.dd")
+                              : "시작 제한 없음"
+                          } ~ ${
+                            entry.visibleUntil
+                              ? format(entry.visibleUntil, "yyyy.MM.dd")
+                              : "종료 제한 없음"
+                          }`
+                        : "유효기간: 상시"}
+                    </span>
+                    <span>{entry.text}</span>
+                  </Link>
+                )}
               </div>
             ))}
           </div>

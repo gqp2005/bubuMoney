@@ -19,6 +19,8 @@ export type MemoEntry = {
   createdBy?: string | null;
   visibleFrom?: Timestamp | null;
   visibleUntil?: Timestamp | null;
+  linkUrl?: string | null;
+  sourceKey?: string | null;
   monthKey?: string;
 };
 
@@ -29,6 +31,8 @@ export type MemoEntrySnapshot = {
   createdBy?: string | null;
   visibleFrom?: Date | null;
   visibleUntil?: Date | null;
+  linkUrl?: string | null;
+  sourceKey?: string | null;
   monthKey?: string;
 };
 
@@ -40,6 +44,8 @@ function toFirestoreEntries(entries: MemoEntry[]) {
     createdBy: entry.createdBy ?? null,
     visibleFrom: entry.visibleFrom ?? null,
     visibleUntil: entry.visibleUntil ?? null,
+    linkUrl: entry.linkUrl ?? null,
+    sourceKey: entry.sourceKey ?? null,
   }));
 }
 
@@ -79,6 +85,8 @@ function createEntry(text: string, uid: string) {
     createdBy: uid,
     visibleFrom: null,
     visibleUntil: null,
+    linkUrl: null,
+    sourceKey: null,
   } as MemoEntry;
 }
 
@@ -90,6 +98,8 @@ function toMemoEntry(entry: MemoEntrySnapshot) {
     createdBy: entry.createdBy ?? null,
     visibleFrom: entry.visibleFrom ? Timestamp.fromDate(entry.visibleFrom) : null,
     visibleUntil: entry.visibleUntil ? Timestamp.fromDate(entry.visibleUntil) : null,
+    linkUrl: entry.linkUrl ?? null,
+    sourceKey: entry.sourceKey ?? null,
   } as MemoEntry;
 }
 
@@ -180,6 +190,8 @@ export async function addMonthlyMemoEntry(
   options?: {
     visibleFrom?: Date | null;
     visibleUntil?: Date | null;
+    linkUrl?: string | null;
+    sourceKey?: string | null;
   }
 ) {
   const ref = doc(db, "households", householdId, "memos", monthKey);
@@ -194,6 +206,8 @@ export async function addMonthlyMemoEntry(
   nextEntry.visibleUntil = options?.visibleUntil
     ? Timestamp.fromDate(options.visibleUntil)
     : null;
+  nextEntry.linkUrl = options?.linkUrl?.trim() || null;
+  nextEntry.sourceKey = options?.sourceKey?.trim() || null;
   const next = [...existing, nextEntry];
   await setDoc(
     ref,
@@ -215,6 +229,8 @@ export async function updateMonthlyMemoEntry(
   options?: {
     visibleFrom?: Date | null;
     visibleUntil?: Date | null;
+    linkUrl?: string | null;
+    sourceKey?: string | null;
   }
 ) {
   const ref = doc(db, "households", householdId, "memos", monthKey);
@@ -234,6 +250,12 @@ export async function updateMonthlyMemoEntry(
           visibleUntil: options?.visibleUntil
             ? Timestamp.fromDate(options.visibleUntil)
             : null,
+          linkUrl:
+            options && "linkUrl" in options ? options.linkUrl?.trim() || null : entry.linkUrl ?? null,
+          sourceKey:
+            options && "sourceKey" in options
+              ? options.sourceKey?.trim() || null
+              : entry.sourceKey ?? null,
         }
       : entry
   );

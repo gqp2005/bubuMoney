@@ -118,6 +118,8 @@ export default function NewMemoPage() {
                 createdBy: target.createdBy ?? null,
                 visibleFrom: target.visibleFrom?.toDate?.() ?? null,
                 visibleUntil: target.visibleUntil?.toDate?.() ?? null,
+                linkUrl: target.linkUrl ?? null,
+                sourceKey: target.sourceKey ?? null,
                 monthKey,
               }
             : null
@@ -269,6 +271,8 @@ export default function NewMemoPage() {
         createdBy: user.uid,
         visibleFrom: parseDateInput(visibleFrom, false),
         visibleUntil: parseDateInput(visibleUntil, true),
+        linkUrl: null,
+        sourceKey: null,
         monthKey,
       };
       const memoPreview = buildMemoPreview(memo);
@@ -287,6 +291,8 @@ export default function NewMemoPage() {
             createdBy: entrySnapshot.createdBy ?? null,
             visibleFromIso: entrySnapshot.visibleFrom?.toISOString() ?? null,
             visibleUntilIso: entrySnapshot.visibleUntil?.toISOString() ?? null,
+            linkUrl: entrySnapshot.linkUrl ?? null,
+            sourceKey: entrySnapshot.sourceKey ?? null,
           },
         },
       });

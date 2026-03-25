@@ -30,6 +30,8 @@ type MemoDeleteUndoPayload = {
     createdBy?: string | null;
     visibleFromIso?: string | null;
     visibleUntilIso?: string | null;
+    linkUrl?: string | null;
+    sourceKey?: string | null;
   };
 };
 
