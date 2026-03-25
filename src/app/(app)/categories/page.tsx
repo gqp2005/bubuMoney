@@ -59,6 +59,34 @@ type DragItem = {
   parentId?: string | null;
   owner?: PaymentOwner;
 };
+type CleanupStatusFilter =
+  | "all"
+  | "imported"
+  | "used"
+  | "unused"
+  | "duplicate";
+type CleanupLevelFilter = "all" | "parent" | "child";
+type CleanupSort = "usage" | "name" | "order";
+type CleanupSheet = null | "merge" | "delete";
+type CleanupItemKind = "category" | "subject" | "payment";
+type CleanupItem = {
+  id: string;
+  kind: CleanupItemKind;
+  name: string;
+  imported: boolean;
+  level: DragLevel;
+  parentId: string | null;
+  parentName: string | null;
+  usageCount: number;
+  childCount: number;
+  order: number;
+  duplicateKey: string;
+  isDuplicate: boolean;
+  badges: string[];
+  detail: string;
+  canDelete: boolean;
+  deleteReason: string | null;
+};
 
 const DEFAULT_BUDGET_DOT_COLOR = "#916652";
 
@@ -72,6 +100,10 @@ function formatNumberInput(value: string) {
     return "";
   }
   return Number(cleaned).toLocaleString("en-US");
+}
+
+function toDuplicateKey(value: string) {
+  return value.trim().replace(/\s+/g, "").toLowerCase();
 }
 
 function makeDragId(item: DragItem) {
@@ -210,13 +242,27 @@ export default function CategoriesPage() {
   const [editingPersonalOnly, setEditingPersonalOnly] = useState(false);
   const [editingOwner, setEditingOwner] = useState<PaymentOwner>("our");
   const [editingGoal, setEditingGoal] = useState("");
-  const [paymentMethodUsageState, setPaymentMethodUsageState] = useState<{
+  const [usageState, setUsageState] = useState<{
     householdId: string | null;
-    counts: Record<string, number>;
+    categoryCounts: Record<string, number>;
+    subjectCounts: Record<string, number>;
+    paymentCounts: Record<string, number>;
   }>({
     householdId: null,
-    counts: {},
+    categoryCounts: {},
+    subjectCounts: {},
+    paymentCounts: {},
   });
+  const [isCleanupMode, setIsCleanupMode] = useState(false);
+  const [cleanupSearch, setCleanupSearch] = useState("");
+  const [cleanupStatusFilter, setCleanupStatusFilter] =
+    useState<CleanupStatusFilter>("all");
+  const [cleanupLevelFilter, setCleanupLevelFilter] =
+    useState<CleanupLevelFilter>("all");
+  const [cleanupSort, setCleanupSort] = useState<CleanupSort>("usage");
+  const [selectedCleanupIds, setSelectedCleanupIds] = useState<string[]>([]);
+  const [cleanupSheet, setCleanupSheet] = useState<CleanupSheet>(null);
+  const [mergeTargetId, setMergeTargetId] = useState<string | null>(null);
   const [expandedParentId, setExpandedParentId] = useState<string | null>(null);
   const [expandedPaymentParentId, setExpandedPaymentParentId] = useState<
     string | null
@@ -261,12 +307,24 @@ export default function CategoriesPage() {
     });
     return byOwner;
   }, [paymentMethods]);
-  const paymentMethodUsageCounts = useMemo(() => {
-    if (paymentMethodUsageState.householdId !== householdId) {
+  const categoryUsageCounts = useMemo(() => {
+    if (usageState.householdId !== householdId) {
       return {};
     }
-    return paymentMethodUsageState.counts;
-  }, [householdId, paymentMethodUsageState]);
+    return usageState.categoryCounts;
+  }, [householdId, usageState]);
+  const subjectUsageCounts = useMemo(() => {
+    if (usageState.householdId !== householdId) {
+      return {};
+    }
+    return usageState.subjectCounts;
+  }, [householdId, usageState]);
+  const paymentMethodUsageCounts = useMemo(() => {
+    if (usageState.householdId !== householdId) {
+      return {};
+    }
+    return usageState.paymentCounts;
+  }, [householdId, usageState]);
   const getLinkedTransactionCount = (paymentMethodId: string) =>
     paymentMethodUsageCounts[paymentMethodId] ?? 0;
 
@@ -315,12 +373,23 @@ export default function CategoriesPage() {
       paymentMethodIdsByName.set(name, bucket);
     });
     return onSnapshot(transactionsCol(householdId), (snapshot) => {
-      const counts: Record<string, number> = {};
+      const categoryCounts: Record<string, number> = {};
+      const subjectCounts: Record<string, number> = {};
+      const paymentCounts: Record<string, number> = {};
       snapshot.docs.forEach((doc) => {
         const data = doc.data() as Transaction;
+        const categoryId = data.categoryId?.trim();
+        if (categoryId) {
+          categoryCounts[categoryId] = (categoryCounts[categoryId] ?? 0) + 1;
+        }
+        const subjectName = data.subject?.trim();
+        if (subjectName) {
+          subjectCounts[subjectName] = (subjectCounts[subjectName] ?? 0) + 1;
+        }
         const paymentMethodId = data.paymentMethodId?.trim();
         if (paymentMethodId) {
-          counts[paymentMethodId] = (counts[paymentMethodId] ?? 0) + 1;
+          paymentCounts[paymentMethodId] =
+            (paymentCounts[paymentMethodId] ?? 0) + 1;
           return;
         }
         const paymentMethodName = data.paymentMethod?.trim();
@@ -332,9 +401,14 @@ export default function CategoriesPage() {
           return;
         }
         const matchedId = matchedIds[0];
-        counts[matchedId] = (counts[matchedId] ?? 0) + 1;
+        paymentCounts[matchedId] = (paymentCounts[matchedId] ?? 0) + 1;
       });
-      setPaymentMethodUsageState({ householdId, counts });
+      setUsageState({
+        householdId,
+        categoryCounts,
+        subjectCounts,
+        paymentCounts,
+      });
     });
   }, [householdId, paymentMethods]);
 
@@ -360,6 +434,16 @@ export default function CategoriesPage() {
     setEditingGoal("");
     setExpandedParentId(null);
     setExpandedPaymentParentId(null);
+  }, []);
+
+  const resetCleanupState = useCallback(() => {
+    setCleanupSearch("");
+    setCleanupStatusFilter("all");
+    setCleanupLevelFilter("all");
+    setCleanupSort("usage");
+    setSelectedCleanupIds([]);
+    setCleanupSheet(null);
+    setMergeTargetId(null);
   }, []);
 
   const normalizedParentId = useMemo(() => {
@@ -435,6 +519,15 @@ export default function CategoriesPage() {
 
   async function handleDelete(itemId: string) {
     if (!householdId) {
+      return;
+    }
+    const itemMeta = cleanupSourceItemById.get(itemId);
+    if (itemMeta && !itemMeta.canDelete) {
+      window.alert(itemMeta.deleteReason ?? "삭제할 수 없는 항목입니다.");
+      return;
+    }
+    const itemLabel = itemMeta?.name ?? "선택한 항목";
+    if (!window.confirm(`'${itemLabel}' 항목을 삭제할까요?`)) {
       return;
     }
     if (activeTab === "subject") {
@@ -765,10 +858,355 @@ export default function CategoriesPage() {
     (a, b) => a.order - b.order
   );
   const sortedSubjects = [...subjects].sort((a, b) => a.order - b.order);
+  const categoryById = useMemo(
+    () => new Map(categories.map((item) => [item.id, item])),
+    [categories]
+  );
+  const paymentMethodById = useMemo(
+    () => new Map(paymentMethods.map((item) => [item.id, item])),
+    [paymentMethods]
+  );
+  const categoryChildCountById = useMemo(() => {
+    const counts: Record<string, number> = {};
+    categories.forEach((item) => {
+      if (!item.parentId) {
+        return;
+      }
+      counts[item.parentId] = (counts[item.parentId] ?? 0) + 1;
+    });
+    return counts;
+  }, [categories]);
+  const paymentChildCountById = useMemo(() => {
+    const counts: Record<string, number> = {};
+    paymentMethods.forEach((item) => {
+      if (!item.parentId) {
+        return;
+      }
+      counts[item.parentId] = (counts[item.parentId] ?? 0) + 1;
+    });
+    return counts;
+  }, [paymentMethods]);
+  const cleanupSourceItems: CleanupItem[] = (() => {
+    let baseItems: CleanupItem[] = [];
+    if (activeTab === "subject") {
+      baseItems = sortedSubjects.map((item) => {
+        const usageCount = subjectUsageCounts[item.name.trim()] ?? 0;
+        const badges = [];
+        if (item.imported) {
+          badges.push("imported");
+        }
+        if (usageCount === 0) {
+          badges.push("미사용");
+        }
+        return {
+          id: item.id,
+          kind: "subject",
+          name: item.name,
+          imported: Boolean(item.imported),
+          level: "parent",
+          parentId: null,
+          parentName: null,
+          usageCount,
+          childCount: 0,
+          order: item.order,
+          duplicateKey: toDuplicateKey(item.name),
+          isDuplicate: false,
+          badges,
+          detail: `거래 ${usageCount.toLocaleString("en-US")}건`,
+          canDelete: usageCount === 0,
+          deleteReason:
+            usageCount > 0
+              ? "연결된 거래가 있는 주체는 삭제할 수 없습니다."
+              : null,
+        };
+      });
+    } else if (activeTab === "payment") {
+      const orderedItems = [
+        ...sortedPaymentParents,
+        ...[...paymentChildren].sort(
+          (a, b) => a.order - b.order || a.name.localeCompare(b.name, "ko")
+        ),
+      ];
+      baseItems = orderedItems.map((item) => {
+        const usageCount = paymentMethodUsageCounts[item.id] ?? 0;
+        const childCount = paymentChildCountById[item.id] ?? 0;
+        const parentName = item.parentId
+          ? paymentMethodById.get(item.parentId)?.name ?? null
+          : null;
+        const badges = [];
+        if (item.imported) {
+          badges.push("imported");
+        }
+        if (usageCount === 0) {
+          badges.push("미사용");
+        }
+        if (typeof item.goalMonthly === "number" && item.goalMonthly > 0) {
+          badges.push(`월실적 ${item.goalMonthly.toLocaleString("en-US")}`);
+        }
+        return {
+          id: item.id,
+          kind: "payment",
+          name: item.name,
+          imported: Boolean(item.imported),
+          level: item.parentId ? "child" : "parent",
+          parentId: item.parentId ?? null,
+          parentName,
+          usageCount,
+          childCount,
+          order: item.order,
+          duplicateKey: toDuplicateKey(item.name),
+          isDuplicate: false,
+          badges,
+          detail: item.parentId
+            ? `부모: ${parentName ?? "없음"} · 거래 ${usageCount.toLocaleString(
+                "en-US"
+              )}건`
+            : `소분류 ${childCount}개 · 거래 ${usageCount.toLocaleString(
+                "en-US"
+              )}건`,
+          canDelete: usageCount === 0 && childCount === 0,
+          deleteReason:
+            childCount > 0
+              ? "소분류가 있는 결제수단은 삭제할 수 없습니다."
+              : usageCount > 0
+              ? "연결된 거래가 있는 결제수단은 삭제할 수 없습니다."
+              : null,
+        };
+      });
+    } else {
+      const categoryChildren = grouped[activeTab as CategoryType].children;
+      const orderedItems = [
+        ...sortedParents,
+        ...[...categoryChildren].sort(
+          (a, b) => a.order - b.order || a.name.localeCompare(b.name, "ko")
+        ),
+      ];
+      baseItems = orderedItems.map((item) => {
+        const usageCount = categoryUsageCounts[item.id] ?? 0;
+        const childCount = categoryChildCountById[item.id] ?? 0;
+        const parentName = item.parentId
+          ? categoryById.get(item.parentId)?.name ?? null
+          : null;
+        const badges = [];
+        if (item.imported) {
+          badges.push("imported");
+        }
+        if (item.type === "expense" && item.budgetEnabled) {
+          badges.push("예산");
+        }
+        if (item.type === "expense" && item.personalOnly) {
+          badges.push("개인");
+        }
+        if (usageCount === 0) {
+          badges.push("미사용");
+        }
+        return {
+          id: item.id,
+          kind: "category",
+          name: item.name,
+          imported: Boolean(item.imported),
+          level: item.parentId ? "child" : "parent",
+          parentId: item.parentId ?? null,
+          parentName,
+          usageCount,
+          childCount,
+          order: item.order,
+          duplicateKey: toDuplicateKey(item.name),
+          isDuplicate: false,
+          badges,
+          detail: item.parentId
+            ? `부모: ${parentName ?? "없음"} · 거래 ${usageCount.toLocaleString(
+                "en-US"
+              )}건`
+            : `소분류 ${childCount}개 · 거래 ${usageCount.toLocaleString(
+                "en-US"
+              )}건`,
+          canDelete: usageCount === 0 && childCount === 0,
+          deleteReason:
+            childCount > 0
+              ? "소분류가 있는 카테고리는 삭제할 수 없습니다."
+              : usageCount > 0
+              ? "연결된 거래가 있는 카테고리는 삭제할 수 없습니다."
+              : null,
+        };
+      });
+    }
+    const duplicateCountByKey = new Map<string, number>();
+    baseItems.forEach((item) => {
+      duplicateCountByKey.set(
+        item.duplicateKey,
+        (duplicateCountByKey.get(item.duplicateKey) ?? 0) + 1
+      );
+    });
+    return baseItems.map((item) => {
+      const isDuplicate = (duplicateCountByKey.get(item.duplicateKey) ?? 0) > 1;
+      return {
+        ...item,
+        isDuplicate,
+        badges:
+          isDuplicate && !item.badges.includes("중복의심")
+            ? [...item.badges, "중복의심"]
+            : item.badges,
+      };
+    });
+  })();
+  const cleanupSourceItemById = new Map(
+    cleanupSourceItems.map((item) => [item.id, item])
+  );
+  const cleanupVisibleItems = (() => {
+    const normalizedSearch = cleanupSearch.trim().toLowerCase();
+    const filtered = cleanupSourceItems.filter((item) => {
+      if (normalizedSearch) {
+        const haystack = [item.name, item.parentName ?? ""]
+          .join(" ")
+          .toLowerCase();
+        if (!haystack.includes(normalizedSearch)) {
+          return false;
+        }
+      }
+      if (cleanupStatusFilter === "imported" && !item.imported) {
+        return false;
+      }
+      if (cleanupStatusFilter === "used" && item.usageCount === 0) {
+        return false;
+      }
+      if (cleanupStatusFilter === "unused" && item.usageCount > 0) {
+        return false;
+      }
+      if (cleanupStatusFilter === "duplicate" && !item.isDuplicate) {
+        return false;
+      }
+      if (cleanupLevelFilter !== "all" && item.level !== cleanupLevelFilter) {
+        return false;
+      }
+      return true;
+    });
+    return filtered.sort((a, b) => {
+      if (cleanupSort === "name") {
+        return a.name.localeCompare(b.name, "ko");
+      }
+      if (cleanupSort === "order") {
+        if (a.level !== b.level) {
+          return a.level === "parent" ? -1 : 1;
+        }
+        return a.order - b.order || a.name.localeCompare(b.name, "ko");
+      }
+      if (b.usageCount !== a.usageCount) {
+        return b.usageCount - a.usageCount;
+      }
+      return a.name.localeCompare(b.name, "ko");
+    });
+  })();
+  const cleanupDuplicateGroupCount = (() => {
+    return new Set(
+      cleanupSourceItems
+        .filter((item) => item.isDuplicate)
+        .map((item) => item.duplicateKey)
+    ).size;
+  })();
+  const cleanupSummary = {
+    total: cleanupSourceItems.length,
+    imported: cleanupSourceItems.filter((item) => item.imported).length,
+    unused: cleanupSourceItems.filter((item) => item.usageCount === 0).length,
+    duplicate: cleanupDuplicateGroupCount,
+  };
+  const selectedCleanupSet = new Set(selectedCleanupIds);
+  const selectedCleanupItems = cleanupSourceItems.filter((item) =>
+    selectedCleanupSet.has(item.id)
+  );
+  const undeletableCleanupItems = selectedCleanupItems.filter(
+    (item) => !item.canDelete
+  );
+  const effectiveMergeTargetId =
+    mergeTargetId && selectedCleanupSet.has(mergeTargetId)
+      ? mergeTargetId
+      : selectedCleanupItems[0]?.id ?? null;
+  const mergeSourceItems = selectedCleanupItems.filter(
+    (item) => item.id !== effectiveMergeTargetId
+  );
+  const mergeLinkedTransactionCount = mergeSourceItems.reduce(
+    (sum, item) => sum + item.usageCount,
+    0
+  );
+  const canMergeSelectedSubjects =
+    activeTab === "subject" && selectedCleanupItems.length >= 2;
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
     useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 6 } })
   );
+
+  const toggleCleanupSelection = useCallback((itemId: string) => {
+    setCleanupSheet(null);
+    setMergeTargetId(null);
+    setSelectedCleanupIds((prev) =>
+      prev.includes(itemId)
+        ? prev.filter((currentId) => currentId !== itemId)
+        : [...prev, itemId]
+    );
+  }, []);
+  const handleToggleCleanupMode = useCallback(() => {
+    if (isCleanupMode) {
+      setIsCleanupMode(false);
+      resetCleanupState();
+      return;
+    }
+    resetNewItemForm();
+    setEditingId(null);
+    setEditingName("");
+    setEditingOriginalName("");
+    setEditingGoal("");
+    setIsCleanupMode(true);
+  }, [isCleanupMode, resetCleanupState, resetNewItemForm]);
+  async function handleCleanupDeleteConfirm() {
+    if (!householdId || selectedCleanupItems.length === 0) {
+      return;
+    }
+    if (undeletableCleanupItems.length > 0) {
+      return;
+    }
+    await Promise.all(
+      selectedCleanupItems.map((item) => {
+        if (item.kind === "subject") {
+          return deleteSubject(householdId, item.id);
+        }
+        if (item.kind === "payment") {
+          return deletePaymentMethod(householdId, item.id);
+        }
+        return deleteCategory(householdId, item.id);
+      })
+    );
+    setCleanupSheet(null);
+    setSelectedCleanupIds([]);
+  }
+  async function handleCleanupMergeConfirm() {
+    if (
+      !householdId ||
+      activeTab !== "subject" ||
+      !effectiveMergeTargetId ||
+      selectedCleanupItems.length < 2
+    ) {
+      return;
+    }
+    const targetItem = selectedCleanupItems.find(
+      (item) => item.id === effectiveMergeTargetId
+    );
+    if (!targetItem) {
+      return;
+    }
+    const sourceItems = selectedCleanupItems.filter(
+      (item) => item.id !== effectiveMergeTargetId
+    );
+    for (const item of sourceItems) {
+      await updateTransactionsSubjectName(householdId, item.name, targetItem.name);
+      await deleteSubject(householdId, item.id);
+    }
+    await updateSubject(householdId, effectiveMergeTargetId, {
+      imported: false,
+    });
+    setCleanupSheet(null);
+    setSelectedCleanupIds([]);
+    setMergeTargetId(null);
+  }
 
   const isLoading = isCategoryTab
     ? categoriesLoading
@@ -804,6 +1242,7 @@ export default function CategoriesPage() {
             }`}
             onClick={() => {
               resetNewItemForm();
+              resetCleanupState();
               setActiveTab(tab.key);
             }}
           >
@@ -826,7 +1265,10 @@ export default function CategoriesPage() {
                   ? "border-b-2 border-[var(--accent)] text-[var(--accent)]"
                   : "text-[color:rgba(45,38,34,0.5)]"
               }`}
-              onClick={() => setPaymentOwner(tab.key as PaymentOwner)}
+              onClick={() => {
+                resetCleanupState();
+                setPaymentOwner(tab.key as PaymentOwner);
+              }}
             >
               {tab.label}
             </button>
@@ -834,7 +1276,30 @@ export default function CategoriesPage() {
         </div>
       ) : null}
 
-            {showAddForm ? (
+      <div className="flex items-start justify-between gap-4 rounded-3xl border border-[var(--border)] bg-[color:rgba(45,38,34,0.03)] px-4 py-4">
+        <div>
+          <p className="text-sm font-semibold text-[var(--text)]">
+            {isCleanupMode ? "정리 모드" : "분류 관리"}
+          </p>
+          <p className="mt-1 text-xs text-[color:rgba(45,38,34,0.65)]">
+            {isCleanupMode
+              ? "사용량과 중복 의심 항목을 보고 안전하게 병합하거나 삭제할 수 있습니다."
+              : "탭별로 항목을 추가, 편집, 정렬할 수 있습니다."}
+          </p>
+        </div>
+        <button
+          className={`rounded-full px-4 py-2 text-xs ${
+            isCleanupMode
+              ? "bg-[var(--text)] text-white"
+              : "border border-[var(--border)] bg-white text-[color:rgba(45,38,34,0.7)]"
+          }`}
+          onClick={handleToggleCleanupMode}
+        >
+          {isCleanupMode ? "정리 종료" : "정리 모드"}
+        </button>
+      </div>
+
+      {!isCleanupMode && showAddForm ? (
         <section className="rounded-3xl border border-[var(--border)] bg-white p-6">
           <div className="space-y-3">
             <p className="text-sm font-semibold text-[var(--text)]">항목 추가</p>
@@ -924,6 +1389,123 @@ export default function CategoriesPage() {
         </section>
       ) : null}
 
+      {isCleanupMode ? (
+        <>
+          <section className="rounded-3xl border border-[var(--border)] bg-white p-4 sm:p-5">
+            <div className="flex flex-wrap gap-2">
+              {[
+                { key: "all" as const, label: `전체 ${cleanupSummary.total}` },
+                {
+                  key: "imported" as const,
+                  label: `imported ${cleanupSummary.imported}`,
+                },
+                { key: "unused" as const, label: `미사용 ${cleanupSummary.unused}` },
+                {
+                  key: "duplicate" as const,
+                  label: `중복의심 ${cleanupSummary.duplicate}`,
+                },
+              ].map((item) => (
+                <button
+                  key={item.key}
+                  className={`rounded-full px-3 py-1.5 text-xs ${
+                    cleanupStatusFilter === item.key
+                      ? "bg-[var(--text)] text-white"
+                      : "border border-[var(--border)] bg-white text-[color:rgba(45,38,34,0.7)]"
+                  }`}
+                  onClick={() => setCleanupStatusFilter(item.key)}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
+            <div className="mt-4 grid gap-3 md:grid-cols-[minmax(0,1fr)_auto_auto]">
+              <input
+                className="w-full rounded-xl border border-[var(--border)] px-3 py-2 text-sm"
+                value={cleanupSearch}
+                onChange={(event) => setCleanupSearch(event.target.value)}
+                placeholder="이름 또는 부모 이름 검색"
+              />
+              <select
+                className="rounded-xl border border-[var(--border)] px-3 py-2 text-sm"
+                value={cleanupLevelFilter}
+                onChange={(event) =>
+                  setCleanupLevelFilter(event.target.value as CleanupLevelFilter)
+                }
+              >
+                <option value="all">전체 레벨</option>
+                <option value="parent">대분류</option>
+                <option value="child">소분류</option>
+              </select>
+              <select
+                className="rounded-xl border border-[var(--border)] px-3 py-2 text-sm"
+                value={cleanupSort}
+                onChange={(event) =>
+                  setCleanupSort(event.target.value as CleanupSort)
+                }
+              >
+                <option value="usage">거래 많은 순</option>
+                <option value="name">이름순</option>
+                <option value="order">기본순</option>
+              </select>
+            </div>
+          </section>
+
+          <section className="rounded-3xl border border-[var(--border)] bg-white p-4 sm:p-6">
+            {isLoading ? (
+              <p className="text-sm text-[color:rgba(45,38,34,0.7)]">
+                불러오는 중...
+              </p>
+            ) : cleanupVisibleItems.length === 0 ? (
+              <p className="text-sm text-[color:rgba(45,38,34,0.7)]">
+                조건에 맞는 항목이 없습니다.
+              </p>
+            ) : (
+              <div className="space-y-3">
+                {cleanupVisibleItems.map((item) => (
+                  <label
+                    key={item.id}
+                    className={`flex cursor-pointer items-start gap-3 rounded-2xl border px-4 py-3 ${
+                      selectedCleanupSet.has(item.id)
+                        ? "border-[var(--text)] bg-[color:rgba(45,38,34,0.06)]"
+                        : item.imported
+                        ? highlightClass
+                        : "border-[var(--border)] bg-white"
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      className="mt-1 h-4 w-4 rounded border-[var(--border)]"
+                      checked={selectedCleanupSet.has(item.id)}
+                      onChange={() => toggleCleanupSelection(item.id)}
+                    />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="font-medium text-[var(--text)]">{item.name}</p>
+                        {item.badges.map((badge) => (
+                          <span
+                            key={`${item.id}-${badge}`}
+                            className="rounded-full border border-[var(--border)] px-2 py-0.5 text-[10px] text-[color:rgba(45,38,34,0.65)]"
+                          >
+                            {badge}
+                          </span>
+                        ))}
+                      </div>
+                      <p className="mt-1 text-xs text-[color:rgba(45,38,34,0.6)]">
+                        {item.detail}
+                      </p>
+                      {!item.canDelete && item.deleteReason ? (
+                        <p className="mt-1 text-[11px] text-red-600">
+                          {item.deleteReason}
+                        </p>
+                      ) : null}
+                    </div>
+                  </label>
+                ))}
+              </div>
+            )}
+          </section>
+        </>
+      ) : (
       <section className="rounded-3xl border border-[var(--border)] bg-white p-6">
         {isLoading ? (
           <p className="text-sm text-[color:rgba(45,38,34,0.7)]">불러오는 중...</p>
@@ -1596,14 +2178,183 @@ export default function CategoriesPage() {
           </SortableContext>
         )}
       </section>
+      )}
 
-      <button
-        className="fixed bottom-6 right-6 z-50 flex h-14 w-14 items-center justify-center rounded-full bg-[var(--accent)] text-2xl text-white shadow-lg"
-        onClick={() => setShowAddForm(true)}
-        aria-label="항목 추가"
-      >
-        +
-      </button>
+      {!isCleanupMode ? (
+        <button
+          className="fixed bottom-6 right-6 z-50 flex h-14 w-14 items-center justify-center rounded-full bg-[var(--accent)] text-2xl text-white shadow-lg"
+          onClick={() => setShowAddForm(true)}
+          aria-label="항목 추가"
+        >
+          +
+        </button>
+      ) : null}
+      {isCleanupMode && selectedCleanupItems.length > 0 ? (
+        <div className="fixed inset-x-4 bottom-4 z-50 rounded-2xl border border-[var(--border)] bg-white px-4 py-3 shadow-lg">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <p className="text-sm font-medium text-[var(--text)]">
+              {selectedCleanupItems.length}개 선택됨
+            </p>
+            <div className="flex flex-wrap items-center gap-2">
+              {activeTab === "subject" ? (
+                <button
+                  className="rounded-full border border-[var(--border)] px-3 py-1.5 text-xs text-[color:rgba(45,38,34,0.7)] disabled:opacity-50"
+                  onClick={() => {
+                    setMergeTargetId(selectedCleanupItems[0]?.id ?? null);
+                    setCleanupSheet("merge");
+                  }}
+                  disabled={!canMergeSelectedSubjects}
+                >
+                  병합
+                </button>
+              ) : null}
+              <button
+                className="rounded-full border border-[var(--border)] px-3 py-1.5 text-xs text-[color:rgba(45,38,34,0.7)]"
+                onClick={() => setCleanupSheet("delete")}
+              >
+                삭제
+              </button>
+              <button
+                className="rounded-full bg-[var(--text)] px-3 py-1.5 text-xs text-white"
+                onClick={() => setSelectedCleanupIds([])}
+              >
+                선택 해제
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+      {cleanupSheet === "merge" && canMergeSelectedSubjects ? (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-md rounded-3xl border border-[var(--border)] bg-white p-5 sm:p-6">
+            <div className="flex items-center justify-between gap-3">
+              <h2 className="text-base font-semibold">주체 병합</h2>
+              <button
+                className="text-sm text-[color:rgba(45,38,34,0.6)]"
+                onClick={() => {
+                  setCleanupSheet(null);
+                  setMergeTargetId(null);
+                }}
+              >
+                닫기
+              </button>
+            </div>
+            <p className="mt-2 text-sm text-[color:rgba(45,38,34,0.6)]">
+              남길 주체를 하나 선택하면 나머지 거래 주체명이 모두 합쳐집니다.
+            </p>
+            <div className="mt-4 space-y-2">
+              {selectedCleanupItems.map((item) => (
+                <label
+                  key={item.id}
+                  className={`flex items-center justify-between rounded-2xl border px-4 py-3 text-sm ${
+                    effectiveMergeTargetId === item.id
+                      ? "border-[var(--text)] bg-[color:rgba(45,38,34,0.06)]"
+                      : "border-[var(--border)]"
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <input
+                      type="radio"
+                      name="mergeTarget"
+                      checked={effectiveMergeTargetId === item.id}
+                      onChange={() => setMergeTargetId(item.id)}
+                    />
+                    <div>
+                      <p className="font-medium">{item.name}</p>
+                      <p className="text-xs text-[color:rgba(45,38,34,0.6)]">
+                        거래 {item.usageCount.toLocaleString("en-US")}건
+                      </p>
+                    </div>
+                  </div>
+                  {item.imported ? (
+                    <span className="rounded-full border border-[var(--border)] px-2 py-0.5 text-[10px] text-[color:rgba(45,38,34,0.6)]">
+                      imported
+                    </span>
+                  ) : null}
+                </label>
+              ))}
+            </div>
+            <div className="mt-4 rounded-2xl bg-[color:rgba(45,38,34,0.05)] px-4 py-3 text-sm text-[color:rgba(45,38,34,0.75)]">
+              이동되는 거래 {mergeLinkedTransactionCount.toLocaleString("en-US")}건
+            </div>
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                className="rounded-full border border-[var(--border)] px-4 py-2 text-sm"
+                onClick={() => {
+                  setCleanupSheet(null);
+                  setMergeTargetId(null);
+                }}
+              >
+                취소
+              </button>
+              <button
+                className="rounded-full bg-[var(--text)] px-4 py-2 text-sm text-white disabled:opacity-50"
+                onClick={handleCleanupMergeConfirm}
+                disabled={!effectiveMergeTargetId || !canMergeSelectedSubjects}
+              >
+                병합 실행
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+      {cleanupSheet === "delete" ? (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-md rounded-3xl border border-[var(--border)] bg-white p-5 sm:p-6">
+            <div className="flex items-center justify-between gap-3">
+              <h2 className="text-base font-semibold">항목 삭제</h2>
+              <button
+                className="text-sm text-[color:rgba(45,38,34,0.6)]"
+                onClick={() => setCleanupSheet(null)}
+              >
+                닫기
+              </button>
+            </div>
+            <p className="mt-2 text-sm text-[color:rgba(45,38,34,0.6)]">
+              연결된 거래가 없고 하위 항목이 없는 항목만 삭제할 수 있습니다.
+            </p>
+            <div className="mt-4 space-y-2">
+              {selectedCleanupItems.map((item) => (
+                <div
+                  key={item.id}
+                  className="rounded-2xl border border-[var(--border)] px-4 py-3 text-sm"
+                >
+                  <p className="font-medium">{item.name}</p>
+                  <p className="mt-1 text-xs text-[color:rgba(45,38,34,0.6)]">
+                    {item.detail}
+                  </p>
+                  <p
+                    className={`mt-1 text-[11px] ${
+                      item.canDelete
+                        ? "text-emerald-600"
+                        : "text-red-600"
+                    }`}
+                  >
+                    {item.canDelete
+                      ? "삭제 가능"
+                      : item.deleteReason ?? "삭제 불가"}
+                  </p>
+                </div>
+              ))}
+            </div>
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                className="rounded-full border border-[var(--border)] px-4 py-2 text-sm"
+                onClick={() => setCleanupSheet(null)}
+              >
+                취소
+              </button>
+              <button
+                className="rounded-full bg-red-600 px-4 py-2 text-sm text-white disabled:opacity-50"
+                onClick={handleCleanupDeleteConfirm}
+                disabled={undeletableCleanupItems.length > 0}
+              >
+                삭제 실행
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
       </div>
     </DndContext>
   );
