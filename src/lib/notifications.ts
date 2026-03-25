@@ -1,5 +1,6 @@
 import {
   addDoc,
+  deleteDoc,
   doc,
   getDocs,
   limit,
@@ -8,6 +9,7 @@ import {
   query,
   serverTimestamp,
   updateDoc,
+  where,
   writeBatch,
 } from "firebase/firestore";
 import { useEffect, useState } from "react";
@@ -22,6 +24,7 @@ export type NotificationItem = {
   message: string;
   level: NotificationLevel;
   createdAt?: { toDate: () => Date } | null;
+  expiresAt?: { toDate: () => Date } | null;
   readBy?: Record<string, unknown>;
   hiddenBy?: Record<string, boolean>;
 };
@@ -80,7 +83,36 @@ export async function hideNotificationForUser(
   });
 }
 
- 
+export async function purgeExpiredNotifications(householdId: string) {
+  let deletedCount = 0;
+
+  while (true) {
+    const snapshot = await getDocs(
+      query(
+        notificationsCol(householdId),
+        where("expiresAt", "<=", new Date()),
+        limit(500)
+      )
+    );
+
+    if (snapshot.empty) {
+      return deletedCount;
+    }
+
+    if (snapshot.size === 1) {
+      await deleteDoc(snapshot.docs[0].ref);
+      deletedCount += 1;
+      continue;
+    }
+
+    const batch = writeBatch(db);
+    snapshot.docs.forEach((docSnap) => {
+      batch.delete(docSnap.ref);
+    });
+    await batch.commit();
+    deletedCount += snapshot.size;
+  }
+}
 
 export function useNotifications(
   householdId: string | null,
@@ -92,11 +124,16 @@ export function useNotifications(
 
   useEffect(() => {
     if (!householdId) {
-      setNotifications([]);
-      setLoading(false);
-      return;
+      const resetTimer = setTimeout(() => {
+        setNotifications([]);
+        setLoading(false);
+      }, 0);
+      return () => clearTimeout(resetTimer);
     }
-    setLoading(true);
+    const loadingTimer = setTimeout(() => {
+      setLoading(true);
+    }, 0);
+    void purgeExpiredNotifications(householdId).catch(() => undefined);
     const q = query(
       notificationsCol(householdId),
       orderBy("createdAt", "desc"),
@@ -107,13 +144,23 @@ export function useNotifications(
         id: doc.id,
         ...(doc.data() as Omit<NotificationItem, "id">),
       }));
+      const visibleItems = items.filter((item) => {
+        const expiresAt = item.expiresAt?.toDate?.() ?? null;
+        if (!expiresAt) {
+          return true;
+        }
+        return expiresAt.getTime() > Date.now();
+      });
       const filtered = uid
-        ? items.filter((item) => !item.hiddenBy?.[uid])
-        : items;
+        ? visibleItems.filter((item) => !item.hiddenBy?.[uid])
+        : visibleItems;
       setNotifications(filtered);
       setLoading(false);
     });
-    return () => unsubscribe();
+    return () => {
+      clearTimeout(loadingTimer);
+      unsubscribe();
+    };
   }, [householdId, uid, limitCount]);
 
   return { notifications, loading };
