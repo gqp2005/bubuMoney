@@ -17,7 +17,7 @@ import {
   recurringTransactionRulesCol,
   transactionsCol,
 } from "@/lib/firebase/firestore";
-import { toDateKey, toMonthKey } from "@/lib/time";
+import { formatDate, toDateKey, toMonthKey } from "@/lib/time";
 import type { RecurringTransactionRule, TransactionType } from "@/types/ledger";
 
 function stripUndefinedValues<T extends Record<string, unknown>>(input: T) {
@@ -59,6 +59,41 @@ function buildOccurrenceDate(
 
 function buildGeneratedTransactionId(ruleId: string, dateKey: string) {
   return `recurring-${ruleId}-${dateKey.replaceAll("-", "")}`;
+}
+
+export function buildRecurringTransactionNote(
+  note: string | undefined,
+  date: Date,
+  prependMonthToNote = false
+) {
+  const baseNote = note?.trim() ?? "";
+  if (!prependMonthToNote) {
+    return baseNote || undefined;
+  }
+  const monthLabel = formatDate(date, "M월");
+  if (!baseNote) {
+    return monthLabel;
+  }
+  return `${monthLabel} ${baseNote}`;
+}
+
+export function stripRecurringMonthPrefix(
+  note: string | undefined,
+  date: Date
+) {
+  const normalized = note?.trim() ?? "";
+  if (!normalized) {
+    return "";
+  }
+  const monthLabel = formatDate(date, "M월");
+  if (normalized === monthLabel) {
+    return "";
+  }
+  const prefix = `${monthLabel} `;
+  if (normalized.startsWith(prefix)) {
+    return normalized.slice(prefix.length).trimStart();
+  }
+  return normalized;
 }
 
 function buildPendingOccurrenceDates(
@@ -106,6 +141,7 @@ export async function createRecurringTransactionRule(params: {
   paymentMethodId?: string | null;
   subject: string;
   note?: string;
+  prependMonthToNote?: boolean;
   budgetApplied?: boolean;
   dayOfMonth: number;
   startDate: Date;
@@ -139,6 +175,7 @@ export async function updateRecurringTransactionRule(params: {
   paymentMethodId?: string | null;
   subject: string;
   note?: string;
+  prependMonthToNote?: boolean;
   budgetApplied?: boolean;
   dayOfMonth: number;
   startDate: Date;
@@ -238,7 +275,11 @@ export async function syncRecurringTransactionRules(
           paymentMethod: rule.paymentMethod,
           paymentMethodId: rule.paymentMethodId,
           subject: rule.subject,
-          note: rule.note,
+          note: buildRecurringTransactionNote(
+            rule.note,
+            date,
+            Boolean(rule.prependMonthToNote)
+          ),
           budgetApplied: rule.budgetApplied ?? false,
           discountAmount: rule.discountAmount,
           createdBy: rule.createdBy,

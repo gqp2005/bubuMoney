@@ -62,6 +62,7 @@ export interface RecurringTransactionRule {
   paymentMethodId?: string | null;
   subject: string;
   note?: string;
+  prependMonthToNote?: boolean;
   budgetApplied?: boolean;
   dayOfMonth: number;
   startDate: Timestamp;

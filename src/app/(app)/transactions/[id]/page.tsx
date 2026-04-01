@@ -25,9 +25,11 @@ import {
   formatPaymentMethodLabel,
 } from "@/lib/payment-method-resolver";
 import {
+  buildRecurringTransactionNote,
   createRecurringTransactionRule,
   deleteRecurringTransactionRule,
   getRecurringTransactionRule,
+  stripRecurringMonthPrefix,
   updateRecurringTransactionRule,
 } from "@/lib/recurring-transactions";
 import { deleteTransaction, updateTransaction } from "@/lib/transactions";
@@ -94,6 +96,7 @@ export default function EditTransactionPage() {
   const [recurringDayOfMonth, setRecurringDayOfMonth] = useState("1");
   const [recurringStartDate, setRecurringStartDate] = useState(toDateKey(new Date()));
   const [recurringEndDate, setRecurringEndDate] = useState("");
+  const [prependMonthToRecurringNote, setPrependMonthToRecurringNote] = useState(false);
   const [subject, setSubject] = useState("");
   const [date, setDate] = useState(toDateKey(new Date()));
   const [note, setNote] = useState("");
@@ -405,6 +408,7 @@ export default function EditTransactionPage() {
         );
         setRecurringStartDate(toDateKey(data.date.toDate()));
         setRecurringEndDate("");
+        setPrependMonthToRecurringNote(false);
         setIsRecurringSectionOpen(Boolean(data.recurringRuleId));
         setGeneratedEditScope("single");
         setOriginalTransaction({
@@ -430,36 +434,47 @@ export default function EditTransactionPage() {
   }, [householdId, transactionId]);
 
   useEffect(() => {
-    if (!householdId || !recurringRuleId) {
+    const targetRecurringRuleId = recurringRuleId || generatedFromRecurringRuleId;
+    if (!householdId || !targetRecurringRuleId) {
+      setPrependMonthToRecurringNote(false);
       return;
     }
     let active = true;
-    getRecurringTransactionRule(householdId, recurringRuleId)
+    getRecurringTransactionRule(householdId, targetRecurringRuleId)
       .then((rule) => {
         if (!active) {
           return;
         }
         if (!rule) {
-          setRecurringRuleId("");
-          setIsRecurringEnabled(false);
+          if (recurringRuleId) {
+            setRecurringRuleId("");
+            setIsRecurringEnabled(false);
+          }
+          setPrependMonthToRecurringNote(false);
           return;
         }
-        setIsRecurringEnabled(true);
-        setRecurringDayOfMonth(String(rule.dayOfMonth));
-        setRecurringStartDate(toDateKey(rule.startDate.toDate()));
-        setRecurringEndDate(rule.endDate ? toDateKey(rule.endDate.toDate()) : "");
+        setPrependMonthToRecurringNote(Boolean(rule.prependMonthToNote));
+        if (recurringRuleId) {
+          setIsRecurringEnabled(true);
+          setRecurringDayOfMonth(String(rule.dayOfMonth));
+          setRecurringStartDate(toDateKey(rule.startDate.toDate()));
+          setRecurringEndDate(rule.endDate ? toDateKey(rule.endDate.toDate()) : "");
+        }
       })
       .catch(() => {
         if (!active) {
           return;
         }
-        setRecurringRuleId("");
-        setIsRecurringEnabled(false);
+        if (recurringRuleId) {
+          setRecurringRuleId("");
+          setIsRecurringEnabled(false);
+        }
+        setPrependMonthToRecurringNote(false);
       });
     return () => {
       active = false;
     };
-  }, [householdId, recurringRuleId]);
+  }, [generatedFromRecurringRuleId, householdId, recurringRuleId]);
 
   useEffect(() => {
     if (!householdId) {
@@ -633,7 +648,7 @@ export default function EditTransactionPage() {
   }, [discountAmount, type]);
 
   async function handleSave() {
-    if (!householdId || !transactionId) {
+    if (!householdId || !transactionId || !user) {
       return;
     }
     setSaving(true);
@@ -674,7 +689,19 @@ export default function EditTransactionPage() {
       return;
     }
     let createdRecurringRuleId: string | null = null;
+    let transactionUpdated = false;
     const hadRecurringRuleId = Boolean(recurringRuleId);
+    const recurringBaseNote =
+      isGeneratedRecurringTransaction &&
+      generatedEditScope === "future" &&
+      prependMonthToRecurringNote
+        ? stripRecurringMonthPrefix(note, parsedDate)
+        : note.trim();
+    const recurringGeneratedNote = buildRecurringTransactionNote(
+      recurringBaseNote || undefined,
+      parsedDate,
+      prependMonthToRecurringNote
+    );
     try {
       const memoText = note.trim() || "메모 없음";
       const paymentMethodValue =
@@ -715,7 +742,8 @@ export default function EditTransactionPage() {
             paymentMethod: paymentMethodValue,
             paymentMethodId: selectedPaymentMethod?.id,
             subject,
-            note: note || undefined,
+            note: note.trim() || undefined,
+            prependMonthToNote: prependMonthToRecurringNote,
             budgetApplied,
             dayOfMonth: recurringDay,
             startDate: parsedRecurringStartDate,
@@ -731,17 +759,17 @@ export default function EditTransactionPage() {
             paymentMethod: paymentMethodValue,
             paymentMethodId: selectedPaymentMethod?.id,
             subject,
-            note: note || undefined,
+            note: note.trim() || undefined,
+            prependMonthToNote: prependMonthToRecurringNote,
             budgetApplied,
             dayOfMonth: recurringDay,
             startDate: parsedRecurringStartDate,
             endDate: parsedRecurringEndDate ?? undefined,
             lastGeneratedDateKey: date,
-            createdBy: user?.uid ?? originalTransaction?.createdBy ?? "",
+            createdBy: user.uid,
           });
           nextRecurringRuleId = createdRule.id;
           createdRecurringRuleId = createdRule.id;
-          setRecurringRuleId(createdRule.id);
         }
       } else if (
         isGeneratedRecurringTransaction &&
@@ -758,7 +786,7 @@ export default function EditTransactionPage() {
           subject,
           date: Timestamp.fromDate(parsedDate),
           monthKey: toMonthKey(parsedDate),
-          note: note || deleteField(),
+          note: recurringGeneratedNote || deleteField(),
           budgetApplied,
           discountAmount: nextDiscountAmount ?? deleteField(),
         });
@@ -777,13 +805,15 @@ export default function EditTransactionPage() {
             paymentMethod: paymentMethodValue,
             paymentMethodId: selectedPaymentMethod?.id ?? deleteField(),
             subject,
-            note: note || deleteField(),
+            note: recurringBaseNote || deleteField(),
+            prependMonthToNote: prependMonthToRecurringNote,
             budgetApplied,
             discountAmount: nextDiscountAmount ?? deleteField(),
             updatedAt: serverTimestamp(),
           }
         );
         await batch.commit();
+        transactionUpdated = true;
         if (!selectedCategory?.personalOnly) {
           await addNotification(householdId, {
             title: "자동 내역 수정",
@@ -792,7 +822,7 @@ export default function EditTransactionPage() {
             } • ${memoText} • ${date} • 이후 자동 내역에도 반영`,
             level: "info",
             type: "transaction.update",
-          });
+          }).catch(() => undefined);
         }
         router.replace(`/transactions?date=${date}`);
         return;
@@ -816,9 +846,12 @@ export default function EditTransactionPage() {
         note: note || undefined,
         budgetApplied,
       });
+      transactionUpdated = true;
       if (shouldDeleteRecurringRule) {
         await deleteRecurringTransactionRule(householdId, shouldDeleteRecurringRule);
         setRecurringRuleId("");
+      } else if (createdRecurringRuleId) {
+        setRecurringRuleId(createdRecurringRuleId);
       }
       if (!selectedCategory?.personalOnly) {
         await addNotification(householdId, {
@@ -827,15 +860,16 @@ export default function EditTransactionPage() {
             categoryNameMap.get(categoryId) ?? "미분류"
           } • ${memoText} • ${date}${changeSummary ? ` • 변경: ${changeSummary}` : ""}`,
           level: "info",
-          type: "transaction.update",
-        });
+            type: "transaction.update",
+          }).catch(() => undefined);
       }
       router.replace(`/transactions?date=${date}`);
-    } catch {
-      if (!hadRecurringRuleId && isRecurringEnabled) {
+    } catch (saveError) {
+      console.error("[transactions/edit] save failed", saveError);
+      if (!hadRecurringRuleId && isRecurringEnabled && !transactionUpdated) {
         setRecurringRuleId("");
       }
-      if (createdRecurringRuleId) {
+      if (createdRecurringRuleId && !transactionUpdated) {
         await deleteRecurringTransactionRule(householdId, createdRecurringRuleId).catch(
           () => undefined
         );
@@ -1104,6 +1138,8 @@ export default function EditTransactionPage() {
             onStartDateChange={setRecurringStartDate}
             endDate={recurringEndDate}
             onEndDateChange={setRecurringEndDate}
+            prependMonthToNote={prependMonthToRecurringNote}
+            onPrependMonthToNoteChange={setPrependMonthToRecurringNote}
             disabled={saving}
           />
         ) : null}

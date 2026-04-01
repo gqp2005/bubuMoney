@@ -74,6 +74,7 @@ export default function NewTransactionPage() {
   );
   const [recurringStartDate, setRecurringStartDate] = useState(defaultDate);
   const [recurringEndDate, setRecurringEndDate] = useState("");
+  const [prependMonthToRecurringNote, setPrependMonthToRecurringNote] = useState(false);
   const hasCategories = categories.length > 0;
   const typeLabelMap: Record<TransactionType, string> = {
     expense: "지출",
@@ -351,6 +352,7 @@ export default function NewTransactionPage() {
           dayOfMonth: recurringDay,
           startDate: parsedRecurringStartDate,
           endDate: parsedRecurringEndDate ?? undefined,
+          prependMonthToNote: prependMonthToRecurringNote,
           lastGeneratedDateKey: date,
           createdBy: user.uid,
         });
@@ -552,6 +554,8 @@ export default function NewTransactionPage() {
             onStartDateChange={setRecurringStartDate}
             endDate={recurringEndDate}
             onEndDateChange={setRecurringEndDate}
+            prependMonthToNote={prependMonthToRecurringNote}
+            onPrependMonthToNoteChange={setPrependMonthToRecurringNote}
             disabled={loading}
           />
         ) : null}
