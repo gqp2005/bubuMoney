@@ -1,0 +1,12 @@
+{
+  "crons": [
+    {
+      "path": "/api/cron/market-flyers",
+      "schedule": "0 0,6,12 * * *"
+    },
+    {
+      "path": "/api/cron/market-flyers/cleanup",
+      "schedule": "0 20 * * *"
+    }
+  ]
+}

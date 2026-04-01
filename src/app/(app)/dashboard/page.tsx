@@ -12,7 +12,6 @@ import { usePaymentMethods } from "@/hooks/use-payment-methods";
 import { useMonthlyTransactions } from "@/hooks/use-transactions";
 import {
   getLatestMemoEntries,
-  purgeExpiredMemoEntries,
   restoreMonthlyMemoEntry,
 } from "@/lib/memos";
 import {
@@ -167,7 +166,6 @@ export default function DashboardPage() {
     setMemoLoading(true);
     setMemoError(null);
     try {
-      await purgeExpiredMemoEntries(householdId);
       const entries = await getLatestMemoEntries(householdId);
       setMemoEntries(
         entries
@@ -303,7 +301,7 @@ export default function DashboardPage() {
                     className="flex-1 whitespace-pre-line"
                     href={entry.linkUrl}
                     target="_blank"
-                    rel="noreferrer"
+                    rel="noopener noreferrer"
                   >
                     <span className="block text-xs text-[color:rgba(45,38,34,0.6)]">
                       {entry.createdAt
@@ -324,9 +322,14 @@ export default function DashboardPage() {
                         : "유효기간: 상시"}
                     </span>
                     {entry.sourceKey ? (
-                      <span className="mb-1 inline-flex rounded-full bg-[color:rgba(203,83,41,0.12)] px-2 py-1 text-[11px] font-medium text-[var(--accent)]">
-                        자동 등록
-                      </span>
+                      <div className="mb-2 flex flex-wrap items-center gap-2">
+                        <span className="inline-flex rounded-full bg-[color:rgba(203,83,41,0.12)] px-2 py-1 text-[11px] font-medium text-[var(--accent)]">
+                          자동 등록
+                        </span>
+                        <span className="text-[11px] text-[color:rgba(45,38,34,0.6)]">
+                          출처: {entry.sourceKey.startsWith("ruliweb:") ? "루리웹 핫딜" : entry.sourceKey}
+                        </span>
+                      </div>
                     ) : null}
                     <span className="block">{entry.text}</span>
                     <span className="mt-1 block break-all text-xs text-[color:rgba(45,38,34,0.6)]">

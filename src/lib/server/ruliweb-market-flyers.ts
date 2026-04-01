@@ -1,76 +1,116 @@
 import "server-only";
 
-import { toDateKey } from "@/lib/time";
+import axios from "axios";
+import * as cheerio from "cheerio";
+import type { Element } from "domhandler";
+import { isSameSeoulDate, parseRuliwebBoardDateLabel } from "@/lib/server/ruliweb-market-flyers-date";
+import {
+  RULIWEB_MARKET_BOARD_SELECTORS,
+  RULIWEB_MARKET_BOARD_URL,
+  RULIWEB_MARKET_BOARD_USER_AGENT,
+  RULIWEB_MARKET_FLYER_KEYWORDS,
+} from "@/lib/server/ruliweb-market-flyers-selectors";
+import { RULIWEB_SOURCE_KEY_PREFIX } from "@/lib/server/admin-memos";
 
-export const RULIWEB_MARKET_RSS_URL = "https://bbs.ruliweb.com/market/board/1020/rss";
-export const MARKET_FLYER_REQUIRED_KEYWORD = "전단";
-export const MARKET_FLYER_STORE_KEYWORDS = ["홈플러스", "이마트", "롯데마트"] as const;
-
-export type RuliwebMarketRssItem = {
+export type RuliwebMarketFlyerPost = {
   title: string;
-  link: string;
+  linkUrl: string;
+  sourceKey: string;
   publishedAt: Date;
+  matchedKeywords: string[];
+  timeLabel: string;
 };
 
-function stripCdata(value: string) {
-  return value.replace(/^<!\[CDATA\[/, "").replace(/\]\]>$/, "");
+function normalizeWhitespace(value: string) {
+  return value.replace(/\s+/g, " ").trim();
 }
 
-function decodeXmlEntities(value: string) {
-  return value
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&apos;/g, "'")
-    .replace(/&amp;/g, "&");
+function toAbsoluteRuliwebUrl(value: string) {
+  const url = new URL(value, RULIWEB_MARKET_BOARD_URL);
+  url.hash = "";
+  if (url.search === "?") {
+    url.search = "";
+  }
+  return url.toString().replace(/\?$/, "");
 }
 
-function extractTag(block: string, tagName: string) {
-  const match = block.match(new RegExp(`<${tagName}>([\\s\\S]*?)</${tagName}>`, "i"));
-  if (!match) {
+export function buildRuliwebSourceKey(linkUrl: string) {
+  const normalizedUrl = toAbsoluteRuliwebUrl(linkUrl);
+  const postId = normalizedUrl.match(/\/read\/(\d+)/)?.[1];
+  return postId
+    ? `${RULIWEB_SOURCE_KEY_PREFIX}${postId}`
+    : `${RULIWEB_SOURCE_KEY_PREFIX}${normalizedUrl}`;
+}
+
+export function getMatchedFlyerKeywords(title: string) {
+  return RULIWEB_MARKET_FLYER_KEYWORDS.filter((keyword) => title.includes(keyword));
+}
+
+function extractRowTitle($row: cheerio.Cheerio<Element>) {
+  const $link = $row.find(RULIWEB_MARKET_BOARD_SELECTORS.titleLink).first();
+  if ($link.length === 0) {
     return "";
   }
-  return decodeXmlEntities(stripCdata(match[1].trim()));
+
+  const $clone = $link.clone();
+  $clone.find(RULIWEB_MARKET_BOARD_SELECTORS.replyCount).remove();
+  $clone.find(RULIWEB_MARKET_BOARD_SELECTORS.inlineIcons).remove();
+  return normalizeWhitespace($clone.text());
 }
 
-export function parseRuliwebMarketRss(xml: string) {
-  const items: RuliwebMarketRssItem[] = [];
-  const matches = xml.matchAll(/<item>([\s\S]*?)<\/item>/gi);
+export async function crawlTodayLargeMartFlyers(now = new Date()) {
+  const response = await axios.get<string>(RULIWEB_MARKET_BOARD_URL, {
+    responseType: "text",
+    timeout: 15000,
+    headers: {
+      "user-agent": RULIWEB_MARKET_BOARD_USER_AGENT,
+      accept: "text/html,application/xhtml+xml",
+      "accept-language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7",
+    },
+  });
 
-  for (const match of matches) {
-    const block = match[1];
-    const title = extractTag(block, "title").trim();
-    const link = extractTag(block, "link").trim();
-    const pubDate = extractTag(block, "pubDate").trim();
-    const publishedAt = new Date(pubDate);
+  const $ = cheerio.load(response.data);
+  const seenSourceKeys = new Set<string>();
+  const posts: RuliwebMarketFlyerPost[] = [];
 
-    if (!title || !link || Number.isNaN(publishedAt.getTime())) {
-      continue;
+  $(RULIWEB_MARKET_BOARD_SELECTORS.row).each((_, element) => {
+    const $row = $(element);
+    const title = extractRowTitle($row);
+    const href = $row.find(RULIWEB_MARKET_BOARD_SELECTORS.titleLink).first().attr("href")?.trim();
+    const timeLabel = normalizeWhitespace(
+      $row.find(RULIWEB_MARKET_BOARD_SELECTORS.timeCell).first().text()
+    );
+
+    if (!title || !href || !timeLabel) {
+      return;
     }
 
-    items.push({
+    const publishedAt = parseRuliwebBoardDateLabel(timeLabel, now);
+    if (!publishedAt || !isSameSeoulDate(publishedAt, now)) {
+      return;
+    }
+
+    const matchedKeywords = getMatchedFlyerKeywords(title);
+    if (matchedKeywords.length < 2) {
+      return;
+    }
+
+    const linkUrl = toAbsoluteRuliwebUrl(href);
+    const sourceKey = buildRuliwebSourceKey(linkUrl);
+    if (seenSourceKeys.has(sourceKey)) {
+      return;
+    }
+
+    seenSourceKeys.add(sourceKey);
+    posts.push({
       title,
-      link,
+      linkUrl,
+      sourceKey,
       publishedAt,
+      matchedKeywords,
+      timeLabel,
     });
-  }
+  });
 
-  return items;
-}
-
-export function isTodayMarketFlyerItem(item: RuliwebMarketRssItem, now = new Date()) {
-  return (
-    toDateKey(item.publishedAt) === toDateKey(now) &&
-    item.title.includes(MARKET_FLYER_REQUIRED_KEYWORD) &&
-    MARKET_FLYER_STORE_KEYWORDS.some((keyword) => item.title.includes(keyword))
-  );
-}
-
-export function buildMarketFlyerSourceKey(link: string) {
-  const postIdMatch = link.match(/\/read\/(\d+)/);
-  if (postIdMatch) {
-    return `ruliweb-market-flyer:${postIdMatch[1]}`;
-  }
-  return `ruliweb-market-flyer:${link}`;
+  return posts;
 }

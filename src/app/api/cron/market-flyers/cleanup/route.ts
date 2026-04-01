@@ -1,13 +1,9 @@
 import type { NextRequest } from "next/server";
 import { getAdminDb } from "@/lib/firebase/admin";
 import {
-  appendMemoEntriesToMonth,
-  buildRuliwebMemoEntry,
-  getDuplicateScanMonthKeys,
+  purgeExpiredRuliwebMemoEntries,
   RULIWEB_MEMO_CREATED_BY,
 } from "@/lib/server/admin-memos";
-import { crawlTodayLargeMartFlyers } from "@/lib/server/ruliweb-market-flyers";
-import { toMonthKey } from "@/lib/time";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -56,55 +52,25 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  const now = new Date();
-
   try {
-    const posts = await crawlTodayLargeMartFlyers(now);
-    if (posts.length === 0) {
-      return Response.json({
-        householdId,
-        checkedAt: now.toISOString(),
-        crawled: 0,
-        matched: 0,
-        inserted: 0,
-        skipped: 0,
-      });
-    }
-
-    const monthKey = toMonthKey(now);
-    const entries = posts.map((post) =>
-      buildRuliwebMemoEntry({
-        title: post.title,
-        linkUrl: post.linkUrl,
-        sourceKey: post.sourceKey,
-        createdAt: now,
-        visibleFrom: now,
-      })
-    );
-
-    const result = await appendMemoEntriesToMonth({
+    const result = await purgeExpiredRuliwebMemoEntries({
       db: getAdminDb(),
       householdId,
-      monthKey,
-      entries,
-      duplicateMonthKeys: getDuplicateScanMonthKeys(now),
       updatedBy: RULIWEB_MEMO_CREATED_BY,
     });
 
     return Response.json({
       householdId,
-      checkedAt: now.toISOString(),
-      crawled: posts.length,
-      matched: posts.length,
-      inserted: result.insertedCount,
-      skipped: result.skippedCount,
-      monthKey,
+      cleanedAt: new Date().toISOString(),
+      scannedDocuments: result.scannedDocuments,
+      touchedDocuments: result.touchedDocuments,
+      removedEntries: result.removedEntries,
     });
   } catch (error) {
-    console.error("[cron/market-flyers] collection failed", error);
+    console.error("[cron/market-flyers/cleanup] cleanup failed", error);
     return Response.json(
       {
-        error: "Failed to collect Ruliweb market flyers.",
+        error: "Failed to purge expired Ruliweb memo entries.",
       },
       { status: 500 }
     );
