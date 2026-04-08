@@ -15,6 +15,7 @@ import {
 } from "firebase/firestore";
 import { useAuth } from "@/components/auth-provider";
 import { useHousehold } from "@/components/household-provider";
+import MarketFlyerLogSection from "@/components/market-flyer-log-section";
 import { useCategories } from "@/hooks/use-categories";
 import { useRecurringTransactionRules } from "@/hooks/use-recurring-transaction-rules";
 import { useSubjects } from "@/hooks/use-subjects";
@@ -1096,6 +1097,7 @@ export default function SettingsPage() {
           </div>
         ) : null}
       </section>
+      <MarketFlyerLogSection householdId={householdId} />
       <section className="rounded-3xl border border-[var(--border)] bg-white p-4 sm:p-6">
         <h2 className="text-sm font-semibold">카테고리 편집</h2>
         <p className="mt-2 text-xs text-[color:rgba(45,38,34,0.7)]">

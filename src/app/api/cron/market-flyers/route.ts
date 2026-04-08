@@ -1,5 +1,6 @@
 import type { NextRequest } from "next/server";
 import { getAdminDb } from "@/lib/firebase/admin";
+import { safeWriteAutomationLog } from "@/lib/server/automation-logs";
 import {
   appendMemoEntriesToMonth,
   buildRuliwebMemoEntry,
@@ -57,10 +58,28 @@ export async function GET(request: NextRequest) {
   }
 
   const now = new Date();
+  const db = getAdminDb();
 
   try {
     const posts = await crawlTodayLargeMartFlyers(now);
     if (posts.length === 0) {
+      await safeWriteAutomationLog({
+        db,
+        householdId,
+        payload: {
+          source: "ruliweb-market-flyers",
+          action: "collect",
+          status: "noop",
+          summary: "오늘 조건에 맞는 루리웹 대형마트 전단 글이 없었습니다.",
+          details: {
+            crawled: 0,
+            matched: 0,
+            inserted: 0,
+            skipped: 0,
+          },
+        },
+      });
+
       return Response.json({
         householdId,
         checkedAt: now.toISOString(),
@@ -83,12 +102,39 @@ export async function GET(request: NextRequest) {
     );
 
     const result = await appendMemoEntriesToMonth({
-      db: getAdminDb(),
+      db,
       householdId,
       monthKey,
       entries,
       duplicateMonthKeys: getDuplicateScanMonthKeys(now),
       updatedBy: RULIWEB_MEMO_CREATED_BY,
+    });
+
+    const insertedTitles = posts
+      .filter((post) => result.insertedSourceKeys.includes(post.sourceKey))
+      .slice(0, 5)
+      .map((post) => post.title);
+
+    await safeWriteAutomationLog({
+      db,
+      householdId,
+      payload: {
+        source: "ruliweb-market-flyers",
+        action: "collect",
+        status: result.insertedCount > 0 ? "success" : "noop",
+        summary:
+          result.insertedCount > 0
+            ? `루리웹 전단 글 ${result.insertedCount}건을 메모에 등록했습니다.`
+            : "조건에 맞는 글은 있었지만 모두 이미 등록된 글이라 추가하지 않았습니다.",
+        details: {
+          crawled: posts.length,
+          matched: posts.length,
+          inserted: result.insertedCount,
+          skipped: result.skippedCount,
+          monthKey,
+          titles: insertedTitles,
+        },
+      },
     });
 
     return Response.json({
@@ -102,6 +148,19 @@ export async function GET(request: NextRequest) {
     });
   } catch (error) {
     console.error("[cron/market-flyers] collection failed", error);
+    await safeWriteAutomationLog({
+      db,
+      householdId,
+      payload: {
+        source: "ruliweb-market-flyers",
+        action: "collect",
+        status: "error",
+        summary: "루리웹 전단 글 수집 중 오류가 발생했습니다.",
+        details: {
+          error: error instanceof Error ? error.message : "unknown error",
+        },
+      },
+    });
     return Response.json(
       {
         error: "Failed to collect Ruliweb market flyers.",

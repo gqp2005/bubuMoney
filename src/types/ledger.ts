@@ -173,3 +173,23 @@ export interface UserProfile {
   displayName?: string;
   spouseRole?: "husband" | "wife" | null;
 }
+
+export interface AutomationLog {
+  source: "ruliweb-market-flyers";
+  action: "collect" | "cleanup";
+  status: "success" | "noop" | "error";
+  summary: string;
+  details?: {
+    crawled?: number;
+    matched?: number;
+    inserted?: number;
+    skipped?: number;
+    scannedDocuments?: number;
+    touchedDocuments?: number;
+    removedEntries?: number;
+    monthKey?: string | null;
+    titles?: string[];
+    error?: string | null;
+  };
+  createdAt: Timestamp;
+}

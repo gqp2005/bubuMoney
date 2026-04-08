@@ -1,5 +1,6 @@
 import type { NextRequest } from "next/server";
 import { getAdminDb } from "@/lib/firebase/admin";
+import { safeWriteAutomationLog } from "@/lib/server/automation-logs";
 import {
   purgeExpiredRuliwebMemoEntries,
   RULIWEB_MEMO_CREATED_BY,
@@ -53,10 +54,30 @@ export async function GET(request: NextRequest) {
   }
 
   try {
+    const db = getAdminDb();
     const result = await purgeExpiredRuliwebMemoEntries({
-      db: getAdminDb(),
+      db,
       householdId,
       updatedBy: RULIWEB_MEMO_CREATED_BY,
+    });
+
+    await safeWriteAutomationLog({
+      db,
+      householdId,
+      payload: {
+        source: "ruliweb-market-flyers",
+        action: "cleanup",
+        status: result.removedEntries > 0 ? "success" : "noop",
+        summary:
+          result.removedEntries > 0
+            ? `만료된 루리웹 전단 메모 ${result.removedEntries}건을 정리했습니다.`
+            : "정리할 만료 루리웹 전단 메모가 없었습니다.",
+        details: {
+          scannedDocuments: result.scannedDocuments,
+          touchedDocuments: result.touchedDocuments,
+          removedEntries: result.removedEntries,
+        },
+      },
     });
 
     return Response.json({
@@ -68,6 +89,20 @@ export async function GET(request: NextRequest) {
     });
   } catch (error) {
     console.error("[cron/market-flyers/cleanup] cleanup failed", error);
+    const db = getAdminDb();
+    await safeWriteAutomationLog({
+      db,
+      householdId,
+      payload: {
+        source: "ruliweb-market-flyers",
+        action: "cleanup",
+        status: "error",
+        summary: "루리웹 전단 메모 정리 중 오류가 발생했습니다.",
+        details: {
+          error: error instanceof Error ? error.message : "unknown error",
+        },
+      },
+    });
     return Response.json(
       {
         error: "Failed to purge expired Ruliweb memo entries.",

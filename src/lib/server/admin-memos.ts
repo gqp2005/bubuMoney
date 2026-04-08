@@ -185,6 +185,7 @@ export async function appendMemoEntriesToMonth(params: {
     const nextEntries = [...targetEntries];
     let insertedCount = 0;
     let skippedCount = 0;
+    const insertedSourceKeys: string[] = [];
 
     for (const entry of entries) {
       const duplicateBySourceKey = Boolean(entry.sourceKey && seenSourceKeys.has(entry.sourceKey));
@@ -202,6 +203,9 @@ export async function appendMemoEntriesToMonth(params: {
       }
       nextEntries.push(entry);
       insertedCount += 1;
+      if (entry.sourceKey) {
+        insertedSourceKeys.push(entry.sourceKey);
+      }
     }
 
     if (insertedCount > 0) {
@@ -219,6 +223,7 @@ export async function appendMemoEntriesToMonth(params: {
     return {
       insertedCount,
       skippedCount,
+      insertedSourceKeys,
     };
   });
 }

@@ -43,6 +43,9 @@ export const recurringTransactionRulesCol = (householdId: string) =>
 export const notificationsCol = (householdId: string) =>
   collection(db, "households", householdId, "notifications");
 
+export const automationLogsCol = (householdId: string) =>
+  collection(db, "households", householdId, "automationLogs");
+
 export const budgetsCol = (householdId: string) =>
   collection(db, "households", householdId, "budgets");
 
