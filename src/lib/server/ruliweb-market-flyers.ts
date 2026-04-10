@@ -21,6 +21,67 @@ export type RuliwebMarketFlyerPost = {
   timeLabel: string;
 };
 
+export type RuliwebMarketFlyerErrorDetails = {
+  error: string;
+  code?: string | null;
+  statusCode?: number | null;
+  attempts: number;
+  elapsedMs: number;
+  timeoutMs: number;
+  url: string;
+};
+
+const DEFAULT_REQUEST_TIMEOUT_MS = 25000;
+const DEFAULT_REQUEST_MAX_ATTEMPTS = 2;
+const DEFAULT_RETRY_DELAY_MS = 2000;
+
+function parsePositiveInteger(value: string | undefined, fallback: number) {
+  if (!value) {
+    return fallback;
+  }
+
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function getRequestTimeoutMs() {
+  return parsePositiveInteger(
+    process.env.RULIWEB_MARKET_REQUEST_TIMEOUT_MS,
+    DEFAULT_REQUEST_TIMEOUT_MS
+  );
+}
+
+function getRequestMaxAttempts() {
+  return parsePositiveInteger(
+    process.env.RULIWEB_MARKET_REQUEST_MAX_ATTEMPTS,
+    DEFAULT_REQUEST_MAX_ATTEMPTS
+  );
+}
+
+function getRetryDelayMs() {
+  return parsePositiveInteger(
+    process.env.RULIWEB_MARKET_REQUEST_RETRY_DELAY_MS,
+    DEFAULT_RETRY_DELAY_MS
+  );
+}
+
+function wait(ms: number) {
+  return new Promise<void>((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
+class RuliwebMarketFlyerRequestError extends Error {
+  readonly details: RuliwebMarketFlyerErrorDetails;
+
+  constructor(details: RuliwebMarketFlyerErrorDetails, cause: unknown) {
+    super(details.error);
+    this.name = "RuliwebMarketFlyerRequestError";
+    this.details = details;
+    (this as Error & { cause?: unknown }).cause = cause;
+  }
+}
+
 function normalizeWhitespace(value: string) {
   return value.replace(/\s+/g, " ").trim();
 }
@@ -46,6 +107,125 @@ export function getMatchedFlyerKeywords(title: string) {
   return RULIWEB_MARKET_FLYER_KEYWORDS.filter((keyword) => title.includes(keyword));
 }
 
+export function getRuliwebMarketFlyerErrorDetails(error: unknown) {
+  if (error instanceof RuliwebMarketFlyerRequestError) {
+    return error.details;
+  }
+
+  return null;
+}
+
+function shouldRetryRequest(error: unknown) {
+  if (!axios.isAxiosError(error)) {
+    return false;
+  }
+
+  const statusCode = error.response?.status;
+  if (statusCode === 408 || statusCode === 429 || (statusCode !== undefined && statusCode >= 500)) {
+    return true;
+  }
+
+  if (!error.response) {
+    return true;
+  }
+
+  return ["ECONNABORTED", "ECONNRESET", "ENOTFOUND", "EAI_AGAIN", "ETIMEDOUT"].includes(
+    error.code ?? ""
+  );
+}
+
+function buildRequestErrorDetails(params: {
+  error: unknown;
+  attempts: number;
+  elapsedMs: number;
+  timeoutMs: number;
+  url: string;
+}) {
+  const { error, attempts, elapsedMs, timeoutMs, url } = params;
+
+  if (!axios.isAxiosError(error)) {
+    const message = error instanceof Error ? error.message : "unknown error";
+    return {
+      error: `${message} (attempts=${attempts}, elapsedMs=${elapsedMs}, timeoutMs=${timeoutMs})`,
+      attempts,
+      elapsedMs,
+      timeoutMs,
+      url,
+    } satisfies RuliwebMarketFlyerErrorDetails;
+  }
+
+  const code = error.code ?? null;
+  const statusCode = error.response?.status ?? null;
+  const detailParts = [`attempts=${attempts}`, `elapsedMs=${elapsedMs}`, `timeoutMs=${timeoutMs}`];
+
+  if (code) {
+    detailParts.push(`code=${code}`);
+  }
+  if (statusCode !== null) {
+    detailParts.push(`status=${statusCode}`);
+  }
+
+  return {
+    error: `${error.message} (${detailParts.join(", ")})`,
+    code,
+    statusCode,
+    attempts,
+    elapsedMs,
+    timeoutMs,
+    url,
+  } satisfies RuliwebMarketFlyerErrorDetails;
+}
+
+async function fetchRuliwebMarketBoardHtml() {
+  const timeoutMs = getRequestTimeoutMs();
+  const maxAttempts = getRequestMaxAttempts();
+  const retryDelayMs = getRetryDelayMs();
+  const startedAt = Date.now();
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      const response = await axios.get<string>(RULIWEB_MARKET_BOARD_URL, {
+        responseType: "text",
+        timeout: timeoutMs,
+        headers: {
+          "user-agent": RULIWEB_MARKET_BOARD_USER_AGENT,
+          accept: "text/html,application/xhtml+xml",
+          "accept-language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7",
+        },
+      });
+
+      return response.data;
+    } catch (error) {
+      const isLastAttempt = attempt >= maxAttempts;
+      if (!shouldRetryRequest(error) || isLastAttempt) {
+        throw new RuliwebMarketFlyerRequestError(
+          buildRequestErrorDetails({
+            error,
+            attempts: attempt,
+            elapsedMs: Date.now() - startedAt,
+            timeoutMs,
+            url: RULIWEB_MARKET_BOARD_URL,
+          }),
+          error
+        );
+      }
+
+      await wait(retryDelayMs * attempt);
+    }
+  }
+
+  throw new RuliwebMarketFlyerRequestError(
+    {
+      error: `Request exhausted without response (attempts=${maxAttempts}, timeoutMs=${timeoutMs})`,
+      attempts: maxAttempts,
+      elapsedMs: Date.now() - startedAt,
+      timeoutMs,
+      url: RULIWEB_MARKET_BOARD_URL,
+    },
+    null
+  );
+}
+
 function extractRowTitle($row: cheerio.Cheerio<Element>) {
   const $link = $row.find(RULIWEB_MARKET_BOARD_SELECTORS.titleLink).first();
   if ($link.length === 0) {
@@ -59,17 +239,8 @@ function extractRowTitle($row: cheerio.Cheerio<Element>) {
 }
 
 export async function crawlTodayLargeMartFlyers(now = new Date()) {
-  const response = await axios.get<string>(RULIWEB_MARKET_BOARD_URL, {
-    responseType: "text",
-    timeout: 15000,
-    headers: {
-      "user-agent": RULIWEB_MARKET_BOARD_USER_AGENT,
-      accept: "text/html,application/xhtml+xml",
-      "accept-language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7",
-    },
-  });
-
-  const $ = cheerio.load(response.data);
+  const html = await fetchRuliwebMarketBoardHtml();
+  const $ = cheerio.load(html);
   const seenSourceKeys = new Set<string>();
   const posts: RuliwebMarketFlyerPost[] = [];
 

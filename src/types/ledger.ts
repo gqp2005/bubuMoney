@@ -190,6 +190,12 @@ export interface AutomationLog {
     monthKey?: string | null;
     titles?: string[];
     error?: string | null;
+    code?: string | null;
+    statusCode?: number | null;
+    attempts?: number | null;
+    elapsedMs?: number | null;
+    timeoutMs?: number | null;
+    url?: string | null;
   };
   createdAt: Timestamp;
 }

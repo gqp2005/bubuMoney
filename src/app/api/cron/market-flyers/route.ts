@@ -7,7 +7,10 @@ import {
   getDuplicateScanMonthKeys,
   RULIWEB_MEMO_CREATED_BY,
 } from "@/lib/server/admin-memos";
-import { crawlTodayLargeMartFlyers } from "@/lib/server/ruliweb-market-flyers";
+import {
+  crawlTodayLargeMartFlyers,
+  getRuliwebMarketFlyerErrorDetails,
+} from "@/lib/server/ruliweb-market-flyers";
 import { toMonthKey } from "@/lib/time";
 
 export const runtime = "nodejs";
@@ -147,6 +150,8 @@ export async function GET(request: NextRequest) {
       monthKey,
     });
   } catch (error) {
+    const requestErrorDetails = getRuliwebMarketFlyerErrorDetails(error);
+
     console.error("[cron/market-flyers] collection failed", error);
     await safeWriteAutomationLog({
       db,
@@ -157,7 +162,13 @@ export async function GET(request: NextRequest) {
         status: "error",
         summary: "루리웹 전단 글 수집 중 오류가 발생했습니다.",
         details: {
-          error: error instanceof Error ? error.message : "unknown error",
+          error: requestErrorDetails?.error ?? (error instanceof Error ? error.message : "unknown error"),
+          code: requestErrorDetails?.code ?? null,
+          statusCode: requestErrorDetails?.statusCode ?? null,
+          attempts: requestErrorDetails?.attempts ?? null,
+          elapsedMs: requestErrorDetails?.elapsedMs ?? null,
+          timeoutMs: requestErrorDetails?.timeoutMs ?? null,
+          url: requestErrorDetails?.url ?? null,
         },
       },
     });

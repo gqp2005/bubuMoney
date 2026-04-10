@@ -43,6 +43,50 @@ function buildDetailSummary(log: AutomationLogSnapshot) {
   return `스캔 문서 ${log.details?.scannedDocuments ?? 0}개 · 정리 ${log.details?.removedEntries ?? 0}건`;
 }
 
+function formatDurationMs(value: number | null | undefined) {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return null;
+  }
+
+  if (value >= 10_000) {
+    return `${Math.round(value / 1000)}s`;
+  }
+
+  if (value >= 1000) {
+    return `${(value / 1000).toFixed(1)}s`;
+  }
+
+  return `${value}ms`;
+}
+
+function buildErrorMetaSummary(log: AutomationLogSnapshot) {
+  const parts: string[] = [];
+
+  if (log.details?.code) {
+    parts.push(`code ${log.details.code}`);
+  }
+
+  if (typeof log.details?.statusCode === "number") {
+    parts.push(`status ${log.details.statusCode}`);
+  }
+
+  if (typeof log.details?.attempts === "number") {
+    parts.push(`attempts ${log.details.attempts}`);
+  }
+
+  const elapsed = formatDurationMs(log.details?.elapsedMs);
+  if (elapsed) {
+    parts.push(`elapsed ${elapsed}`);
+  }
+
+  const timeout = formatDurationMs(log.details?.timeoutMs);
+  if (timeout) {
+    parts.push(`timeout ${timeout}`);
+  }
+
+  return parts.join(" · ");
+}
+
 export default function MarketFlyerLogSection({
   householdId,
 }: MarketFlyerLogSectionProps) {
@@ -88,7 +132,7 @@ export default function MarketFlyerLogSection({
           onClick={() => void loadLogs()}
           disabled={!householdId || loading}
         >
-          {loading ? "새로고침 중.." : "새로고침"}
+          {loading ? "새로고침 중..." : "새로고침"}
         </button>
       </div>
 
@@ -106,50 +150,66 @@ export default function MarketFlyerLogSection({
 
       {logs.length > 0 ? (
         <div className="mt-4 space-y-3">
-          {logs.map((log) => (
-            <div
-              key={log.id}
-              className="rounded-2xl border border-[var(--border)] bg-[color:rgba(45,38,34,0.02)] px-4 py-4"
-            >
-              <div className="flex flex-wrap items-center gap-2">
-                <span
-                  className={`rounded-full border px-2 py-0.5 text-[11px] font-medium ${getStatusClassName(
-                    log.status
-                  )}`}
-                >
-                  {getStatusLabel(log.status)}
-                </span>
-                <span className="rounded-full border border-[var(--border)] px-2 py-0.5 text-[11px] text-[color:rgba(45,38,34,0.7)]">
-                  {getActionLabel(log.action)}
-                </span>
-                <span className="text-[11px] text-[color:rgba(45,38,34,0.55)]">
-                  {log.createdAt
-                    ? formatDate(log.createdAt, "yyyy.MM.dd HH:mm")
-                    : "시간 정보 없음"}
-                </span>
-              </div>
-              <p className="mt-2 text-sm font-medium text-[var(--text)]">{log.summary}</p>
-              <p className="mt-1 text-xs text-[color:rgba(45,38,34,0.6)]">
-                {buildDetailSummary(log)}
-                {log.details?.monthKey ? ` · 대상 월 ${log.details.monthKey}` : ""}
-              </p>
-              {log.details?.titles && log.details.titles.length > 0 ? (
-                <div className="mt-2 rounded-xl border border-[var(--border)] bg-white px-3 py-3">
-                  <p className="text-[11px] font-medium text-[color:rgba(45,38,34,0.75)]">
-                    이번에 메모에 등록한 제목
-                  </p>
-                  <ul className="mt-2 space-y-1 text-xs text-[color:rgba(45,38,34,0.7)]">
-                    {log.details.titles.map((title) => (
-                      <li key={title}>- {title}</li>
-                    ))}
-                  </ul>
+          {logs.map((log) => {
+            const errorMetaSummary = buildErrorMetaSummary(log);
+
+            return (
+              <div
+                key={log.id}
+                className="rounded-2xl border border-[var(--border)] bg-[color:rgba(45,38,34,0.02)] px-4 py-4"
+              >
+                <div className="flex flex-wrap items-center gap-2">
+                  <span
+                    className={`rounded-full border px-2 py-0.5 text-[11px] font-medium ${getStatusClassName(
+                      log.status
+                    )}`}
+                  >
+                    {getStatusLabel(log.status)}
+                  </span>
+                  <span className="rounded-full border border-[var(--border)] px-2 py-0.5 text-[11px] text-[color:rgba(45,38,34,0.7)]">
+                    {getActionLabel(log.action)}
+                  </span>
+                  <span className="text-[11px] text-[color:rgba(45,38,34,0.55)]">
+                    {log.createdAt
+                      ? formatDate(log.createdAt, "yyyy.MM.dd HH:mm")
+                      : "시간 정보 없음"}
+                  </span>
                 </div>
-              ) : null}
-              {log.details?.error ? (
-                <p className="mt-2 text-xs text-red-600">오류: {log.details.error}</p>
-              ) : null}
-            </div>
-          ))}
+                <p className="mt-2 text-sm font-medium text-[var(--text)]">{log.summary}</p>
+                <p className="mt-1 text-xs text-[color:rgba(45,38,34,0.6)]">
+                  {buildDetailSummary(log)}
+                  {log.details?.monthKey ? ` · 대상 월 ${log.details.monthKey}` : ""}
+                </p>
+                {log.details?.titles && log.details.titles.length > 0 ? (
+                  <div className="mt-2 rounded-xl border border-[var(--border)] bg-white px-3 py-3">
+                    <p className="text-[11px] font-medium text-[color:rgba(45,38,34,0.75)]">
+                      이번에 메모에 등록한 제목
+                    </p>
+                    <ul className="mt-2 space-y-1 text-xs text-[color:rgba(45,38,34,0.7)]">
+                      {log.details.titles.map((title) => (
+                        <li key={title}>- {title}</li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
+                {log.details?.error ? (
+                  <div className="mt-2 rounded-xl border border-red-100 bg-red-50 px-3 py-3">
+                    <p className="text-xs text-red-600">오류: {log.details.error}</p>
+                    {errorMetaSummary ? (
+                      <p className="mt-1 text-[11px] text-[color:rgba(185,28,28,0.85)]">
+                        {errorMetaSummary}
+                      </p>
+                    ) : null}
+                    {log.details.url ? (
+                      <p className="mt-1 break-all text-[11px] text-[color:rgba(127,29,29,0.78)]">
+                        URL {log.details.url}
+                      </p>
+                    ) : null}
+                  </div>
+                ) : null}
+              </div>
+            );
+          })}
         </div>
       ) : null}
 
