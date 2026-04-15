@@ -28,6 +28,7 @@ type AutomationLogPayload = {
     elapsedMs?: number | null;
     timeoutMs?: number | null;
     url?: string | null;
+    transport?: string | null;
   };
 };
 

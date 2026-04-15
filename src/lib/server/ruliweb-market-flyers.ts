@@ -29,6 +29,7 @@ export type RuliwebMarketFlyerErrorDetails = {
   elapsedMs: number;
   timeoutMs: number;
   url: string;
+  transport?: string | null;
 };
 
 const DEFAULT_REQUEST_TIMEOUT_MS = 25000;
@@ -69,6 +70,57 @@ function wait(ms: number) {
   return new Promise<void>((resolve) => {
     setTimeout(resolve, ms);
   });
+}
+
+function extractErrorCause(error: unknown) {
+  if (error && typeof error === "object" && "cause" in error) {
+    return (error as { cause?: unknown }).cause;
+  }
+
+  return null;
+}
+
+function extractErrorCode(error: unknown) {
+  if (error && typeof error === "object" && "code" in error) {
+    const value = (error as { code?: unknown }).code;
+    return typeof value === "string" ? value : null;
+  }
+
+  const cause = extractErrorCause(error);
+  if (cause && typeof cause === "object" && "code" in cause) {
+    const value = (cause as { code?: unknown }).code;
+    return typeof value === "string" ? value : null;
+  }
+
+  return null;
+}
+
+function extractErrorMessage(error: unknown) {
+  if (error instanceof Error) {
+    const cause = extractErrorCause(error);
+    if (cause instanceof Error && cause.message && cause.message !== error.message) {
+      return `${error.message}: ${cause.message}`;
+    }
+
+    return error.message;
+  }
+
+  return "unknown error";
+}
+
+function extractErrorStatusCode(error: unknown) {
+  if (error && typeof error === "object" && "statusCode" in error) {
+    const value = (error as { statusCode?: unknown }).statusCode;
+    return typeof value === "number" ? value : null;
+  }
+
+  const cause = extractErrorCause(error);
+  if (cause && typeof cause === "object" && "statusCode" in cause) {
+    const value = (cause as { statusCode?: unknown }).statusCode;
+    return typeof value === "number" ? value : null;
+  }
+
+  return null;
 }
 
 class RuliwebMarketFlyerRequestError extends Error {
@@ -140,23 +192,48 @@ function buildRequestErrorDetails(params: {
   elapsedMs: number;
   timeoutMs: number;
   url: string;
+  transport: string;
 }) {
-  const { error, attempts, elapsedMs, timeoutMs, url } = params;
+  const { error, attempts, elapsedMs, timeoutMs, url, transport } = params;
 
   if (!axios.isAxiosError(error)) {
-    const message = error instanceof Error ? error.message : "unknown error";
+    const message = extractErrorMessage(error);
+    const code = extractErrorCode(error);
+    const statusCode = extractErrorStatusCode(error);
+    const detailParts = [
+      `transport=${transport}`,
+      `attempts=${attempts}`,
+      `elapsedMs=${elapsedMs}`,
+      `timeoutMs=${timeoutMs}`,
+    ];
+
+    if (code) {
+      detailParts.push(`code=${code}`);
+    }
+    if (statusCode !== null) {
+      detailParts.push(`status=${statusCode}`);
+    }
+
     return {
-      error: `${message} (attempts=${attempts}, elapsedMs=${elapsedMs}, timeoutMs=${timeoutMs})`,
+      error: `${message} (${detailParts.join(", ")})`,
+      code,
+      statusCode,
       attempts,
       elapsedMs,
       timeoutMs,
       url,
+      transport,
     } satisfies RuliwebMarketFlyerErrorDetails;
   }
 
   const code = error.code ?? null;
   const statusCode = error.response?.status ?? null;
-  const detailParts = [`attempts=${attempts}`, `elapsedMs=${elapsedMs}`, `timeoutMs=${timeoutMs}`];
+  const detailParts = [
+    `transport=${transport}`,
+    `attempts=${attempts}`,
+    `elapsedMs=${elapsedMs}`,
+    `timeoutMs=${timeoutMs}`,
+  ];
 
   if (code) {
     detailParts.push(`code=${code}`);
@@ -173,7 +250,68 @@ function buildRequestErrorDetails(params: {
     elapsedMs,
     timeoutMs,
     url,
+    transport,
   } satisfies RuliwebMarketFlyerErrorDetails;
+}
+
+async function requestBoardWithAxios(timeoutMs: number) {
+  const response = await axios.get<string>(RULIWEB_MARKET_BOARD_URL, {
+    responseType: "text",
+    timeout: timeoutMs,
+    headers: {
+      "user-agent": RULIWEB_MARKET_BOARD_USER_AGENT,
+      accept: "text/html,application/xhtml+xml",
+      "accept-language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7",
+    },
+  });
+
+  return response.data;
+}
+
+async function requestBoardWithFetch(timeoutMs: number) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => {
+    controller.abort();
+  }, timeoutMs);
+
+  try {
+    const response = await fetch(RULIWEB_MARKET_BOARD_URL, {
+      method: "GET",
+      cache: "no-store",
+      signal: controller.signal,
+      headers: {
+        "user-agent": RULIWEB_MARKET_BOARD_USER_AGENT,
+        accept: "text/html,application/xhtml+xml",
+        "accept-language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7",
+      },
+    });
+
+    if (!response.ok) {
+      const error = new Error(`Fetch failed with status ${response.status}`) as Error & {
+        code?: string;
+        statusCode?: number;
+      };
+      error.code = `HTTP_${response.status}`;
+      error.statusCode = response.status;
+      throw error;
+    }
+
+    return await response.text();
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") {
+      const timeoutError = new Error(
+        `fetch timeout after ${timeoutMs}ms`
+      ) as Error & {
+        code?: string;
+      };
+      timeoutError.code = "FETCH_ABORT_TIMEOUT";
+      throw timeoutError;
+    }
+
+    throw error;
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }
 
 async function fetchRuliwebMarketBoardHtml() {
@@ -181,46 +319,60 @@ async function fetchRuliwebMarketBoardHtml() {
   const maxAttempts = getRequestMaxAttempts();
   const retryDelayMs = getRetryDelayMs();
   const startedAt = Date.now();
+  let totalAttempts = 0;
 
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    totalAttempts += 1;
     try {
-      const response = await axios.get<string>(RULIWEB_MARKET_BOARD_URL, {
-        responseType: "text",
-        timeout: timeoutMs,
-        headers: {
-          "user-agent": RULIWEB_MARKET_BOARD_USER_AGENT,
-          accept: "text/html,application/xhtml+xml",
-          "accept-language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7",
-        },
-      });
-
-      return response.data;
+      return await requestBoardWithAxios(timeoutMs);
     } catch (error) {
       const isLastAttempt = attempt >= maxAttempts;
-      if (!shouldRetryRequest(error) || isLastAttempt) {
+      if (!shouldRetryRequest(error)) {
         throw new RuliwebMarketFlyerRequestError(
           buildRequestErrorDetails({
             error,
-            attempts: attempt,
+            attempts: totalAttempts,
             elapsedMs: Date.now() - startedAt,
             timeoutMs,
             url: RULIWEB_MARKET_BOARD_URL,
+            transport: "axios",
           }),
           error
         );
       }
 
-      await wait(retryDelayMs * attempt);
+      if (!isLastAttempt) {
+        await wait(retryDelayMs * attempt);
+        continue;
+      }
     }
+  }
+
+  try {
+    totalAttempts += 1;
+    return await requestBoardWithFetch(timeoutMs);
+  } catch (error) {
+    throw new RuliwebMarketFlyerRequestError(
+      buildRequestErrorDetails({
+        error,
+        attempts: totalAttempts,
+        elapsedMs: Date.now() - startedAt,
+        timeoutMs,
+        url: RULIWEB_MARKET_BOARD_URL,
+        transport: "fetch",
+      }),
+      error
+    );
   }
 
   throw new RuliwebMarketFlyerRequestError(
     {
-      error: `Request exhausted without response (attempts=${maxAttempts}, timeoutMs=${timeoutMs})`,
-      attempts: maxAttempts,
+      error: `Request exhausted without response (attempts=${totalAttempts}, timeoutMs=${timeoutMs})`,
+      attempts: totalAttempts,
       elapsedMs: Date.now() - startedAt,
       timeoutMs,
       url: RULIWEB_MARKET_BOARD_URL,
+      transport: "unknown",
     },
     null
   );

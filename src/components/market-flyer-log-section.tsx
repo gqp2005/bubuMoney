@@ -36,6 +36,14 @@ function getStatusClassName(status: AutomationLogSnapshot["status"]) {
 }
 
 function buildDetailSummary(log: AutomationLogSnapshot) {
+  if (log.status === "error") {
+    if (log.action === "collect") {
+      return "수집 실패로 집계 정보가 없습니다.";
+    }
+
+    return "정리 실패로 집계 정보가 없습니다.";
+  }
+
   if (log.action === "collect") {
     return `탐색 ${log.details?.crawled ?? 0}건 · 등록 ${log.details?.inserted ?? 0}건 · 중복/스킵 ${log.details?.skipped ?? 0}건`;
   }
@@ -61,6 +69,10 @@ function formatDurationMs(value: number | null | undefined) {
 
 function buildErrorMetaSummary(log: AutomationLogSnapshot) {
   const parts: string[] = [];
+
+  if (log.details?.transport) {
+    parts.push(`transport ${log.details.transport}`);
+  }
 
   if (log.details?.code) {
     parts.push(`code ${log.details.code}`);
@@ -178,7 +190,9 @@ export default function MarketFlyerLogSection({
                 <p className="mt-2 text-sm font-medium text-[var(--text)]">{log.summary}</p>
                 <p className="mt-1 text-xs text-[color:rgba(45,38,34,0.6)]">
                   {buildDetailSummary(log)}
-                  {log.details?.monthKey ? ` · 대상 월 ${log.details.monthKey}` : ""}
+                  {log.status !== "error" && log.details?.monthKey
+                    ? ` · 대상 월 ${log.details.monthKey}`
+                    : ""}
                 </p>
                 {log.details?.titles && log.details.titles.length > 0 ? (
                   <div className="mt-2 rounded-xl border border-[var(--border)] bg-white px-3 py-3">

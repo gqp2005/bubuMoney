@@ -169,6 +169,7 @@ export async function GET(request: NextRequest) {
           elapsedMs: requestErrorDetails?.elapsedMs ?? null,
           timeoutMs: requestErrorDetails?.timeoutMs ?? null,
           url: requestErrorDetails?.url ?? null,
+          transport: requestErrorDetails?.transport ?? null,
         },
       },
     });
