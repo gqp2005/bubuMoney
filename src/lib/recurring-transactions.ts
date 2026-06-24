@@ -158,7 +158,7 @@ export async function createRecurringTransactionRule(params: {
   return addDoc(recurringTransactionRulesCol(householdId), {
     ...stripUndefinedValues(rest),
     startDate: Timestamp.fromDate(startDate),
-    endDate: endDate ? Timestamp.fromDate(endDate) : undefined,
+    ...(endDate ? { endDate: Timestamp.fromDate(endDate) } : {}),
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   });
