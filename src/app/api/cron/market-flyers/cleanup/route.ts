@@ -1,6 +1,10 @@
 import type { NextRequest } from "next/server";
 import { getAdminDb } from "@/lib/firebase/admin";
-import { safeWriteAutomationLog } from "@/lib/server/automation-logs";
+import {
+  AUTOMATION_LOG_RETENTION_DAYS,
+  deleteExpiredAutomationLogs,
+  safeWriteAutomationLog,
+} from "@/lib/server/automation-logs";
 import {
   purgeExpiredRuliwebMemoEntries,
   RULIWEB_MEMO_CREATED_BY,
@@ -60,6 +64,10 @@ export async function GET(request: NextRequest) {
       householdId,
       updatedBy: RULIWEB_MEMO_CREATED_BY,
     });
+    const logCleanupResult = await deleteExpiredAutomationLogs({
+      db,
+      householdId,
+    });
 
     await safeWriteAutomationLog({
       db,
@@ -67,15 +75,19 @@ export async function GET(request: NextRequest) {
       payload: {
         source: "ruliweb-market-flyers",
         action: "cleanup",
-        status: result.removedEntries > 0 ? "success" : "noop",
+        status:
+          result.removedEntries > 0 || logCleanupResult.deletedCount > 0
+            ? "success"
+            : "noop",
         summary:
-          result.removedEntries > 0
-            ? `만료된 루리웹 전단 메모 ${result.removedEntries}건을 정리했습니다.`
-            : "정리할 만료 루리웹 전단 메모가 없었습니다.",
+          result.removedEntries > 0 || logCleanupResult.deletedCount > 0
+            ? `만료된 루리웹 전단 메모 ${result.removedEntries}건, ${AUTOMATION_LOG_RETENTION_DAYS}일 지난 자동화 로그 ${logCleanupResult.deletedCount}건을 정리했습니다.`
+            : "정리할 만료 루리웹 전단 메모와 자동화 로그가 없었습니다.",
         details: {
           scannedDocuments: result.scannedDocuments,
           touchedDocuments: result.touchedDocuments,
           removedEntries: result.removedEntries,
+          removedAutomationLogs: logCleanupResult.deletedCount,
         },
       },
     });
@@ -86,6 +98,7 @@ export async function GET(request: NextRequest) {
       scannedDocuments: result.scannedDocuments,
       touchedDocuments: result.touchedDocuments,
       removedEntries: result.removedEntries,
+      removedAutomationLogs: logCleanupResult.deletedCount,
     });
   } catch (error) {
     console.error("[cron/market-flyers/cleanup] cleanup failed", error);
@@ -97,7 +110,7 @@ export async function GET(request: NextRequest) {
         source: "ruliweb-market-flyers",
         action: "cleanup",
         status: "error",
-        summary: "루리웹 전단 메모 정리 중 오류가 발생했습니다.",
+        summary: "루리웹 전단 메모와 자동화 로그 정리 중 오류가 발생했습니다.",
         details: {
           error: error instanceof Error ? error.message : "unknown error",
         },
@@ -105,7 +118,7 @@ export async function GET(request: NextRequest) {
     });
     return Response.json(
       {
-        error: "Failed to purge expired Ruliweb memo entries.",
+        error: "Failed to purge expired Ruliweb memo entries and automation logs.",
       },
       { status: 500 }
     );

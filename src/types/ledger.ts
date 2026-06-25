@@ -187,6 +187,7 @@ export interface AutomationLog {
     scannedDocuments?: number;
     touchedDocuments?: number;
     removedEntries?: number;
+    removedAutomationLogs?: number;
     monthKey?: string | null;
     titles?: string[];
     error?: string | null;
@@ -199,4 +200,5 @@ export interface AutomationLog {
     transport?: string | null;
   };
   createdAt: Timestamp;
+  expiresAt?: Timestamp;
 }
