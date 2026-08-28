@@ -14,6 +14,9 @@ import {
 import { toMonthKey } from "@/lib/time";
 
 export const runtime = "nodejs";
+// Ruliweb is hosted in South Korea and connections from Vercel's default US
+// region can time out before an HTTP response is established.
+export const preferredRegion = "icn1";
 export const dynamic = "force-dynamic";
 
 function requireCronSecret(request: NextRequest) {
@@ -62,6 +65,7 @@ export async function GET(request: NextRequest) {
 
   const now = new Date();
   const db = getAdminDb();
+  const region = process.env.VERCEL_REGION?.trim() || "local";
 
   try {
     const posts = await crawlTodayLargeMartFlyers(now);
@@ -79,12 +83,14 @@ export async function GET(request: NextRequest) {
             matched: 0,
             inserted: 0,
             skipped: 0,
+            region,
           },
         },
       });
 
       return Response.json({
         householdId,
+        region,
         checkedAt: now.toISOString(),
         crawled: 0,
         matched: 0,
@@ -136,12 +142,14 @@ export async function GET(request: NextRequest) {
           skipped: result.skippedCount,
           monthKey,
           titles: insertedTitles,
+          region,
         },
       },
     });
 
     return Response.json({
       householdId,
+      region,
       checkedAt: now.toISOString(),
       crawled: posts.length,
       matched: posts.length,
@@ -170,6 +178,7 @@ export async function GET(request: NextRequest) {
           timeoutMs: requestErrorDetails?.timeoutMs ?? null,
           url: requestErrorDetails?.url ?? null,
           transport: requestErrorDetails?.transport ?? null,
+          region,
         },
       },
     });

@@ -70,6 +70,10 @@ function formatDurationMs(value: number | null | undefined) {
 function buildErrorMetaSummary(log: AutomationLogSnapshot) {
   const parts: string[] = [];
 
+  if (log.details?.region) {
+    parts.push(`region ${log.details.region}`);
+  }
+
   if (log.details?.transport) {
     parts.push(`transport ${log.details.transport}`);
   }

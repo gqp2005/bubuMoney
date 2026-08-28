@@ -36,6 +36,7 @@ type AutomationLogPayload = {
     timeoutMs?: number | null;
     url?: string | null;
     transport?: string | null;
+    region?: string | null;
   };
 };
 

@@ -198,6 +198,7 @@ export interface AutomationLog {
     timeoutMs?: number | null;
     url?: string | null;
     transport?: string | null;
+    region?: string | null;
   };
   createdAt: Timestamp;
   expiresAt?: Timestamp;
