@@ -3,6 +3,13 @@ name: Vercel Deploy
 on:
   push:
     branches: ["main"]
+  workflow_dispatch:
+    inputs:
+      run_market_flyer_smoke:
+        description: "Run the authenticated market flyer cron after deploy"
+        required: true
+        default: true
+        type: boolean
 
 jobs:
   deploy:
@@ -48,3 +55,35 @@ jobs:
         run: vercel build --prod --token ${{ secrets.VERCEL_TOKEN }}
       - name: Deploy
         run: vercel deploy --prebuilt --prod --token ${{ secrets.VERCEL_TOKEN }}
+      - name: Smoke Test Market Flyer Cron
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_market_flyer_smoke }}
+        shell: bash
+        env:
+          MARKET_FLYER_CRON_URL: https://bubumoney.vercel.app/api/cron/market-flyers
+        run: |
+          node --env-file=.env.local --input-type=module <<'NODE'
+          const secret = process.env.CRON_SECRET?.trim();
+          if (!secret) {
+            throw new Error("CRON_SECRET is missing from the pulled production environment");
+          }
+
+          const response = await fetch(process.env.MARKET_FLYER_CRON_URL, {
+            headers: { authorization: `Bearer ${secret}` },
+          });
+          const payload = await response.json().catch(() => null);
+          console.log(JSON.stringify({
+            status: response.status,
+            region: payload?.region ?? null,
+            crawled: payload?.crawled ?? null,
+            inserted: payload?.inserted ?? null,
+            skipped: payload?.skipped ?? null,
+            transport: payload?.transport ?? null,
+            attempts: payload?.attempts ?? null,
+            elapsedMs: payload?.elapsedMs ?? null,
+            error: payload?.error ?? null,
+          }));
+
+          if (!response.ok) {
+            throw new Error(`Market flyer cron smoke test failed with HTTP ${response.status}`);
+          }
+          NODE
