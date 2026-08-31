@@ -14,8 +14,8 @@ import {
 import { toMonthKey } from "@/lib/time";
 
 export const runtime = "nodejs";
-// Ruliweb is hosted in South Korea and connections from Vercel's default US
-// region can time out before an HTTP response is established.
+// Keep Firestore and the Korean source close to the function. The crawler uses
+// a separate reader host because Ruliweb drops direct connections from Vercel.
 export const preferredRegion = "icn1";
 export const dynamic = "force-dynamic";
 
@@ -68,7 +68,8 @@ export async function GET(request: NextRequest) {
   const region = process.env.VERCEL_REGION?.trim() || "local";
 
   try {
-    const posts = await crawlTodayLargeMartFlyers(now);
+    const crawlResult = await crawlTodayLargeMartFlyers(now);
+    const { posts, request: crawlRequest } = crawlResult;
     if (posts.length === 0) {
       await safeWriteAutomationLog({
         db,
@@ -84,6 +85,10 @@ export async function GET(request: NextRequest) {
             inserted: 0,
             skipped: 0,
             region,
+            attempts: crawlRequest.attempts,
+            elapsedMs: crawlRequest.elapsedMs,
+            url: crawlRequest.url,
+            transport: crawlRequest.transport,
           },
         },
       });
@@ -96,6 +101,9 @@ export async function GET(request: NextRequest) {
         matched: 0,
         inserted: 0,
         skipped: 0,
+        transport: crawlRequest.transport,
+        attempts: crawlRequest.attempts,
+        elapsedMs: crawlRequest.elapsedMs,
       });
     }
 
@@ -143,6 +151,10 @@ export async function GET(request: NextRequest) {
           monthKey,
           titles: insertedTitles,
           region,
+          attempts: crawlRequest.attempts,
+          elapsedMs: crawlRequest.elapsedMs,
+          url: crawlRequest.url,
+          transport: crawlRequest.transport,
         },
       },
     });
@@ -156,6 +168,9 @@ export async function GET(request: NextRequest) {
       inserted: result.insertedCount,
       skipped: result.skippedCount,
       monthKey,
+      transport: crawlRequest.transport,
+      attempts: crawlRequest.attempts,
+      elapsedMs: crawlRequest.elapsedMs,
     });
   } catch (error) {
     const requestErrorDetails = getRuliwebMarketFlyerErrorDetails(error);

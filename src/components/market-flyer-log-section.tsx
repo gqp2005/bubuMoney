@@ -67,7 +67,7 @@ function formatDurationMs(value: number | null | undefined) {
   return `${value}ms`;
 }
 
-function buildErrorMetaSummary(log: AutomationLogSnapshot) {
+function buildRequestMetaSummary(log: AutomationLogSnapshot) {
   const parts: string[] = [];
 
   if (log.details?.region) {
@@ -167,7 +167,7 @@ export default function MarketFlyerLogSection({
       {logs.length > 0 ? (
         <div className="mt-4 space-y-3">
           {logs.map((log) => {
-            const errorMetaSummary = buildErrorMetaSummary(log);
+            const requestMetaSummary = buildRequestMetaSummary(log);
 
             return (
               <div
@@ -198,6 +198,13 @@ export default function MarketFlyerLogSection({
                     ? ` · 대상 월 ${log.details.monthKey}`
                     : ""}
                 </p>
+                {log.action === "collect" &&
+                log.status !== "error" &&
+                requestMetaSummary ? (
+                  <p className="mt-1 text-[11px] text-[color:rgba(45,38,34,0.5)]">
+                    {requestMetaSummary}
+                  </p>
+                ) : null}
                 {log.details?.titles && log.details.titles.length > 0 ? (
                   <div className="mt-2 rounded-xl border border-[var(--border)] bg-white px-3 py-3">
                     <p className="text-[11px] font-medium text-[color:rgba(45,38,34,0.75)]">
@@ -213,9 +220,9 @@ export default function MarketFlyerLogSection({
                 {log.details?.error ? (
                   <div className="mt-2 rounded-xl border border-red-100 bg-red-50 px-3 py-3">
                     <p className="text-xs text-red-600">오류: {log.details.error}</p>
-                    {errorMetaSummary ? (
+                    {requestMetaSummary ? (
                       <p className="mt-1 text-[11px] text-[color:rgba(185,28,28,0.85)]">
-                        {errorMetaSummary}
+                        {requestMetaSummary}
                       </p>
                     ) : null}
                     {log.details.url ? (

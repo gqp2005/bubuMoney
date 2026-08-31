@@ -1,14 +1,17 @@
 import "server-only";
 
 import axios from "axios";
-import * as cheerio from "cheerio";
-import type { Element } from "domhandler";
-import { isSameSeoulDate, parseRuliwebBoardDateLabel } from "@/lib/server/ruliweb-market-flyers-date";
+import { isSameSeoulDate } from "@/lib/server/ruliweb-market-flyers-date";
 import {
-  RULIWEB_MARKET_BOARD_SELECTORS,
+  parseRuliwebReaderRssMarkdown,
+  parseRuliwebRssXml,
+} from "@/lib/server/ruliweb-market-flyers-rss";
+import {
   RULIWEB_MARKET_BOARD_URL,
   RULIWEB_MARKET_BOARD_USER_AGENT,
   RULIWEB_MARKET_FLYER_KEYWORDS,
+  RULIWEB_MARKET_RSS_READER_URL,
+  RULIWEB_MARKET_RSS_URL,
 } from "@/lib/server/ruliweb-market-flyers-selectors";
 import { RULIWEB_SOURCE_KEY_PREFIX } from "@/lib/server/admin-memos";
 
@@ -30,6 +33,16 @@ export type RuliwebMarketFlyerErrorDetails = {
   timeoutMs: number;
   url: string;
   transport?: string | null;
+};
+
+export type RuliwebMarketFlyerCrawlResult = {
+  posts: RuliwebMarketFlyerPost[];
+  request: {
+    attempts: number;
+    elapsedMs: number;
+    url: string;
+    transport: "jina-reader-rss" | "direct-rss";
+  };
 };
 
 const DEFAULT_REQUEST_TIMEOUT_MS = 25000;
@@ -132,10 +145,6 @@ class RuliwebMarketFlyerRequestError extends Error {
     this.details = details;
     (this as Error & { cause?: unknown }).cause = cause;
   }
-}
-
-function normalizeWhitespace(value: string) {
-  return value.replace(/\s+/g, " ").trim();
 }
 
 function toAbsoluteRuliwebUrl(value: string) {
@@ -254,171 +263,168 @@ function buildRequestErrorDetails(params: {
   } satisfies RuliwebMarketFlyerErrorDetails;
 }
 
-async function requestBoardWithAxios(timeoutMs: number) {
-  const response = await axios.get<string>(RULIWEB_MARKET_BOARD_URL, {
+type JinaReaderResponse = {
+  code?: number;
+  data?: {
+    content?: string;
+    httpStatus?: number;
+    httpStatusText?: string;
+  };
+};
+
+type RuliwebMarketFeedResult = {
+  items: ReturnType<typeof parseRuliwebRssXml>;
+  attempts: number;
+  elapsedMs: number;
+  url: string;
+  transport: "jina-reader-rss" | "direct-rss";
+};
+
+function createFeedError(message: string, code: string, statusCode?: number) {
+  const error = new Error(message) as Error & {
+    code?: string;
+    statusCode?: number;
+  };
+  error.code = code;
+  error.statusCode = statusCode;
+  return error;
+}
+
+async function requestRssWithJinaReader(timeoutMs: number) {
+  const response = await axios.get<JinaReaderResponse>(
+    RULIWEB_MARKET_RSS_READER_URL,
+    {
+      responseType: "json",
+      timeout: timeoutMs,
+      headers: {
+        "user-agent": RULIWEB_MARKET_BOARD_USER_AGENT,
+        accept: "application/json",
+        "x-timeout": String(Math.max(1, Math.ceil(timeoutMs / 1000))),
+        "x-token-budget": "10000",
+        "x-no-cache": "true",
+      },
+    }
+  );
+  const readerData = response.data?.data;
+  if (
+    response.data?.code !== 200 ||
+    readerData?.httpStatus !== 200 ||
+    !readerData.content
+  ) {
+    throw createFeedError(
+      `Jina Reader returned an invalid RSS response (${readerData?.httpStatusText || "unknown status"})`,
+      "JINA_READER_INVALID_RESPONSE",
+      readerData?.httpStatus
+    );
+  }
+
+  const items = parseRuliwebReaderRssMarkdown(readerData.content);
+  if (items.length === 0) {
+    throw createFeedError(
+      "Jina Reader RSS response contained no parseable items",
+      "JINA_READER_RSS_PARSE_EMPTY"
+    );
+  }
+
+  return items;
+}
+
+async function requestRssDirectly(timeoutMs: number) {
+  const response = await axios.get<string>(RULIWEB_MARKET_RSS_URL, {
     responseType: "text",
     timeout: timeoutMs,
     headers: {
       "user-agent": RULIWEB_MARKET_BOARD_USER_AGENT,
-      accept: "text/html,application/xhtml+xml",
+      accept: "application/rss+xml,application/xml,text/xml",
       "accept-language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7",
     },
   });
-
-  return response.data;
-}
-
-async function requestBoardWithFetch(timeoutMs: number) {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => {
-    controller.abort();
-  }, timeoutMs);
-
-  try {
-    const response = await fetch(RULIWEB_MARKET_BOARD_URL, {
-      method: "GET",
-      cache: "no-store",
-      signal: controller.signal,
-      headers: {
-        "user-agent": RULIWEB_MARKET_BOARD_USER_AGENT,
-        accept: "text/html,application/xhtml+xml",
-        "accept-language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7",
-      },
-    });
-
-    if (!response.ok) {
-      const error = new Error(`Fetch failed with status ${response.status}`) as Error & {
-        code?: string;
-        statusCode?: number;
-      };
-      error.code = `HTTP_${response.status}`;
-      error.statusCode = response.status;
-      throw error;
-    }
-
-    return await response.text();
-  } catch (error) {
-    if (error instanceof Error && error.name === "AbortError") {
-      const timeoutError = new Error(
-        `fetch timeout after ${timeoutMs}ms`
-      ) as Error & {
-        code?: string;
-      };
-      timeoutError.code = "FETCH_ABORT_TIMEOUT";
-      throw timeoutError;
-    }
-
-    throw error;
-  } finally {
-    clearTimeout(timeoutId);
+  const items = parseRuliwebRssXml(response.data);
+  if (items.length === 0) {
+    throw createFeedError(
+      "Direct Ruliweb RSS response contained no parseable items",
+      "DIRECT_RSS_PARSE_EMPTY"
+    );
   }
+
+  return items;
 }
 
-async function fetchRuliwebMarketBoardHtml() {
+async function fetchRuliwebMarketFeed(): Promise<RuliwebMarketFeedResult> {
   const timeoutMs = getRequestTimeoutMs();
   const maxAttempts = getRequestMaxAttempts();
   const retryDelayMs = getRetryDelayMs();
   const startedAt = Date.now();
   let totalAttempts = 0;
+  let readerError: unknown = null;
 
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     totalAttempts += 1;
     try {
-      return await requestBoardWithAxios(timeoutMs);
+      const items = await requestRssWithJinaReader(timeoutMs);
+      return {
+        items,
+        attempts: totalAttempts,
+        elapsedMs: Date.now() - startedAt,
+        url: RULIWEB_MARKET_RSS_READER_URL,
+        transport: "jina-reader-rss",
+      };
     } catch (error) {
+      readerError = error;
       const isLastAttempt = attempt >= maxAttempts;
-      if (!shouldRetryRequest(error)) {
-        throw new RuliwebMarketFlyerRequestError(
-          buildRequestErrorDetails({
-            error,
-            attempts: totalAttempts,
-            elapsedMs: Date.now() - startedAt,
-            timeoutMs,
-            url: RULIWEB_MARKET_BOARD_URL,
-            transport: "axios",
-          }),
-          error
-        );
-      }
-
-      if (!isLastAttempt) {
+      if (shouldRetryRequest(error) && !isLastAttempt) {
         await wait(retryDelayMs * attempt);
         continue;
       }
+      break;
     }
   }
 
   try {
     totalAttempts += 1;
-    return await requestBoardWithFetch(timeoutMs);
+    const items = await requestRssDirectly(timeoutMs);
+    return {
+      items,
+      attempts: totalAttempts,
+      elapsedMs: Date.now() - startedAt,
+      url: RULIWEB_MARKET_RSS_URL,
+      transport: "direct-rss",
+    };
   } catch (error) {
-    throw new RuliwebMarketFlyerRequestError(
-      buildRequestErrorDetails({
-        error,
-        attempts: totalAttempts,
-        elapsedMs: Date.now() - startedAt,
-        timeoutMs,
-        url: RULIWEB_MARKET_BOARD_URL,
-        transport: "fetch",
-      }),
-      error
-    );
-  }
-
-  throw new RuliwebMarketFlyerRequestError(
-    {
-      error: `Request exhausted without response (attempts=${totalAttempts}, timeoutMs=${timeoutMs})`,
+    const details = buildRequestErrorDetails({
+      error,
       attempts: totalAttempts,
       elapsedMs: Date.now() - startedAt,
       timeoutMs,
-      url: RULIWEB_MARKET_BOARD_URL,
-      transport: "unknown",
-    },
-    null
-  );
-}
-
-function extractRowTitle($row: cheerio.Cheerio<Element>) {
-  const $link = $row.find(RULIWEB_MARKET_BOARD_SELECTORS.titleLink).first();
-  if ($link.length === 0) {
-    return "";
+      url: RULIWEB_MARKET_RSS_URL,
+      transport: "jina-reader-rss -> direct-rss",
+    });
+    details.error = `Reader RSS failed: ${extractErrorMessage(readerError)}; direct RSS fallback failed: ${details.error}`;
+    throw new RuliwebMarketFlyerRequestError(
+      details,
+      error
+    );
   }
-
-  const $clone = $link.clone();
-  $clone.find(RULIWEB_MARKET_BOARD_SELECTORS.replyCount).remove();
-  $clone.find(RULIWEB_MARKET_BOARD_SELECTORS.inlineIcons).remove();
-  return normalizeWhitespace($clone.text());
 }
 
-export async function crawlTodayLargeMartFlyers(now = new Date()) {
-  const html = await fetchRuliwebMarketBoardHtml();
-  const $ = cheerio.load(html);
+export async function crawlTodayLargeMartFlyers(
+  now = new Date()
+): Promise<RuliwebMarketFlyerCrawlResult> {
+  const feed = await fetchRuliwebMarketFeed();
   const seenSourceKeys = new Set<string>();
   const posts: RuliwebMarketFlyerPost[] = [];
 
-  $(RULIWEB_MARKET_BOARD_SELECTORS.row).each((_, element) => {
-    const $row = $(element);
-    const title = extractRowTitle($row);
-    const href = $row.find(RULIWEB_MARKET_BOARD_SELECTORS.titleLink).first().attr("href")?.trim();
-    const timeLabel = normalizeWhitespace(
-      $row.find(RULIWEB_MARKET_BOARD_SELECTORS.timeCell).first().text()
-    );
-
-    if (!title || !href || !timeLabel) {
+  feed.items.forEach((item) => {
+    if (!isSameSeoulDate(item.publishedAt, now)) {
       return;
     }
 
-    const publishedAt = parseRuliwebBoardDateLabel(timeLabel, now);
-    if (!publishedAt || !isSameSeoulDate(publishedAt, now)) {
-      return;
-    }
-
-    const matchedKeywords = getMatchedFlyerKeywords(title);
+    const matchedKeywords = getMatchedFlyerKeywords(item.title);
     if (matchedKeywords.length < 2) {
       return;
     }
 
-    const linkUrl = toAbsoluteRuliwebUrl(href);
+    const linkUrl = toAbsoluteRuliwebUrl(item.linkUrl);
     const sourceKey = buildRuliwebSourceKey(linkUrl);
     if (seenSourceKeys.has(sourceKey)) {
       return;
@@ -426,14 +432,22 @@ export async function crawlTodayLargeMartFlyers(now = new Date()) {
 
     seenSourceKeys.add(sourceKey);
     posts.push({
-      title,
+      title: item.title,
       linkUrl,
       sourceKey,
-      publishedAt,
+      publishedAt: item.publishedAt,
       matchedKeywords,
-      timeLabel,
+      timeLabel: item.timeLabel,
     });
   });
 
-  return posts;
+  return {
+    posts,
+    request: {
+      attempts: feed.attempts,
+      elapsedMs: feed.elapsedMs,
+      url: feed.url,
+      transport: feed.transport,
+    },
+  };
 }

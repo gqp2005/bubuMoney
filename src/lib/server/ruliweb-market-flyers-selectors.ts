@@ -1,6 +1,9 @@
 import "server-only";
 
 export const RULIWEB_MARKET_BOARD_URL = "https://bbs.ruliweb.com/market/board/1020";
+export const RULIWEB_MARKET_RSS_URL = `${RULIWEB_MARKET_BOARD_URL}/rss`;
+export const RULIWEB_MARKET_RSS_READER_URL =
+  `https://r.jina.ai/${RULIWEB_MARKET_RSS_URL}`;
 export const RULIWEB_MARKET_BOARD_USER_AGENT =
   "couple-ledger-ruliweb-bot/2.0 (+https://bbs.ruliweb.com/market/board/1020)";
 
