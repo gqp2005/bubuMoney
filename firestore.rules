@@ -16,12 +16,15 @@ service cloud.firestore {
 
     match /households/{householdId} {
       allow read: if isMember(householdId);
-      allow create: if isSignedIn();
+      // 가계부 생성은 서버(/api/signup, /api/households)만 한다.
+      allow create: if false;
       allow update, delete: if isMember(householdId);
 
       match /members/{uid} {
         allow read: if isMember(householdId);
-        allow create: if request.auth.uid == uid;
+        // 멤버 등록(가계부 생성 시 소유자, 초대 참여)은 전부 서버가
+        // Admin SDK로 처리한다. 클라이언트는 어떤 경우에도 멤버를 만들 수 없다.
+        allow create: if false;
         allow update: if request.auth.uid == uid;
         allow delete: if false;
       }
@@ -102,6 +105,13 @@ service cloud.firestore {
         allow create, update, delete: if isMember(householdId);
       }
 
+      // 운영(couple-ldger)에 콘솔로 직접 추가돼 있던 규칙을 리포지토리로 옮겼다.
+      // 설정 화면의 전단지 자동화 로그가 이 컬렉션을 읽는다.
+      match /automationLogs/{logId} {
+        allow read: if isMember(householdId);
+        allow create, update, delete: if isMember(householdId);
+      }
+
       match /invites/{inviteId} {
         allow read: if isMember(householdId);
         allow create: if isMember(householdId);
@@ -110,11 +120,15 @@ service cloud.firestore {
       }
     }
 
+    // 초대코드 문서에는 householdId가 들어 있다. 코드를 조회해 householdId를
+    // 얻는 경로를 아예 막기 위해, 클라이언트 읽기는 허용하지 않는다.
+    // 초대 수락은 서버(/api/signup, /api/invites/accept)가 Admin SDK로 처리한다.
     match /publicInvites/{code} {
-      allow read: if resource.data.usedBy == null
-        && resource.data.expiresAt > request.time;
+      allow read: if false;
       allow create: if isMember(request.resource.data.householdId);
-      allow update: if isMember(resource.data.householdId);
+      // 수락 시 usedBy 기록도 서버가 한다. 클라이언트에는 발급한 코드를
+      // 취소(삭제)할 권한만 남긴다.
+      allow update: if false;
       allow delete: if isMember(resource.data.householdId);
     }
   }

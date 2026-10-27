@@ -5,9 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useAuth } from "@/components/auth-provider";
 import { useHousehold } from "@/components/household-provider";
-import { acceptInvite, findInviteByCode, joinHousehold } from "@/lib/household";
-import { setUserHousehold } from "@/lib/firebase/user";
-import { addNotification } from "@/lib/notifications";
+import { acceptInviteByCode } from "@/lib/household";
 
 export default function InvitePage() {
   const router = useRouter();
@@ -34,58 +32,19 @@ export default function InvitePage() {
       return;
     }
     try {
-      let invite = null;
-      try {
-        invite = await findInviteByCode(code);
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        setError(`초대코드 조회 실패: ${message}`);
-        return;
-      }
-      if (!invite) {
-        setError("유효하지 않은 초대코드입니다. (존재하지 않거나 만료됨)");
-        return;
-      }
+      // 아직 계정이 없으면 코드만 들고 회원가입으로 보낸다.
+      // 코드 검증과 참여는 서버(/api/signup)가 계정 생성 전에 처리한다.
       if (!user) {
-        const params = new URLSearchParams({
-          invite: code,
-          partnerName: invite.partnerDisplayName ?? "",
-          inviterRole: invite.inviterRole ?? "",
-        });
+        const params = new URLSearchParams({ invite: code });
         router.replace(`/signup?${params.toString()}`);
         return;
       }
-      try {
-        await joinHousehold(invite.householdId, user.uid, invite.createdBy);
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        setError(`가계부 참여 실패: ${message}`);
-        return;
-      }
-      try {
-        await acceptInvite(invite.inviteId, invite.householdId, user.uid);
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        setError(`초대코드 확정 실패: ${message}`);
-        return;
-      }
-      try {
-        await setUserHousehold(user.uid, invite.householdId);
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        setError(`유저 연결 실패: ${message}`);
-        return;
-      }
-      await addNotification(invite.householdId, {
-        title: "초대 참여 완료",
-        message: "초대코드로 가계부에 참여했습니다.",
-        level: "success",
-        type: "invite.accepted",
-      });
+      // 참여 알림은 서버가 같은 트랜잭션에서 남긴다.
+      await acceptInviteByCode({ user, code });
       router.replace("/dashboard");
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      setError(`초대코드 처리 중 오류: ${message}`);
+      setError(message);
     } finally {
       setLoading(false);
     }
@@ -124,7 +83,8 @@ export default function InvitePage() {
       ) : null}
       {!user ? (
         <p className="text-center text-sm text-[color:rgba(45,38,34,0.7)]">
-          초대코드를 확인한 뒤 회원가입으로 이동합니다.
+          계정이 없다면 회원가입 화면으로 이동합니다. 초대코드 확인은 가입
+          직후에 진행됩니다.
         </p>
       ) : null}
       <div className="text-center text-sm">

@@ -6,15 +6,13 @@ import {
   doc,
   getDoc,
   getDocs,
-  increment,
   limit,
   query,
   serverTimestamp,
   setDoc,
-  updateDoc,
-  where,
   writeBatch,
 } from "firebase/firestore";
+import type { User as FirebaseUser } from "firebase/auth";
 import { db } from "@/lib/firebase/client";
 import {
   budgetsCol,
@@ -92,89 +90,23 @@ export async function resetHouseholdData(
   }
 }
 
-export function generateInviteCode(length = 6) {
+/**
+ * 초대코드를 만든다.
+ *
+ * 코드는 publicInvites 문서의 ID로 쓰이므로, 짧으면 추측으로 householdId가
+ * 새어나갈 수 있다. 32자 알파벳 12자리 = 약 1.2 x 10^18 가지.
+ * 난수는 Math.random() 대신 crypto를 쓴다.
+ */
+export function generateInviteCode(length = 12) {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  const bytes = new Uint8Array(length);
+  crypto.getRandomValues(bytes);
   let code = "";
   for (let i = 0; i < length; i += 1) {
-    code += chars[Math.floor(Math.random() * chars.length)];
+    // chars.length(32)가 256의 약수라 나머지 편향이 없다.
+    code += chars[bytes[i] % chars.length];
   }
   return code;
-}
-
-export async function createHousehold(
-  name: string,
-  uid: string,
-  creatorDisplayName?: string,
-  partnerDisplayName?: string,
-  creatorRole: SpouseRole = "husband"
-) {
-  const householdRef = await addDoc(collection(db, "households"), {
-    name,
-    createdAt: serverTimestamp(),
-    membersCount: 1,
-    creatorDisplayName: creatorDisplayName ?? null,
-    partnerDisplayName: partnerDisplayName ?? null,
-  });
-
-  await setDoc(doc(membersCol(householdRef.id), uid), {
-    role: "owner",
-    createdAt: serverTimestamp(),
-  });
-
-  const batch = writeBatch(db);
-  const defaultCategories = [
-    { name: "급여", type: "income", order: 1, parentId: null },
-    { name: "기타수입", type: "income", order: 2, parentId: null },
-  ];
-  defaultCategories.forEach((category) => {
-    const categoryRef = doc(categoriesCol(householdRef.id));
-    batch.set(categoryRef, category);
-  });
-
-  const cleanedCreator = creatorDisplayName?.trim();
-  const cleanedPartner = partnerDisplayName?.trim();
-  const husbandName =
-    creatorRole === "wife"
-      ? cleanedPartner || "남편"
-      : cleanedCreator || "남편";
-  const wifeName =
-    creatorRole === "wife" ? cleanedCreator || "아내" : cleanedPartner || "아내";
-  const subjectDefaults = [
-    { name: husbandName, order: 1 },
-    { name: wifeName, order: 2 },
-    { name: "우리", order: 3 },
-    { name: "시댁", order: 4 },
-    { name: "처가댁", order: 5 },
-    { name: "아기", order: 6 },
-  ];
-  subjectDefaults.forEach((subject) => {
-    const subjectRef = doc(subjectsCol(householdRef.id));
-    batch.set(subjectRef, subject);
-  });
-
-  const defaultPaymentMethods = [
-    { name: "현금", order: 1 },
-    { name: "은행", order: 2 },
-    { name: "체크카드", order: 3 },
-    { name: "신용카드", order: 4 },
-    { name: "대출", order: 5 },
-    { name: "기타", order: 6 },
-  ];
-  const owners: SpouseRole[] = ["husband", "wife"];
-  owners.forEach((owner) => {
-    defaultPaymentMethods.forEach((method) => {
-      const methodRef = doc(paymentMethodsCol(householdRef.id));
-      batch.set(methodRef, { ...method, owner, parentId: null });
-    });
-  });
-  defaultPaymentMethods.forEach((method) => {
-    const methodRef = doc(paymentMethodsCol(householdRef.id));
-    batch.set(methodRef, { ...method, owner: "our", parentId: null });
-  });
-
-  await batch.commit();
-
-  return householdRef.id;
 }
 
 export async function createInvite(householdId: string, uid: string) {
@@ -211,95 +143,112 @@ export async function createInvite(householdId: string, uid: string) {
   return { id: inviteRef.id, code, expiresAt };
 }
 
-export async function joinHousehold(
-  householdId: string,
-  uid: string,
-  invitedBy: string
-) {
-  const memberRef = doc(membersCol(householdId), uid);
-  try {
-    const existing = await getDoc(memberRef);
-    if (existing.exists()) {
-      return;
-    }
-  } catch {
-    // Non-members may not have permission to read members; continue to create.
+/**
+ * 서버 API 호출 실패. status가 0이면 응답을 받지 못한 경우(네트워크 단절 등)로,
+ * 서버에서는 처리가 끝났을 수도 있다.
+ */
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    readonly status: number
+  ) {
+    super(message);
   }
 
-  await setDoc(memberRef, {
-    role: "member",
-    invitedBy,
-    createdAt: serverTimestamp(),
-  });
-
-  try {
-    await updateDoc(householdDoc(householdId), {
-      membersCount: increment(1),
-    });
-  } catch {
-    // Non-members may not have permission to update the household doc.
+  get responseLost() {
+    return this.status === 0;
   }
 }
 
-export async function findInviteByCode(
-  code: string
-): Promise<{
-  inviteId: string;
-  householdId: string;
-  createdBy: string;
-  inviterRole?: SpouseRole | null;
-  inviterDisplayName?: string | null;
-  partnerDisplayName?: string | null;
-} | null> {
-  const snapshot = await getDoc(doc(publicInvitesCol(), code.toUpperCase()));
-  if (!snapshot.exists()) {
-    return null;
+async function postJson(
+  url: string,
+  body: Record<string, unknown>,
+  user?: FirebaseUser
+): Promise<{ householdId: string }> {
+  const headers: Record<string, string> = {
+    "content-type": "application/json",
+  };
+  if (user) {
+    headers.authorization = `Bearer ${await user.getIdToken()}`;
   }
-  const data = snapshot.data() as {
-    inviteId?: string;
+
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(body),
+    });
+  } catch {
+    throw new ApiError("서버에 연결하지 못했습니다.", 0);
+  }
+
+  const payload = (await response.json().catch(() => null)) as {
     householdId?: string;
-    createdBy?: string;
-    inviterRole?: SpouseRole | null;
-    inviterDisplayName?: string | null;
-    partnerDisplayName?: string | null;
-    usedBy?: string | null;
-    expiresAt?: Timestamp;
-  };
-  if (!data.inviteId || !data.householdId || !data.createdBy) {
-    return null;
+    error?: string;
+  } | null;
+  if (!response.ok || !payload?.householdId) {
+    throw new ApiError(
+      payload?.error ?? "요청 처리 중 오류가 발생했습니다.",
+      response.status
+    );
   }
-  if (data.usedBy) {
-    return null;
-  }
-  if (data.expiresAt && data.expiresAt.toMillis() <= Timestamp.now().toMillis()) {
-    return null;
-  }
-  return {
-    inviteId: data.inviteId,
-    householdId: data.householdId,
-    createdBy: data.createdBy,
-    inviterRole: data.inviterRole ?? null,
-    inviterDisplayName: data.inviterDisplayName ?? null,
-    partnerDisplayName: data.partnerDisplayName ?? null,
-  };
+  return { householdId: payload.householdId };
 }
 
-export async function acceptInvite(
-  inviteId: string,
-  householdId: string,
-  uid: string
-) {
-  const inviteRef = doc(invitesCol(householdId), inviteId);
-  const snapshot = await getDoc(inviteRef);
-  const data = snapshot.exists()
-    ? (snapshot.data() as { code?: string })
-    : {};
-  await updateDoc(inviteRef, {
-    usedBy: uid,
-  });
-  if (data.code) {
-    await updateDoc(doc(publicInvitesCol(), data.code), {
-      usedBy: uid,
-    });
-  }
+/**
+ * 회원가입. 계정 생성과 가계부 참여(또는 생성)를 서버가 한 번에 처리한다.
+ * 성공한 뒤에 클라이언트가 같은 이메일·비밀번호로 로그인한다.
+ */
+export async function requestSignup(params: {
+  email: string;
+  password: string;
+  nickname: string;
+  spouseRole: SpouseRole;
+  inviteCode?: string;
+}) {
+  return postJson("/api/signup", params);
+}
+
+/**
+ * 이미 로그인한 사용자가 초대코드로 가계부에 참여한다.
+ * 멤버 등록과 초대코드 소모는 서버(/api/invites/accept)가 처리한다.
+ */
+export async function acceptInviteByCode(params: {
+  user: FirebaseUser;
+  code: string;
+  displayName?: string;
+  spouseRole?: SpouseRole;
+}): Promise<string> {
+  const { householdId } = await postJson(
+    "/api/invites/accept",
+    {
+      code: params.code,
+      displayName: params.displayName,
+      spouseRole: params.spouseRole,
+    },
+    params.user
+  );
+  return householdId;
+}
+
+/**
+ * 로그인한 사용자가 새 가계부를 만든다. 서버가 허용할 때만 성공한다.
+ */
+export async function createHouseholdViaApi(params: {
+  user: FirebaseUser;
+  name: string;
+  displayName?: string;
+  partnerDisplayName?: string;
+}): Promise<string> {
+  const { householdId } = await postJson(
+    "/api/households",
+    {
+      name: params.name,
+      displayName: params.displayName,
+      partnerDisplayName: params.partnerDisplayName,
+    },
+    params.user
+  );
+  return householdId;
 }

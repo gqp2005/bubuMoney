@@ -1,5 +1,6 @@
 {
   "projects": {
+    "default": "couple-ldger",
     "staging": "couple-ldger"
   },
   "targets": {},
