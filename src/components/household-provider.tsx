@@ -19,54 +19,65 @@ const HouseholdContext = createContext<HouseholdContextValue>({
   loading: true,
 });
 
+type Profile = {
+  householdId: string | null;
+  displayName: string | null;
+  spouseRole: "husband" | "wife" | null;
+};
+
+const EMPTY_PROFILE: Profile = {
+  householdId: null,
+  displayName: null,
+  spouseRole: null,
+};
+
 export function HouseholdProvider({ children }: { children: React.ReactNode }) {
   const { user, loading: authLoading } = useAuth();
-  const [householdId, setHouseholdId] = useState<string | null>(null);
-  const [displayName, setDisplayName] = useState<string | null>(null);
-  const [spouseRole, setSpouseRole] = useState<"husband" | "wife" | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [received, setReceived] = useState<
+    { uid: string; profile: Profile } | null
+  >(null);
+
+  const uid = user?.uid ?? null;
 
   useEffect(() => {
-    if (authLoading) {
+    if (authLoading || !uid) {
       return;
     }
-    if (!user) {
-      setHouseholdId(null);
-      setDisplayName(null);
-      setSpouseRole(null);
-      setLoading(false);
-      return;
-    }
-
-    setLoading(true);
-    const unsubscribe = onSnapshot(userDoc(user.uid), (snapshot) => {
+    const unsubscribe = onSnapshot(userDoc(uid), (snapshot) => {
       if (snapshot.exists()) {
         const data = snapshot.data() as {
           householdId?: string;
           displayName?: string | null;
           spouseRole?: "husband" | "wife" | null;
         };
-        setHouseholdId(data.householdId ?? null);
-        setDisplayName(data.displayName ?? null);
-        setSpouseRole(data.spouseRole ?? null);
+        setReceived({
+          uid,
+          profile: {
+            householdId: data.householdId ?? null,
+            displayName: data.displayName ?? null,
+            spouseRole: data.spouseRole ?? null,
+          },
+        });
       } else {
-        setHouseholdId(null);
-        setDisplayName(null);
-        setSpouseRole(null);
+        setReceived({ uid, profile: EMPTY_PROFILE });
       }
-      setLoading(false);
     });
     return () => unsubscribe();
-  }, [authLoading, user]);
+  }, [authLoading, uid]);
+
+  // 로그인 사용자가 바뀌면 이전 사용자의 프로필은 버린다.
+  const fresh = received && received.uid === uid ? received.profile : null;
+  const profile = fresh ?? EMPTY_PROFILE;
+  const loading = authLoading || (uid !== null && fresh === null);
 
   const value = useMemo(
     () => ({
-      householdId,
-      displayName,
-      spouseRole,
-      loading: authLoading || loading,
+      householdId: profile.householdId,
+      displayName: profile.displayName,
+      spouseRole: profile.spouseRole,
+      loading,
     }),
-    [authLoading, displayName, householdId, loading, spouseRole]
+    [loading, profile]
   );
 
   return (
