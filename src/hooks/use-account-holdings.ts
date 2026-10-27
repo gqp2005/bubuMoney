@@ -5,38 +5,48 @@ import { useEffect, useState } from "react";
 import { accountHoldingsCol } from "@/lib/firebase/firestore";
 import type { InvestmentHolding } from "@/types/ledger";
 
+type HoldingWithId = InvestmentHolding & { id: string };
+
+const EMPTY: HoldingWithId[] = [];
+
 export function useAccountHoldings(
   householdId: string | null,
   accountId: string | null
 ) {
-  const [holdings, setHoldings] = useState<(InvestmentHolding & { id: string })[]>(
-    []
-  );
-  const [loading, setLoading] = useState(false);
+  const [received, setReceived] = useState<{
+    key: string;
+    items: HoldingWithId[];
+  } | null>(null);
+
+  // householdId와 accountId를 함께 묶어 구독 대상을 식별한다.
+  const subscriptionKey = householdId && accountId ? `${householdId}/${accountId}` : null;
 
   useEffect(() => {
     if (!householdId || !accountId) {
-      setHoldings([]);
-      setLoading(false);
       return;
     }
-
-    setLoading(true);
+    const key = `${householdId}/${accountId}`;
     const q = query(
       accountHoldingsCol(householdId, accountId),
       orderBy("evluAmt", "desc")
     );
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      const items = snapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...(doc.data() as InvestmentHolding),
-      }));
-      setHoldings(items);
-      setLoading(false);
+      setReceived({
+        key,
+        items: snapshot.docs.map((doc) => ({
+          id: doc.id,
+          ...(doc.data() as InvestmentHolding),
+        })),
+      });
     });
 
     return () => unsubscribe();
   }, [householdId, accountId]);
+
+  const fresh =
+    received && received.key === subscriptionKey ? received : null;
+  const holdings = fresh ? fresh.items : EMPTY;
+  const loading = subscriptionKey ? fresh === null : false;
 
   return { holdings, loading };
 }
