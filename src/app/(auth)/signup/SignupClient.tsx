@@ -3,17 +3,10 @@
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
-import { FirebaseError } from "firebase/app";
-import { signUpWithEmail } from "@/lib/firebase/auth";
-import { createUserProfile, setUserHousehold } from "@/lib/firebase/user";
-import {
-  acceptInvite,
-  createHousehold,
-  findInviteByCode,
-  joinHousehold,
-} from "@/lib/household";
+import { signInWithEmail } from "@/lib/firebase/auth";
+import { ApiError, requestSignup } from "@/lib/household";
 import { useAuth } from "@/components/auth-provider";
-import { addNotification } from "@/lib/notifications";
+import { ALLOW_OPEN_SIGNUP } from "@/lib/auth-policy";
 
 export default function SignupClient() {
   const router = useRouter();
@@ -35,6 +28,9 @@ export default function SignupClient() {
     defaultRole === "wife" ? "wife" : "husband"
   );
 
+  // 초대코드가 없는 신규 가입은 기본적으로 차단한다. (NEXT_PUBLIC_ALLOW_OPEN_SIGNUP)
+  const blocked = !inviteCode && !ALLOW_OPEN_SIGNUP;
+
   useEffect(() => {
     if (user) {
       router.replace("/dashboard");
@@ -44,6 +40,10 @@ export default function SignupClient() {
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
+    if (blocked) {
+      setError("초대코드가 필요합니다.");
+      return;
+    }
     setLoading(true);
     const formData = new FormData(event.currentTarget);
     const email = String(formData.get("email") ?? "");
@@ -51,70 +51,71 @@ export default function SignupClient() {
     const nicknameValue = nickname.trim();
     const rawRole = String(formData.get("spouseRole") ?? spouseRole);
     const resolvedRole = rawRole === "wife" ? "wife" : "husband";
-    const householdName = "우리집";
     try {
-      const credential = await signUpWithEmail(email, password);
-      if (inviteCode) {
-        const invite = await findInviteByCode(inviteCode);
-        if (!invite) {
-          setError("유효하지 않은 초대코드입니다.");
-          return;
-        }
-        await joinHousehold(
-          invite.householdId,
-          credential.user.uid,
-          invite.createdBy
-        );
-        await acceptInvite(
-          invite.inviteId,
-          invite.householdId,
-          credential.user.uid
-        );
-        await setUserHousehold(credential.user.uid, invite.householdId);
-        await createUserProfile(
-          credential.user.uid,
-          invite.householdId,
-          nicknameValue,
-          resolvedRole
-        );
-        await addNotification(invite.householdId, {
-          title: "초대 참여 완료",
-          message: "초대코드로 가계부에 참여했습니다.",
-          level: "success",
-          type: "invite.accepted",
+      // 계정 생성 + 초대코드 검증 + 가계부 참여는 서버가 한 번에 처리한다.
+      // 클라이언트는 성공을 확인한 뒤에만 로그인하고, 계정을 지우지 않는다.
+      try {
+        await requestSignup({
+          email,
+          password,
+          nickname: nicknameValue,
+          spouseRole: resolvedRole,
+          inviteCode: inviteCode || undefined,
         });
-        router.replace("/dashboard");
+      } catch (signupErr) {
+        // 응답을 못 받았거나(서버는 성공했을 수 있음) 이미 가입된 이메일이면,
+        // 같은 자격증명으로 로그인을 시도해 본다. 성공하면 그대로 진행한다.
+        const recoverable =
+          signupErr instanceof ApiError &&
+          (signupErr.responseLost || signupErr.status === 409);
+        if (recoverable) {
+          try {
+            await signInWithEmail(email, password);
+            router.replace("/dashboard");
+            return;
+          } catch {
+            // 로그인도 안 되면 원래 오류를 보여준다.
+          }
+        }
+        setError(
+          signupErr instanceof Error
+            ? signupErr.message
+            : "회원가입에 실패했습니다. 잠시 후 다시 시도해주세요."
+        );
         return;
       }
-      const householdId = await createHousehold(
-        householdName,
-        credential.user.uid,
-        nicknameValue,
-        undefined,
-        resolvedRole
-      );
-      await createUserProfile(
-        credential.user.uid,
-        householdId,
-        nicknameValue,
-        resolvedRole
-      );
+      await signInWithEmail(email, password);
       router.replace("/dashboard");
-    } catch (err) {
-      if (err instanceof FirebaseError) {
-        if (err.code === "auth/email-already-in-use") {
-          setError("이미 사용 중인 이메일입니다.");
-        } else if (err.code === "auth/weak-password") {
-          setError("비밀번호는 6자리 이상이어야 합니다.");
-        } else {
-          setError(`회원가입 오류: ${err.code}`);
-        }
-      } else {
-        setError("회원가입에 실패했습니다. 잠시 후 다시 시도해주세요.");
-      }
+    } catch {
+      setError("가입은 완료됐지만 로그인에 실패했습니다. 로그인 화면에서 다시 시도해주세요.");
     } finally {
       setLoading(false);
     }
+  }
+
+  if (blocked) {
+    return (
+      <div className="flex flex-col gap-6">
+        <div className="flex flex-col gap-2 text-center">
+          <h1 className="text-2xl font-semibold">초대가 필요합니다</h1>
+          <p className="text-sm text-[color:rgba(45,38,34,0.7)]">
+            이 가계부는 초대받은 사람만 가입할 수 있습니다. 배우자에게 받은
+            초대코드로 참여해주세요.
+          </p>
+        </div>
+        <Link
+          className="rounded-xl bg-[var(--accent)] px-4 py-3 text-center text-white"
+          href="/invite"
+        >
+          초대코드 입력하기
+        </Link>
+        <div className="text-center text-sm">
+          <Link className="text-[var(--accent)]" href="/login">
+            이미 계정이 있나요? 로그인
+          </Link>
+        </div>
+      </div>
+    );
   }
 
   return (

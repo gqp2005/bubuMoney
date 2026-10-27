@@ -3,11 +3,10 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { FirebaseError } from "firebase/app";
 import { useAuth } from "@/components/auth-provider";
 import { useHousehold } from "@/components/household-provider";
-import { createHousehold } from "@/lib/household";
-import { setUserHousehold } from "@/lib/firebase/user";
+import { ALLOW_OPEN_SIGNUP } from "@/lib/auth-policy";
+import { createHouseholdViaApi } from "@/lib/household";
 
 export default function OnboardingPage() {
   const router = useRouter();
@@ -35,20 +34,16 @@ export default function OnboardingPage() {
     setError(null);
     setSubmitting(true);
     try {
-      const household = await createHousehold(
+      // 가계부 생성은 서버만 할 수 있다. (Firestore 규칙이 클라이언트 생성을 막음)
+      await createHouseholdViaApi({
+        user,
         name,
-        user.uid,
-        displayName ?? undefined,
-        partnerNickname
-      );
-      await setUserHousehold(user.uid, household);
+        displayName: displayName ?? undefined,
+        partnerDisplayName: partnerNickname,
+      });
       router.replace("/dashboard");
     } catch (err) {
-      if (err instanceof FirebaseError) {
-        setError(`생성 오류: ${err.code}`);
-      } else {
-        setError("가계부 생성에 실패했습니다.");
-      }
+      setError(err instanceof Error ? err.message : "가계부 생성에 실패했습니다.");
     } finally {
       setSubmitting(false);
     }
@@ -59,10 +54,13 @@ export default function OnboardingPage() {
       <div className="flex flex-col gap-2 text-center">
         <h1 className="text-2xl font-semibold">가계부 시작</h1>
         <p className="text-sm text-[color:rgba(45,38,34,0.7)]">
-          새 가계부를 만들거나 초대 코드로 참여하세요.
+          {ALLOW_OPEN_SIGNUP
+            ? "새 가계부를 만들거나 초대 코드로 참여하세요."
+            : "배우자에게 받은 초대 코드로 가계부에 참여하세요."}
         </p>
       </div>
 
+      {ALLOW_OPEN_SIGNUP ? (
       <section className="rounded-2xl border border-[var(--border)] bg-white p-5">
         <div className="flex flex-col gap-1">
           <h2 className="text-sm font-semibold">새 가계부 만들기</h2>
@@ -96,6 +94,7 @@ export default function OnboardingPage() {
           {submitting ? "생성 중..." : "가계부 만들기"}
         </button>
       </section>
+      ) : null}
 
       <section className="rounded-2xl border border-[var(--border)] bg-white p-5">
         <div className="flex flex-col gap-1">

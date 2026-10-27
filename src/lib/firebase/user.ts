@@ -1,34 +1,9 @@
-import { doc, getDoc, serverTimestamp, setDoc, updateDoc } from "firebase/firestore";
+import { doc, getDoc, updateDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 
+// 사용자 프로필 생성과 가계부 연결은 서버(/api/signup 등)가 한다.
+
 export const userDoc = (uid: string) => doc(db, "users", uid);
-
-export async function createUserProfile(
-  uid: string,
-  householdId: string,
-  displayName?: string,
-  spouseRole?: "husband" | "wife"
-) {
-  await setDoc(userDoc(uid), {
-    id: uid,
-    householdId,
-    displayName: displayName ?? null,
-    spouseRole: spouseRole ?? null,
-    createdAt: serverTimestamp(),
-  });
-}
-
-export async function setUserHousehold(uid: string, householdId: string) {
-  try {
-    await updateDoc(userDoc(uid), { id: uid, householdId });
-  } catch (err) {
-    await setDoc(userDoc(uid), {
-      id: uid,
-      householdId,
-      createdAt: serverTimestamp(),
-    });
-  }
-}
 
 export async function updateUserDisplayName(uid: string, displayName: string) {
   await updateDoc(userDoc(uid), { displayName });

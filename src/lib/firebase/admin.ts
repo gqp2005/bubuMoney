@@ -1,6 +1,7 @@
 import "server-only";
 
 import { applicationDefault, cert, getApps, initializeApp } from "firebase-admin/app";
+import { getAuth } from "firebase-admin/auth";
 import { getFirestore } from "firebase-admin/firestore";
 
 function resolveProjectId() {
@@ -59,4 +60,29 @@ function getAdminApp() {
 
 export function getAdminDb() {
   return getFirestore(getAdminApp());
+}
+
+export function getAdminAuth() {
+  return getAuth(getAdminApp());
+}
+
+/**
+ * Authorization 헤더의 Firebase ID 토큰을 검증하고 uid를 돌려준다.
+ * 토큰이 없거나 유효하지 않으면 null.
+ */
+export async function verifyRequestUid(request: Request) {
+  const header = request.headers.get("authorization")?.trim();
+  if (!header?.toLowerCase().startsWith("bearer ")) {
+    return null;
+  }
+  const idToken = header.slice(7).trim();
+  if (!idToken) {
+    return null;
+  }
+  try {
+    const decoded = await getAdminAuth().verifyIdToken(idToken);
+    return decoded.uid;
+  } catch {
+    return null;
+  }
 }

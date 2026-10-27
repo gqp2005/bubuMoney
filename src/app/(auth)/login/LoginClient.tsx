@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { signInWithEmail } from "@/lib/firebase/auth";
 import { useAuth } from "@/components/auth-provider";
+import { ALLOW_OPEN_SIGNUP } from "@/lib/auth-policy";
 
 export default function LoginClient() {
   const router = useRouter();
@@ -53,6 +54,7 @@ export default function LoginClient() {
             type="email"
             name="email"
             placeholder="you@example.com"
+            autoComplete="email"
             className="mt-2 w-full rounded-xl border border-[var(--border)] bg-white px-4 py-3"
           />
         </label>
@@ -62,6 +64,7 @@ export default function LoginClient() {
             type="password"
             name="password"
             placeholder="••••••••"
+            autoComplete="current-password"
             className="mt-2 w-full rounded-xl border border-[var(--border)] bg-white px-4 py-3"
           />
         </label>
@@ -77,9 +80,14 @@ export default function LoginClient() {
         <p className="text-center text-sm text-red-600">{error}</p>
       ) : null}
       <div className="flex flex-col gap-2 text-center text-sm">
-        <Link className="text-[var(--accent)]" href="/signup">
-          계정이 없나요? 회원가입
+        <Link className="text-[var(--accent)]" href="/reset-password">
+          비밀번호를 잊으셨나요?
         </Link>
+        {ALLOW_OPEN_SIGNUP ? (
+          <Link className="text-[var(--accent)]" href="/signup">
+            계정이 없나요? 회원가입
+          </Link>
+        ) : null}
         <Link className="text-[var(--accent)]" href="/invite">
           초대코드로 회원가입하기
         </Link>

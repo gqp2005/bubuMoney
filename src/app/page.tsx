@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { ALLOW_OPEN_SIGNUP } from "@/lib/auth-policy";
 
 export default function Home() {
   return (
@@ -26,9 +27,9 @@ export default function Home() {
           </Link>
           <Link
             className="rounded-full border border-[var(--border)] bg-white px-6 py-3 text-[var(--foreground)]"
-            href="/signup"
+            href={ALLOW_OPEN_SIGNUP ? "/signup" : "/invite"}
           >
-            계정 만들기
+            {ALLOW_OPEN_SIGNUP ? "계정 만들기" : "초대코드로 참여"}
           </Link>
         </div>
       </main>
