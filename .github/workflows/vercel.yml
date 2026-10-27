@@ -12,7 +12,24 @@ on:
         type: boolean
 
 jobs:
+  # 배포 전 품질 게이트. 여기서 실패하면 deploy 잡은 아예 실행되지 않는다.
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+      - name: Install dependencies
+        run: npm ci
+      - name: Type check
+        run: npx tsc --noEmit
+      - name: Lint
+        run: npx eslint src
+
   deploy:
+    needs: verify
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
