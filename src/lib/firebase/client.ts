@@ -1,7 +1,7 @@
 import { initializeApp, getApps } from "firebase/app";
-import { getAuth } from "firebase/auth";
+import { connectAuthEmulator, getAuth } from "firebase/auth";
 import { getAnalytics, isSupported } from "firebase/analytics";
-import { getFirestore } from "firebase/firestore";
+import { connectFirestoreEmulator, getFirestore } from "firebase/firestore";
 import { getFunctions } from "firebase/functions";
 import { getStorage } from "firebase/storage";
 
@@ -40,7 +40,17 @@ export const db = getFirestore(app);
 export const storage = getStorage(app);
 export const functions = getFunctions(app, "asia-northeast3");
 
-if (typeof window !== "undefined") {
+// 로컬 통합 테스트용. NEXT_PUBLIC_USE_FIREBASE_EMULATOR=true 일 때만
+// Auth/Firestore 에뮬레이터(firebase.json의 포트)에 붙는다. 운영에서는 꺼져 있다.
+const USE_EMULATOR = process.env.NEXT_PUBLIC_USE_FIREBASE_EMULATOR === "true";
+const globalForEmulator = globalThis as { __firebaseEmulatorConnected?: boolean };
+if (USE_EMULATOR && !globalForEmulator.__firebaseEmulatorConnected) {
+  globalForEmulator.__firebaseEmulatorConnected = true;
+  connectAuthEmulator(auth, "http://127.0.0.1:9099", { disableWarnings: true });
+  connectFirestoreEmulator(db, "127.0.0.1", 8080);
+}
+
+if (typeof window !== "undefined" && !USE_EMULATOR) {
   isSupported().then((supported) => {
     if (supported) {
       getAnalytics(app);
