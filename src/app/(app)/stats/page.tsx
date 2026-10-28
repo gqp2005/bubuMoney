@@ -22,6 +22,7 @@ import { formatKrw } from "@/lib/format";
 import {
   buildPaymentMethodNameMap,
   describePaymentMethodSelection,
+  disambiguatePaymentMethodNames,
   expandPaymentMethodSelection,
   getPaymentMethodLabelFromKey,
   getTransactionPaymentMethodKey,
@@ -1122,6 +1123,16 @@ export default function StatsPage() {
   const { categories } = useCategories(householdId);
   const { subjects } = useSubjects(householdId);
   const { paymentMethods } = usePaymentMethods(householdId);
+  const paymentOwnerLabels = useMemo(() => {
+    const baseName = displayName?.trim() || "";
+    const partner = subjects.find((subject) => subject.name !== baseName)?.name;
+    const husbandLabel =
+      spouseRole === "wife" ? partner || "남편" : baseName || "남편";
+    const wifeLabel =
+      spouseRole === "wife" ? baseName || "아내" : partner || "아내";
+    return { husbandLabel, wifeLabel };
+  }, [displayName, spouseRole, subjects]);
+
   const paymentMethodNameMap = useMemo(
     () => buildPaymentMethodNameMap(paymentMethods),
     [paymentMethods]
@@ -1500,6 +1511,8 @@ export default function StatsPage() {
     const categoryTotals = new Map<string, number>();
     const subjectTotals = new Map<string, number>();
     const paymentTotals = new Map<string, number>();
+    // 결제수단 키별로 가장 최근 거래에 저장된 이름. 삭제된 결제수단을 표시할 때 쓴다.
+    const paymentSnapshots = new Map<string, { name: string; time: number }>();
     let totalAmount = 0;
     let income = 0;
     let expense = 0;
@@ -1527,6 +1540,14 @@ export default function StatsPage() {
         paymentKey,
         (paymentTotals.get(paymentKey) ?? 0) + amount
       );
+      const snapshotName = tx.paymentMethod?.trim();
+      if (snapshotName) {
+        const time = tx.date?.toMillis?.() ?? 0;
+        const previous = paymentSnapshots.get(paymentKey);
+        if (!previous || time > previous.time) {
+          paymentSnapshots.set(paymentKey, { name: snapshotName, time });
+        }
+      }
     }
 
     const categoryBreakdown = buildBreakdown(
@@ -1545,13 +1566,28 @@ export default function StatsPage() {
       })),
       totalAmount
     );
-    const paymentBreakdown = buildBreakdown(
-      Array.from(paymentTotals.entries()).map(([id, amount]) => ({
-        id,
-        name: getPaymentMethodLabelFromKey(id, paymentMethodNameMap),
-        amount,
-      })),
-      totalAmount
+    // 같은 이름의 결제수단(각자의 "국민은행" 등)이 함께 나오면 구분할 수 있게
+    // 소유자 등을 붙인다. 0원 항목을 빼는 buildBreakdown() 뒤에 해야, 화면에
+    // 보이지 않는 항목과 겹친다고 판단하지 않는다.
+    const paymentBreakdown = disambiguatePaymentMethodNames(
+      buildBreakdown(
+        Array.from(paymentTotals.entries()).map(([id, amount]) => ({
+          id,
+          name: getPaymentMethodLabelFromKey(
+            id,
+            paymentMethodNameMap,
+            paymentSnapshots.get(id)?.name
+          ),
+          amount,
+        })),
+        totalAmount
+      ),
+      paymentMethods,
+      {
+        husband: paymentOwnerLabels.husbandLabel,
+        wife: paymentOwnerLabels.wifeLabel,
+        our: "우리",
+      }
     );
 
     return {
@@ -1566,6 +1602,8 @@ export default function StatsPage() {
     viewType,
     categoryMap,
     paymentMethodNameMap,
+    paymentMethods,
+    paymentOwnerLabels,
   ]);
 
   const { summary: activeSummary, categoryBreakdown, subjectBreakdown, paymentBreakdown } =
@@ -1739,16 +1777,6 @@ export default function StatsPage() {
     (values: Set<string>) => expandPaymentMethodSelection(values, paymentMethods),
     [paymentMethods]
   );
-
-  const paymentOwnerLabels = useMemo(() => {
-    const baseName = displayName?.trim() || "";
-    const partner = subjects.find((subject) => subject.name !== baseName)?.name;
-    const husbandLabel =
-      spouseRole === "wife" ? partner || "남편" : baseName || "남편";
-    const wifeLabel =
-      spouseRole === "wife" ? baseName || "아내" : partner || "아내";
-    return { husbandLabel, wifeLabel };
-  }, [displayName, spouseRole, subjects]);
 
   const updateCustomStart = useCallback((value: string) => {
     setCustomStart(value);
