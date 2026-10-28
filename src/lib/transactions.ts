@@ -14,6 +14,11 @@ import {
 } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import { transactionsCol } from "@/lib/firebase/firestore";
+import {
+  hasPaymentMethodId,
+  normalizePaymentMethodId,
+  requirePaymentMethodId,
+} from "@/lib/payment-method-resolver";
 import { toMonthKey } from "@/lib/time";
 import type { TransactionType } from "@/types/ledger";
 
@@ -29,8 +34,9 @@ export async function addTransaction(params: {
   amount: number;
   discountAmount?: number;
   categoryId: string;
+  // 표시용 이름 스냅샷. 로직은 paymentMethodId만 쓴다.
   paymentMethod: string;
-  paymentMethodId?: string | null;
+  paymentMethodId: string;
   recurringRuleId?: string | null;
   generatedFromRecurringRuleId?: string | null;
   recurringOccurrenceDateKey?: string | null;
@@ -40,9 +46,12 @@ export async function addTransaction(params: {
   budgetApplied?: boolean;
   createdBy: string;
 }) {
+  // 검사와 정규화를 함께 한다. 공백이 섞인 ID도 정리된 값으로 저장된다.
+  const paymentMethodId = requirePaymentMethodId(params.paymentMethodId);
   const { householdId, date, ...rest } = params;
   const payload = {
     ...stripUndefinedValues(rest),
+    paymentMethodId,
     date: Timestamp.fromDate(date),
     monthKey: toMonthKey(date),
     createdAt: serverTimestamp(),
@@ -58,8 +67,9 @@ export async function updateTransaction(params: {
   amount: number;
   discountAmount?: number;
   categoryId: string;
+  // 표시용 이름 스냅샷. 로직은 paymentMethodId만 쓴다.
   paymentMethod: string;
-  paymentMethodId?: string | null;
+  paymentMethodId: string;
   recurringRuleId?: string | null;
   generatedFromRecurringRuleId?: string | null;
   recurringOccurrenceDateKey?: string | null;
@@ -68,9 +78,11 @@ export async function updateTransaction(params: {
   note?: string;
   budgetApplied?: boolean;
 }) {
+  const paymentMethodId = requirePaymentMethodId(params.paymentMethodId);
   const { householdId, transactionId, date, ...rest } = params;
   const payload: Record<string, unknown> = {
     ...stripUndefinedValues(rest),
+    paymentMethodId,
     date: Timestamp.fromDate(date),
     monthKey: toMonthKey(date),
   };
@@ -79,9 +91,6 @@ export async function updateTransaction(params: {
   }
   if (rest.discountAmount === undefined) {
     payload.discountAmount = deleteField();
-  }
-  if (rest.paymentMethodId === undefined) {
-    payload.paymentMethodId = deleteField();
   }
   if (rest.recurringRuleId === undefined) {
     payload.recurringRuleId = deleteField();
@@ -107,6 +116,13 @@ export async function deleteTransaction(
   );
 }
 
+/**
+ * 삭제 직후 "되돌리기"로 거래를 원래 문서 그대로 복원한다.
+ *
+ * add/update와 달리 paymentMethodId를 강제하지 않는다. 새 데이터를 만드는 게
+ * 아니라 방금 지운 문서를 되살리는 것이라, 여기서 막으면 되돌리기가 실패해
+ * 거래가 영구히 사라진다. (운영 데이터는 전부 ID가 있어 실제로는 항상 함께 온다)
+ */
 export async function restoreTransaction(params: {
   householdId: string;
   transactionId: string;
@@ -127,8 +143,14 @@ export async function restoreTransaction(params: {
   createdAt?: Date | null;
 }) {
   const { householdId, transactionId, date, createdAt, ...rest } = params;
+  // ID가 있으면 정규화해서 되살리고, 없으면(공백만 있는 경우 포함) 필드를 생략한다.
   const payload = {
-    ...stripUndefinedValues(rest),
+    ...stripUndefinedValues({
+      ...rest,
+      paymentMethodId: hasPaymentMethodId(rest.paymentMethodId)
+        ? normalizePaymentMethodId(rest.paymentMethodId)
+        : undefined,
+    }),
     date: Timestamp.fromDate(date),
     monthKey: toMonthKey(date),
     createdAt: createdAt ? Timestamp.fromDate(createdAt) : serverTimestamp(),

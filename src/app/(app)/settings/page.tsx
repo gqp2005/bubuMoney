@@ -37,7 +37,11 @@ import {
 import { updateUserDisplayName } from "@/lib/firebase/user";
 import { createInvite, resetHouseholdData } from "@/lib/household";
 import { addPaymentMethod } from "@/lib/payment-methods";
-import { formatPaymentMethodLabel } from "@/lib/payment-method-resolver";
+import {
+  formatPaymentMethodLabel,
+  hasPaymentMethodId,
+  normalizePaymentMethodId,
+} from "@/lib/payment-method-resolver";
 import {
   deleteRecurringTransactionRule,
   findSourceTransactionIdByRecurringRuleId,
@@ -297,7 +301,7 @@ function CsvImportSection({
       const paymentMethod = mapPayment(paymentRaw);
       const paymentOwner = "our";
       const paymentKey = `${paymentOwner}:${paymentMethod}`;
-      let paymentMethodId = paymentMap.get(paymentKey) ?? null;
+      let paymentMethodId: string = paymentMap.get(paymentKey) ?? "";
       if (!paymentMap.has(paymentKey)) {
         const newPaymentMethod = await addPaymentMethod(householdId, {
           name: paymentMethod,
@@ -484,10 +488,14 @@ export default function SettingsPage() {
         ...rule,
         title: rule.note?.trim() || categoryNameMap.get(rule.categoryId) || "자동 내역",
         categoryName: categoryNameMap.get(rule.categoryId) || "미분류",
-        paymentMethodName:
-          (rule.paymentMethodId
-            ? paymentMethodNameMap.get(rule.paymentMethodId)
-            : null) ?? formatPaymentMethodLabel(rule.paymentMethod),
+        // 결제수단 ID가 없는 규칙은 자동 생성이 멈춘다(syncRecurringTransactionRules).
+        // 조용히 멈추지 않도록 목록에서 바로 알린다. 판단 기준은 동기화와 같은
+        // hasPaymentMethodId()를 쓴다. (공백만 있는 ID도 "없음")
+        paymentMethodName: hasPaymentMethodId(rule.paymentMethodId)
+          ? paymentMethodNameMap.get(
+              normalizePaymentMethodId(rule.paymentMethodId)
+            ) ?? formatPaymentMethodLabel(rule.paymentMethod)
+          : `${formatPaymentMethodLabel(rule.paymentMethod)} · 결제수단을 다시 선택해야 자동 등록됩니다`,
         status: getRecurringRuleStatus(rule, currentDate),
         creatorLabel:
           user?.uid && rule.createdBy === user.uid ? "내가 등록" : "상대가 등록",

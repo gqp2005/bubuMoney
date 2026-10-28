@@ -21,6 +21,8 @@ import { useHousehold } from "@/components/household-provider";
 import { formatKrw } from "@/lib/format";
 import {
   buildPaymentMethodNameMap,
+  describePaymentMethodSelection,
+  expandPaymentMethodSelection,
   getPaymentMethodLabelFromKey,
   getTransactionPaymentMethodKey,
   resolveTransactionPaymentMethodName,
@@ -1124,10 +1126,6 @@ export default function StatsPage() {
     () => buildPaymentMethodNameMap(paymentMethods),
     [paymentMethods]
   );
-  const paymentMethodIdByName = useMemo(
-    () => new Map(paymentMethods.map((method) => [method.name, method.id])),
-    [paymentMethods]
-  );
   const personalCategoryIdSet = useMemo(() => {
     return new Set(
       categories
@@ -1287,6 +1285,12 @@ export default function StatsPage() {
   );
   const [appliedPayments, setAppliedPayments] = useState<Set<string>>(
     () => new Set(storedFilters?.appliedPayments ?? [])
+  );
+  // 저장된 필터·프리셋에는 예전 버전이 남긴 결제수단 "이름"이 있을 수 있다.
+  // 거를 때는 항상 ID 집합으로 펼쳐서 비교한다.
+  const appliedPaymentIds = useMemo(
+    () => expandPaymentMethodSelection(appliedPayments, paymentMethods),
+    [appliedPayments, paymentMethods]
   );
   const [expandedCategoryParents, setExpandedCategoryParents] = useState<
     Set<string>
@@ -1473,29 +1477,21 @@ export default function StatsPage() {
       if (appliedSubjects.size > 0 && !appliedSubjects.has(subjectKey)) {
         continue;
       }
-      const paymentKey = getTransactionPaymentMethodKey(tx);
-      if (appliedPayments.size > 0) {
-        const paymentLabel = resolveTransactionPaymentMethodName(
-          tx,
-          paymentMethodNameMap
-        );
-        if (
-          !appliedPayments.has(paymentKey) &&
-          !appliedPayments.has(paymentLabel) &&
-          !appliedPayments.has(tx.paymentMethod ?? "")
-        ) {
-          continue;
-        }
+      if (
+        appliedPayments.size > 0 &&
+        !appliedPaymentIds.has(getTransactionPaymentMethodKey(tx))
+      ) {
+        continue;
       }
       items.push(tx);
     }
     return items;
   }, [
     appliedCategoryIds,
+    appliedPaymentIds,
     appliedPayments,
     appliedSubjects,
     effectiveBudgetScope,
-    paymentMethodNameMap,
     viewType,
     visibleTransactions,
   ]);
@@ -1595,10 +1591,10 @@ export default function StatsPage() {
   );
   const appliedPaymentNameList = useMemo(
     () =>
-      Array.from(appliedPayments).map((key) =>
-        getPaymentMethodLabelFromKey(key, paymentMethodNameMap)
+      Array.from(appliedPayments).map((value) =>
+        describePaymentMethodSelection(value, paymentMethods)
       ),
-    [appliedPayments, paymentMethodNameMap]
+    [appliedPayments, paymentMethods]
   );
   const activeCategoryNames = useMemo(
     () => formatSelectionSummary(appliedCategoryNameList),
@@ -1737,22 +1733,11 @@ export default function StatsPage() {
       .filter((method) => (method.owner ?? "our") === paymentOwnerFilter)
       .map((method) => method.id);
   }, [paymentMethods, paymentOwnerFilter]);
+  // 필터 시트를 열 때 선택값을 ID로 바꾼다. 같은 이름이 여러 소유자에게 있으면
+  // (예전 이름 기반 필터와 같은 범위가 되도록) 모두 선택한다.
   const normalizePaymentSelection = useCallback(
-    (values: Set<string>) => {
-      const next = new Set<string>();
-      values.forEach((value) => {
-        if (paymentMethodNameMap.has(value)) {
-          next.add(value);
-          return;
-        }
-        const matchedId = paymentMethodIdByName.get(value);
-        if (matchedId) {
-          next.add(matchedId);
-        }
-      });
-      return next;
-    },
-    [paymentMethodIdByName, paymentMethodNameMap]
+    (values: Set<string>) => expandPaymentMethodSelection(values, paymentMethods),
+    [paymentMethods]
   );
 
   const paymentOwnerLabels = useMemo(() => {
