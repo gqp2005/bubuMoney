@@ -37,6 +37,10 @@ import { useSubjects } from "@/hooks/use-subjects";
 import { addCategory, deleteCategory, updateCategory } from "@/lib/categories";
 import { householdDoc, transactionsCol } from "@/lib/firebase/firestore";
 import {
+  hasPaymentMethodId,
+  normalizePaymentMethodId,
+} from "@/lib/payment-method-resolver";
+import {
   addPaymentMethod,
   deletePaymentMethod,
   updatePaymentMethod,
@@ -365,13 +369,6 @@ export default function CategoriesPage() {
     if (!householdId) {
       return;
     }
-    const paymentMethodIdsByName = new Map<string, string[]>();
-    paymentMethods.forEach((method) => {
-      const name = method.name.trim();
-      const bucket = paymentMethodIdsByName.get(name) ?? [];
-      bucket.push(method.id);
-      paymentMethodIdsByName.set(name, bucket);
-    });
     return onSnapshot(transactionsCol(householdId), (snapshot) => {
       const categoryCounts: Record<string, number> = {};
       const subjectCounts: Record<string, number> = {};
@@ -386,22 +383,12 @@ export default function CategoriesPage() {
         if (subjectName) {
           subjectCounts[subjectName] = (subjectCounts[subjectName] ?? 0) + 1;
         }
-        const paymentMethodId = data.paymentMethodId?.trim();
-        if (paymentMethodId) {
+        // 결제수단 사용 횟수는 ID로만 센다. (이름은 소유자별로 겹친다)
+        const paymentMethodId = normalizePaymentMethodId(data.paymentMethodId);
+        if (hasPaymentMethodId(paymentMethodId)) {
           paymentCounts[paymentMethodId] =
             (paymentCounts[paymentMethodId] ?? 0) + 1;
-          return;
         }
-        const paymentMethodName = data.paymentMethod?.trim();
-        if (!paymentMethodName) {
-          return;
-        }
-        const matchedIds = paymentMethodIdsByName.get(paymentMethodName) ?? [];
-        if (matchedIds.length !== 1) {
-          return;
-        }
-        const matchedId = matchedIds[0];
-        paymentCounts[matchedId] = (paymentCounts[matchedId] ?? 0) + 1;
       });
       setUsageState({
         householdId,
@@ -410,7 +397,7 @@ export default function CategoriesPage() {
         paymentCounts,
       });
     });
-  }, [householdId, paymentMethods]);
+  }, [householdId]);
 
   useEffect(() => {
     if (showAddForm) {

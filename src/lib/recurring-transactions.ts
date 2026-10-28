@@ -17,6 +17,11 @@ import {
   recurringTransactionRulesCol,
   transactionsCol,
 } from "@/lib/firebase/firestore";
+import {
+  hasPaymentMethodId,
+  normalizePaymentMethodId,
+  requirePaymentMethodId,
+} from "@/lib/payment-method-resolver";
 import { formatDate, toDateKey, toMonthKey } from "@/lib/time";
 import type { RecurringTransactionRule, TransactionType } from "@/types/ledger";
 
@@ -137,8 +142,9 @@ export async function createRecurringTransactionRule(params: {
   amount: number;
   discountAmount?: number;
   categoryId: string;
+  // 표시용 이름 스냅샷. 로직은 paymentMethodId만 쓴다.
   paymentMethod: string;
-  paymentMethodId?: string | null;
+  paymentMethodId: string;
   subject: string;
   note?: string;
   prependMonthToNote?: boolean;
@@ -149,6 +155,7 @@ export async function createRecurringTransactionRule(params: {
   lastGeneratedDateKey?: string;
   createdBy: string;
 }) {
+  const paymentMethodId = requirePaymentMethodId(params.paymentMethodId);
   const {
     householdId,
     startDate,
@@ -157,6 +164,7 @@ export async function createRecurringTransactionRule(params: {
   } = params;
   return addDoc(recurringTransactionRulesCol(householdId), {
     ...stripUndefinedValues(rest),
+    paymentMethodId,
     startDate: Timestamp.fromDate(startDate),
     ...(endDate ? { endDate: Timestamp.fromDate(endDate) } : {}),
     createdAt: serverTimestamp(),
@@ -171,8 +179,9 @@ export async function updateRecurringTransactionRule(params: {
   amount: number;
   discountAmount?: number;
   categoryId: string;
+  // 표시용 이름 스냅샷. 로직은 paymentMethodId만 쓴다.
   paymentMethod: string;
-  paymentMethodId?: string | null;
+  paymentMethodId: string;
   subject: string;
   note?: string;
   prependMonthToNote?: boolean;
@@ -181,6 +190,7 @@ export async function updateRecurringTransactionRule(params: {
   startDate: Date;
   endDate?: Date;
 }) {
+  const paymentMethodId = requirePaymentMethodId(params.paymentMethodId);
   const {
     householdId,
     ruleId,
@@ -192,6 +202,7 @@ export async function updateRecurringTransactionRule(params: {
     doc(db, "households", householdId, "recurringTransactionRules", ruleId),
     {
       ...stripUndefinedValues(rest),
+      paymentMethodId,
       startDate: Timestamp.fromDate(startDate),
       endDate: endDate ? Timestamp.fromDate(endDate) : deleteField(),
       updatedAt: serverTimestamp(),
@@ -259,6 +270,12 @@ export async function syncRecurringTransactionRules(
 
   for (const ruleDoc of snapshot.docs) {
     const rule = ruleDoc.data() as RecurringTransactionRule;
+    // 결제수단 ID가 없는 규칙으로는 거래를 만들지 않는다. 이름만 있는 거래가
+    // 다시 생기는 것을 막기 위해서다. lastGeneratedDateKey를 건드리지 않으므로
+    // 설정 화면에서 결제수단을 다시 고르면 밀린 날짜가 한꺼번에 생성된다.
+    if (!hasPaymentMethodId(rule.paymentMethodId)) {
+      continue;
+    }
     const pendingDates = buildPendingOccurrenceDates(rule, now);
     if (pendingDates.length === 0) {
       continue;
@@ -273,7 +290,7 @@ export async function syncRecurringTransactionRules(
           amount: rule.amount,
           categoryId: rule.categoryId,
           paymentMethod: rule.paymentMethod,
-          paymentMethodId: rule.paymentMethodId,
+          paymentMethodId: normalizePaymentMethodId(rule.paymentMethodId),
           subject: rule.subject,
           note: buildRecurringTransactionNote(
             rule.note,

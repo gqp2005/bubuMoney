@@ -12,7 +12,10 @@ import { useSubjects } from "@/hooks/use-subjects";
 import { formatKrw } from "@/lib/format";
 import { householdDoc } from "@/lib/firebase/firestore";
 import { addNotification } from "@/lib/notifications";
-import { formatPaymentMethodLabel } from "@/lib/payment-method-resolver";
+import {
+  formatPaymentMethodLabel,
+  hasPaymentMethodId,
+} from "@/lib/payment-method-resolver";
 import {
   createRecurringTransactionRule,
   deleteRecurringTransactionRule,
@@ -245,7 +248,7 @@ export default function NewTransactionPage() {
 
   useEffect(() => {
     const ownerParents = paymentGrouped[paymentOwner]?.parents ?? [];
-    if (!paymentMethodId && ownerParents.length > 0) {
+    if (!hasPaymentMethodId(paymentMethodId) && ownerParents.length > 0) {
       setPaymentMethodId(ownerParents[0].id);
     }
   }, [paymentGrouped, paymentMethodId, paymentOwner]);
@@ -255,7 +258,7 @@ export default function NewTransactionPage() {
       ...paymentGrouped[paymentOwner].parents,
       ...paymentGrouped[paymentOwner].children,
     ];
-    if (!paymentMethodId) {
+    if (!hasPaymentMethodId(paymentMethodId)) {
       return;
     }
     if (ownerMethods.length > 0 && !ownerMethods.some((m) => m.id === paymentMethodId)) {
@@ -310,6 +313,11 @@ export default function NewTransactionPage() {
       setLoading(false);
       return;
     }
+    if (!selectedPaymentMethod) {
+      setError("결제수단을 선택해주세요.");
+      setLoading(false);
+      return;
+    }
     if (
       isRecurringEnabled &&
       (!Number.isInteger(recurringDay) ||
@@ -345,7 +353,7 @@ export default function NewTransactionPage() {
               : undefined,
           categoryId,
           paymentMethod: paymentValue,
-          paymentMethodId: selectedPaymentMethod?.id,
+          paymentMethodId: selectedPaymentMethod.id,
           subject: subjectValue,
           note: note.length ? note : undefined,
           budgetApplied,
@@ -368,7 +376,7 @@ export default function NewTransactionPage() {
             : undefined,
         categoryId,
         paymentMethod: paymentValue,
-        paymentMethodId: selectedPaymentMethod?.id,
+        paymentMethodId: selectedPaymentMethod.id,
         recurringRuleId,
         subject: subjectValue,
         date: parsedDate,

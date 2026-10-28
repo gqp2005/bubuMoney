@@ -21,8 +21,9 @@ import { formatKrw } from "@/lib/format";
 import { householdDoc } from "@/lib/firebase/firestore";
 import { addNotification } from "@/lib/notifications";
 import {
-  findPaymentMethodByName,
   formatPaymentMethodLabel,
+  hasPaymentMethodId,
+  normalizePaymentMethodId,
 } from "@/lib/payment-method-resolver";
 import {
   buildRecurringTransactionNote,
@@ -168,6 +169,7 @@ export default function EditTransactionPage() {
       discountAmount?: number;
       categoryId: string;
       paymentMethod: string;
+      paymentMethodId?: string;
       subject: string;
       date: string;
       note?: string;
@@ -179,6 +181,7 @@ export default function EditTransactionPage() {
       discountAmount?: number;
       categoryId: string;
       paymentMethod: string;
+      paymentMethodId?: string;
       subject: string;
       date: string;
       note?: string;
@@ -211,8 +214,35 @@ export default function EditTransactionPage() {
     if (original.subject !== next.subject) {
       changes.push(`주체 ${original.subject}→${next.subject}`);
     }
-    if (original.paymentMethod !== next.paymentMethod) {
-      changes.push(`결제수단 ${original.paymentMethod}→${next.paymentMethod}`);
+    // 결제수단은 ID로 비교한다. 이름으로 비교하면 남편의 "현금"을 아내의
+    // "현금"으로 바꾼 변경이 기록되지 않는다.
+    if (
+      normalizePaymentMethodId(original.paymentMethodId) !==
+      normalizePaymentMethodId(next.paymentMethodId)
+    ) {
+      const describe = (id: string | undefined, fallbackName: string) => {
+        const method = paymentMethods.find((candidate) => candidate.id === id);
+        return {
+          name: formatPaymentMethodLabel(method?.name ?? fallbackName),
+          owner: method?.owner ?? null,
+        };
+      };
+      const ownerLabel = (owner: string | null) =>
+        owner === "husband"
+          ? husbandLabel
+          : owner === "wife"
+            ? wifeLabel
+            : owner === "our"
+              ? "우리"
+              : "";
+      const before = describe(original.paymentMethodId, original.paymentMethod);
+      const after = describe(next.paymentMethodId, next.paymentMethod);
+      // 이름이 같으면 소유자를 붙여 어떤 결제수단끼리 바뀌었는지 구분한다.
+      const label = (item: typeof before) =>
+        before.name === after.name && ownerLabel(item.owner)
+          ? `${item.name}(${ownerLabel(item.owner)})`
+          : item.name;
+      changes.push(`결제수단 ${label(before)}→${label(after)}`);
     }
     if (original.date !== next.date) {
       changes.push(`날짜 ${original.date}→${next.date}`);
@@ -305,33 +335,6 @@ export default function EditTransactionPage() {
   const isGeneratedRecurringTransaction = Boolean(
     generatedFromRecurringRuleId && !recurringRuleId
   );
-  const preferredPaymentOwner = useMemo(() => {
-    const trimmedSubject = subject.trim();
-    if (trimmedSubject === "우리") {
-      return "our";
-    }
-    const selfName = displayName?.trim() || "";
-    const partnerTrimmed = partnerName.trim();
-    if (
-      selfName &&
-      trimmedSubject &&
-      trimmedSubject === selfName &&
-      (spouseRole === "husband" || spouseRole === "wife")
-    ) {
-      return spouseRole;
-    }
-    if (partnerTrimmed && trimmedSubject && trimmedSubject === partnerTrimmed) {
-      return spouseRole === "wife"
-        ? "husband"
-        : spouseRole === "husband"
-        ? "wife"
-        : null;
-    }
-    if (spouseRole === "husband" || spouseRole === "wife") {
-      return spouseRole;
-    }
-    return null;
-  }, [displayName, partnerName, spouseRole, subject]);
 
   const spouseName = displayName?.trim() || "";
   const partnerTrimmed = partnerName.trim();
@@ -394,7 +397,8 @@ export default function EditTransactionPage() {
         setDiscountAmount(formatAmountValue(String(data.discountAmount ?? "")));
         setCategoryId(data.categoryId);
         setPaymentMethod(data.paymentMethod);
-        setPaymentMethodId(data.paymentMethodId ?? "");
+        // Firestore에서 읽은 ID는 정규화해서 상태에 넣는다.
+        setPaymentMethodId(normalizePaymentMethodId(data.paymentMethodId));
         setRecurringRuleId(data.recurringRuleId ?? "");
         setGeneratedFromRecurringRuleId(data.generatedFromRecurringRuleId ?? "");
         setRecurringOccurrenceDateKey(data.recurringOccurrenceDateKey ?? "");
@@ -417,7 +421,7 @@ export default function EditTransactionPage() {
           discountAmount: data.discountAmount ?? 0,
           categoryId: data.categoryId,
           paymentMethod: data.paymentMethod,
-          paymentMethodId: data.paymentMethodId ?? "",
+          paymentMethodId: normalizePaymentMethodId(data.paymentMethodId),
           recurringRuleId: data.recurringRuleId ?? "",
           generatedFromRecurringRuleId: data.generatedFromRecurringRuleId ?? "",
           recurringOccurrenceDateKey: data.recurringOccurrenceDateKey ?? "",
@@ -513,42 +517,17 @@ export default function EditTransactionPage() {
   }, [subjects, subject]);
 
   useEffect(() => {
-    if (paymentMethodId || paymentMethods.length === 0) {
+    // 결제수단 ID가 비어 있을 때만 기본값을 고른다. 이름으로 ID를 추정하지 않는다.
+    // (이름은 소유자별로 겹쳐서 어느 결제수단인지 알 수 없다)
+    if (hasPaymentMethodId(paymentMethodId) || paymentMethods.length === 0) {
       return;
-    }
-    if (paymentMethod) {
-      const matched = findPaymentMethodByName(
-        paymentMethods,
-        paymentMethod,
-        preferredPaymentOwner
-      );
-      if (matched) {
-        if (matched.owner && matched.owner !== paymentOwner) {
-          setPaymentOwner(matched.owner);
-        }
-        setPaymentMethodId(matched.id);
-        setPaymentMethod(matched.name);
-        return;
-      }
     }
     setPaymentMethodId(paymentMethods[0].id);
     setPaymentMethod(paymentMethods[0].name);
-  }, [
-    paymentMethod,
-    paymentMethodId,
-    paymentMethods,
-    paymentOwner,
-    preferredPaymentOwner,
-  ]);
+  }, [paymentMethodId, paymentMethods]);
 
   useEffect(() => {
-    const ownerMatch =
-      selectedPaymentMethod ??
-      findPaymentMethodByName(
-        paymentMethods,
-        paymentMethod,
-        preferredPaymentOwner
-      );
+    const ownerMatch = selectedPaymentMethod;
     if (!ownerMatch?.owner) {
       return;
     }
@@ -561,16 +540,10 @@ export default function EditTransactionPage() {
     }
     lastDerivedOwnerRef.current = ownerMatch.owner;
     setPaymentOwner(ownerMatch.owner);
-  }, [
-    paymentMethod,
-    paymentMethods,
-    paymentOwner,
-    preferredPaymentOwner,
-    selectedPaymentMethod,
-  ]);
+  }, [paymentOwner, selectedPaymentMethod]);
 
   useEffect(() => {
-    if (paymentMethod && !paymentMethodId) {
+    if (paymentMethod && !hasPaymentMethodId(paymentMethodId)) {
       return;
     }
     if (
@@ -586,7 +559,10 @@ export default function EditTransactionPage() {
     if (ownerMethods.length === 0) {
       return;
     }
-    if (paymentMethodId && ownerMethods.some((method) => method.id === paymentMethodId)) {
+    if (
+      hasPaymentMethodId(paymentMethodId) &&
+      ownerMethods.some((method) => method.id === paymentMethodId)
+    ) {
       return;
     }
     setPaymentMethodId(ownerMethods[0].id);
@@ -665,6 +641,14 @@ export default function EditTransactionPage() {
       setSaving(false);
       return;
     }
+    // 예전에는 결제수단이 선택되지 않은 채 저장하면 기존 paymentMethodId를
+    // 지워 버렸다. 이제는 선택을 요구한다.
+    if (!selectedPaymentMethod) {
+      setError("결제수단을 선택해주세요.");
+      setSaving(false);
+      return;
+    }
+    const selectedPaymentMethodId = selectedPaymentMethod.id;
     if (
       !isGeneratedRecurringTransaction &&
       isRecurringEnabled &&
@@ -721,6 +705,7 @@ export default function EditTransactionPage() {
               nextDiscountAmount ?? 0,
             categoryId,
             paymentMethod: paymentMethodValue,
+            paymentMethodId: selectedPaymentMethodId,
             subject,
             date,
             note: note || undefined,
@@ -740,7 +725,7 @@ export default function EditTransactionPage() {
             discountAmount: nextDiscountAmount,
             categoryId,
             paymentMethod: paymentMethodValue,
-            paymentMethodId: selectedPaymentMethod?.id,
+            paymentMethodId: selectedPaymentMethodId,
             subject,
             note: note.trim() || undefined,
             prependMonthToNote: prependMonthToRecurringNote,
@@ -757,7 +742,7 @@ export default function EditTransactionPage() {
             discountAmount: nextDiscountAmount,
             categoryId,
             paymentMethod: paymentMethodValue,
-            paymentMethodId: selectedPaymentMethod?.id,
+            paymentMethodId: selectedPaymentMethodId,
             subject,
             note: note.trim() || undefined,
             prependMonthToNote: prependMonthToRecurringNote,
@@ -782,7 +767,7 @@ export default function EditTransactionPage() {
           amount: nextAmount,
           categoryId,
           paymentMethod: paymentMethodValue,
-          paymentMethodId: selectedPaymentMethod?.id ?? deleteField(),
+          paymentMethodId: selectedPaymentMethodId,
           subject,
           date: Timestamp.fromDate(parsedDate),
           monthKey: toMonthKey(parsedDate),
@@ -803,7 +788,7 @@ export default function EditTransactionPage() {
             amount: nextAmount,
             categoryId,
             paymentMethod: paymentMethodValue,
-            paymentMethodId: selectedPaymentMethod?.id ?? deleteField(),
+            paymentMethodId: selectedPaymentMethodId,
             subject,
             note: recurringBaseNote || deleteField(),
             prependMonthToNote: prependMonthToRecurringNote,
@@ -837,7 +822,7 @@ export default function EditTransactionPage() {
         discountAmount: nextDiscountAmount,
         categoryId,
         paymentMethod: paymentMethodValue,
-        paymentMethodId: selectedPaymentMethod?.id,
+        paymentMethodId: selectedPaymentMethodId,
         recurringRuleId: nextRecurringRuleId ?? undefined,
         generatedFromRecurringRuleId: generatedFromRecurringRuleId || undefined,
         recurringOccurrenceDateKey: recurringOccurrenceDateKey || undefined,

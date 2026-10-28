@@ -15,7 +15,6 @@ import {
   restoreMonthlyMemoEntry,
 } from "@/lib/memos";
 import {
-  getLegacyPaymentMethodKey,
   getTransactionPaymentMethodKey,
 } from "@/lib/payment-method-resolver";
 import { getEffectiveExpenseAmount } from "@/lib/transaction-amount";
@@ -110,9 +109,7 @@ export default function DashboardPage() {
     return goalMethods
       .map((method) => {
         const goal = method.goalMonthly ?? 0;
-        const amount =
-          (totals.get(method.id) ?? 0) +
-          (totals.get(getLegacyPaymentMethodKey(method.name)) ?? 0);
+        const amount = totals.get(method.id) ?? 0;
         const progress =
           goal > 0 ? Math.min(100, Math.round((amount / goal) * 100)) : 0;
         return {
@@ -383,15 +380,8 @@ export default function DashboardPage() {
           <div className="mt-4 space-y-3 text-sm">
             {paymentGoalItems.map((item) => {
               const isSelected = selectedPaymentGoalId === item.id;
-              const methodTransactions = [
-                ...(expenseTransactionsByPaymentMethod.get(item.id) ?? []),
-                ...(expenseTransactionsByPaymentMethod.get(
-                  getLegacyPaymentMethodKey(item.name)
-                ) ?? []),
-              ].filter(
-                (tx, index, list) =>
-                  list.findIndex((candidate) => candidate.id === tx.id) === index
-              );
+              const methodTransactions =
+                expenseTransactionsByPaymentMethod.get(item.id) ?? [];
               return (
                 <div
                   key={item.id}
